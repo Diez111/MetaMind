@@ -494,13 +494,37 @@ fn editor(app: &App, dom: &mut Dom, parent: NodeId, pal: &Palette, info: &mut Vi
     }
     let view = dom.add(parent, view_el);
     info.editor = Some(view);
-    let buf = &tab.editor.buf;
-    let doc = buf.doc();
+    let doc = tab.editor.buf.doc();
     let first = tab.top_block.min(doc.blocks.len().saturating_sub(1));
     // Virtualised: only blocks from the scroll position onward, capped.
     let last = (first + 90).min(doc.blocks.len());
-    let sels: &[Sel] = if tab.mode == ViewMode::Reading { &[] } else { &buf.sels };
-    let decos = decorate(doc, first..last, sels, tab.deco_mode());
+    note_blocks(app, dom, view, pal, info, tab, tab.mode, first..last, false);
+}
+
+/// Add the note's blocks `range` to `view` as `mode` shows them. `print` lays the note out for
+/// export: folds are open and there are no fold markers.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn note_blocks(
+    app: &App,
+    dom: &mut Dom,
+    view: NodeId,
+    pal: &Palette,
+    info: &mut ViewInfo,
+    tab: &crate::shell::Tab,
+    mode: ViewMode,
+    range: std::ops::Range<usize>,
+    print: bool,
+) {
+    let buf = &tab.editor.buf;
+    let doc = buf.doc();
+    let (first, last) = (range.start, range.end);
+    let sels: &[Sel] = if mode == ViewMode::Reading { &[] } else { &buf.sels };
+    let deco_mode = if mode == ViewMode::Source {
+        editor_core::deco::Mode::Source
+    } else {
+        editor_core::deco::Mode::LivePreview
+    };
+    let decos = decorate(doc, first..last, sels, deco_mode);
     for (i, b) in doc.blocks[first..last].iter().enumerate() {
         let root = b.tree.root();
         let (s, e) = (b.start + root.span.start as usize, b.start + root.span.end as usize);
@@ -517,20 +541,20 @@ fn editor(app: &App, dom: &mut Dom, parent: NodeId, pal: &Palette, info: &mut Vi
             NodeKind::Callout { .. } => "cm-line cm-callout",
             NodeKind::FrontMatter { .. } => "cm-line cm-frontmatter",
             NodeKind::ThematicBreak
-                if tab.mode != ViewMode::Source && !sels.iter().any(|x| x.head >= s && x.head <= e) =>
+                if mode != ViewMode::Source && !sels.iter().any(|x| x.head >= s && x.head <= e) =>
             {
                 "cm-line cm-hr"
             }
-            NodeKind::CommentBlock if tab.mode == ViewMode::Reading => continue,
+            NodeKind::CommentBlock if mode == ViewMode::Reading => continue,
             _ => "cm-line",
         };
         // Folded text: blocks inside a fold are skipped; a fold inside a block hides part of it.
-        let hidden = &tab.hidden.1;
+        let hidden: &[(usize, usize)] = if print { &[] } else { &tab.hidden.1 };
         if hidden.iter().any(|&(hs, he)| hs < s && he >= e) {
             continue;
         }
         let folded_here = hidden.iter().any(|&(hs, _)| hs >= s && hs <= e);
-        let rendered = match tab.mode {
+        let rendered = match mode {
             ViewMode::Source => false,
             ViewMode::Reading => true,
             ViewMode::LivePreview => !sels.iter().any(|x| x.start() <= e && x.end() >= s),
@@ -538,7 +562,7 @@ fn editor(app: &App, dom: &mut Dom, parent: NodeId, pal: &Palette, info: &mut Vi
         let src = buf.slice(s, e);
         if rendered
             && matches!(root.kind, NodeKind::FrontMatter { .. })
-            && crate::properties::render(app, dom, view, tab.mode, &src)
+            && crate::properties::render(app, dom, view, mode, &src)
         {
             continue;
         }
@@ -624,7 +648,7 @@ fn editor(app: &App, dom: &mut Dom, parent: NodeId, pal: &Palette, info: &mut Vi
         }
         code_spans(&b.tree, b.start, &src, s, &bv.map, pal, &mut spans);
         bv.node = dom.add(view, el.spans(spans));
-        if matches!(root.kind, NodeKind::Heading { level, .. } if level > 0) {
+        if !print && matches!(root.kind, NodeKind::Heading { level, .. } if level > 0) {
             let folded = tab.folds.is_folded(b.start);
             dom.add(
                 bv.node,
@@ -636,7 +660,7 @@ fn editor(app: &App, dom: &mut Dom, parent: NodeId, pal: &Palette, info: &mut Vi
             );
         }
         info.blocks.push(bv);
-        if tab.mode != ViewMode::Source {
+        if mode != ViewMode::Source {
             embeds(app, dom, view, &tab.path, &b.tree, &buf.slice(b.start, b.end()));
         }
         if rendered {

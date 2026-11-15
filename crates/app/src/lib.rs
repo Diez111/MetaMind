@@ -14,6 +14,7 @@ pub mod media;
 pub mod mentions;
 pub mod menu;
 pub mod panes;
+pub mod pdf;
 pub mod plugins;
 pub mod popover;
 pub mod properties;

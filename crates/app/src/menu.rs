@@ -273,6 +273,7 @@ impl App {
                         self.put_clip(p);
                     }
                 }
+                "workspace:export-pdf" => self.export_pdf(),
                 "file-explorer:reveal-active-file" => self.reveal_in_explorer(),
                 "editor:copy" => self.copy(false),
                 "editor:cut" => self.copy(true),
@@ -644,6 +645,9 @@ fn tab_items(b: &mut Builder<'_>, i: usize) {
         b.item("link", "Copy link", format!("copy-link:{p}"));
         b.item("clipboard", "Copy path", format!("copy-path:{p}"));
         b.item("folder", "Show in system explorer", format!("reveal:{p}"));
+        if i == b.app.active {
+            b.item("book", "Export to PDF", "workspace:export-pdf");
+        }
         b.separator();
     }
     b.item("arrow-up", "Reopen closed tab", "workspace:undo-close-pane");

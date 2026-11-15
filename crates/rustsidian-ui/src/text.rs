@@ -349,4 +349,90 @@ impl Fonts {
             f(x, y, w, h, Color { r: col.r(), g: col.g(), b: col.b(), a: col.a() });
         });
     }
+
+    /// The shaped glyphs of laid-out text, for vector output such as PDF. Each run is one line's
+    /// glyphs in a single font, size and color.
+    pub fn glyph_runs(
+        &mut self,
+        text: &str,
+        spans: &[Span],
+        style: &TextStyle,
+        width: Option<f32>,
+    ) -> Vec<GlyphRun> {
+        if text.is_empty() {
+            return Vec::new();
+        }
+        let k = self.buffer(text, spans, style, width);
+        let buf = &self.cache[&k];
+        let mut out: Vec<GlyphRun> = Vec::new();
+        for run in buf.layout_runs() {
+            let mut cur: Option<GlyphRun> = None;
+            for g in run.glyphs {
+                let color =
+                    g.color_opt.map_or(style.color, |c| Color { r: c.r(), g: c.g(), b: c.b(), a: c.a() });
+                let font = FontRef(g.font_id, g.font_weight);
+                let slant = g.cache_key_flags.contains(cosmic_text::CacheKeyFlags::FAKE_ITALIC);
+                let same = cur.as_ref().is_some_and(|r| {
+                    r.font == font && r.size == g.font_size && r.color == color && r.synthetic_italic == slant
+                });
+                if !same {
+                    out.extend(cur.take());
+                    cur = Some(GlyphRun {
+                        font,
+                        size: g.font_size,
+                        color,
+                        synthetic_italic: slant,
+                        baseline: run.line_y + g.y,
+                        text: run.text.to_string(),
+                        glyphs: Vec::new(),
+                    });
+                }
+                if let Some(r) = cur.as_mut() {
+                    r.glyphs.push(PlacedGlyph {
+                        id: g.glyph_id,
+                        x: g.x + g.x_offset * g.font_size,
+                        y_offset: g.y_offset * g.font_size,
+                        advance: g.w,
+                        text: g.start..g.end,
+                    });
+                }
+            }
+            out.extend(cur);
+        }
+        out
+    }
+
+    /// The font file behind a glyph run and the face's index within it.
+    pub fn font_data(&mut self, font: FontRef) -> Option<(Vec<u8>, u32)> {
+        let index = self.system.db().face(font.0)?.index;
+        let data = self.system.get_font(font.0, font.1)?.data().to_vec();
+        Some((data, index))
+    }
+}
+
+/// A font face as cosmic-text resolved it; pass it to [`Fonts::font_data`].
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct FontRef(cosmic_text::fontdb::ID, cosmic_text::fontdb::Weight);
+
+/// Glyphs laid out on one line in one font. Positions are relative to the text origin.
+#[derive(Clone, Debug)]
+pub struct GlyphRun {
+    pub font: FontRef,
+    pub size: f32,
+    pub color: Color,
+    /// The face has no italic, so the glyphs are slanted (14 degrees) to fake one.
+    pub synthetic_italic: bool,
+    pub baseline: f32,
+    /// The line's text; each glyph's `text` range indexes into it.
+    pub text: String,
+    pub glyphs: Vec<PlacedGlyph>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PlacedGlyph {
+    pub id: u16,
+    pub x: f32,
+    pub y_offset: f32,
+    pub advance: f32,
+    pub text: std::ops::Range<usize>,
 }

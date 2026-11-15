@@ -109,6 +109,7 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("file-explorer:new-folder", "Create new folder", ""),
     ("workspace:edit-file-title", "Rename file", "F2"),
     ("workspace:copy-path", "Copy file path", ""),
+    ("workspace:export-pdf", "Export to PDF", ""),
     ("file-explorer:reveal-active-file", "Reveal current file in navigation", ""),
     ("file-explorer:collapse-all", "Files: Collapse or expand all folders", ""),
     ("editor:save-file", "Save current file", "Ctrl+S"),

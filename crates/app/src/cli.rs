@@ -14,7 +14,7 @@ USAGE:
   rustsidian [open] <vault> [note]              Open a vault in a window
   rustsidian index <vault>                      Build or refresh the index and print statistics
   rustsidian search <vault> <query> [--limit N] Search with the query syntax
-  rustsidian export <vault> <note> [--format html|md] [-o <path>]
+  rustsidian export <vault> <note> [--format html|md|pdf] [-o <path>]
   rustsidian doctor <vault>                     Diagnose configuration, index and notes
   rustsidian screenshot <vault> <out.png> [--note <path>] [--size WxH] [--keys \"Ctrl+P ...\"] [--type <text>] [--run <command id>,...] [--light]
   rustsidian welcome-screenshot <out.png> [--run <action>,...] [--type <text>]
@@ -25,7 +25,7 @@ USAGE:
 OPTIONS:
   --profile    Print a start-up timing breakdown (with `open` and `index`)
 
-Not implemented in this build: `rustsidian plugin`, PDF export, `--config-dir`, portable mode.";
+Not implemented in this build: `rustsidian plugin`, `--config-dir`, portable mode.";
 
 struct Args {
     pos: Vec<String>,
@@ -379,7 +379,22 @@ fn export(
                 Err(e) => fail(&format!("export: {e}")),
             }
         }
-        "pdf" => fail("export: PDF export is not implemented in this build; export HTML and print it"),
+        "pdf" => {
+            let dest =
+                dest.map(PathBuf::from).unwrap_or_else(|| PathBuf::from(format!("{}.pdf", path::stem(&rel))));
+            let mut app = match App::open(root) {
+                Ok(app) => app,
+                Err(e) => return fail(&format!("export: {e}")),
+            };
+            app.open_note(&rel);
+            match crate::pdf::export(&mut app, &mut rustsidian_ui::Fonts::new(), &dest) {
+                Ok(pages) => {
+                    let _ = writeln!(out, "wrote {} ({pages} pages)", dest.display());
+                    Outcome::Exit(0)
+                }
+                Err(e) => fail(&format!("export: {e}")),
+            }
+        }
         other => fail(&format!("export: unknown format `{other}`")),
     }
 }

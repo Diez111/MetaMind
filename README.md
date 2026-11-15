@@ -85,7 +85,7 @@ copied to `~/.local/share/applications` and `~/.local/share/icons/hicolor/scalab
 
 ## Build from source
 
-Requires stable Rust 1.85 or later. Every dependency is pure Rust.
+Requires stable Rust 1.92 or later. Every dependency is pure Rust.
 
 ```sh
 git clone https://github.com/siddarth1872004/RustSidian && cd RustSidian

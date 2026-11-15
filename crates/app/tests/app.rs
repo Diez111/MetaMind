@@ -217,11 +217,10 @@ fn cli_commands() {
         page.contains("<h1 data-heading=\"Home\">") && page.contains("href=\"dir/Second.html\""),
         "{page}"
     );
-    assert_eq!(
-        call(&["export", &v, "Home", "--format", "pdf"]).0,
-        2,
-        "PDF export is reported as not implemented"
-    );
+    let pdf = d.path().join("out.pdf");
+    let (code, out) = call(&["export", &v, "Home", "--format", "pdf", "-o", &pdf.to_string_lossy()]);
+    assert_eq!(code, 0, "{out}");
+    assert!(fs::read(&pdf).unwrap().starts_with(b"%PDF-"));
     let (code, out) = call(&["doctor", &v]);
     assert_eq!(code, 0, "{out}");
     assert_eq!(call(&["plugin", "new"]).0, 2);

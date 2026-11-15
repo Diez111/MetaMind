@@ -9,7 +9,7 @@ pub mod text;
 
 pub use dom::{Dom, El, NodeId, Style};
 pub use scene::{render, Cmd, Image, Rect, Scene};
-pub use text::{Fonts, Span, TextStyle};
+pub use text::{FontRef, Fonts, GlyphRun, PlacedGlyph, Span, TextStyle};
 pub use theme_engine::{Color, Env, Theme};
 pub use tiny_skia::{Color as SkColor, Pixmap};
 
