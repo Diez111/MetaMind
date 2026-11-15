@@ -19,7 +19,7 @@ pub struct Media {
 }
 
 impl Media {
-    /// The decoded image at a vault path (PNG, JPEG, GIF or WebP). Decoding happens on the calling
+    /// The decoded image at a vault path (PNG, JPEG, GIF, WebP or SVG). Decoding happens on the calling
     /// thread the first time the image is shown.
     pub fn image(&mut self, store: &VaultStore, rel: &str) -> Option<Image> {
         let f = store.index.get(rel)?;

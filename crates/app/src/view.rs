@@ -827,7 +827,7 @@ fn embeds(app: &App, dom: &mut Dom, view: NodeId, source: &str, tree: &md_engine
                 El::div().class("markdown-embed-title").text(path::stem(rel)).action(action.clone()),
             );
             embedded_blocks(dom, embed, section, &action, &palette(app));
-        } else if ["png", "jpg", "jpeg", "gif", "webp"]
+        } else if ["png", "jpg", "jpeg", "gif", "webp", "svg"]
             .iter()
             .any(|e| path::extension(rel).eq_ignore_ascii_case(e))
         {

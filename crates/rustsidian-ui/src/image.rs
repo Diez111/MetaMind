@@ -1,9 +1,9 @@
-//! Decoding PNG, JPEG, GIF and WebP files into pixmaps. The format is taken from the file's
+//! Decoding PNG, JPEG, GIF, WebP and SVG files into pixmaps. The format is taken from the file's
 //! first bytes, not its name. GIF shows its first frame.
 
 use crate::scene::Image;
 use std::io::Cursor;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tiny_skia::{IntSize, Pixmap, Transform};
 
 /// Larger images are refused before their pixels are allocated.
@@ -20,6 +20,8 @@ impl Image {
             gif(bytes)?
         } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
             webp(bytes)?
+        } else if is_svg(bytes) {
+            return Some(Image(Arc::new(svg(bytes, max_side)?)));
         } else {
             return None;
         };
@@ -102,6 +104,37 @@ fn webp(bytes: &[u8]) -> Option<Pixmap> {
     from_rgba(rgba, w, h)
 }
 
+fn is_svg(bytes: &[u8]) -> bool {
+    let head = &bytes[..bytes.len().min(4096)];
+    let text = String::from_utf8_lossy(head);
+    let text = text.trim_start_matches('\u{feff}').trim_start();
+    text.starts_with('<') && text.contains("<svg")
+}
+
+/// Fonts for text inside SVG files, loaded the first time one is drawn.
+fn svg_fonts() -> Arc<resvg::usvg::fontdb::Database> {
+    static FONTS: OnceLock<Arc<resvg::usvg::fontdb::Database>> = OnceLock::new();
+    FONTS
+        .get_or_init(|| {
+            let mut db = resvg::usvg::fontdb::Database::new();
+            db.load_system_fonts();
+            Arc::new(db)
+        })
+        .clone()
+}
+
+/// Draw an SVG at its own size, or smaller so that neither side exceeds `max_side`.
+fn svg(bytes: &[u8], max_side: u32) -> Option<Pixmap> {
+    let opts = resvg::usvg::Options { fontdb: svg_fonts(), ..Default::default() };
+    let tree = resvg::usvg::Tree::from_data(bytes, &opts).ok()?;
+    let size = tree.size();
+    let k = (max_side.max(1) as f32 / size.width().max(size.height())).min(1.0);
+    let (w, h) = ((size.width() * k).ceil().max(1.0) as u32, (size.height() * k).ceil().max(1.0) as u32);
+    let mut p = Pixmap::new(w, h)?;
+    resvg::render(&tree, Transform::from_scale(k, k), &mut p.as_mut());
+    Some(p)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,6 +188,18 @@ mod tests {
         assert_eq!(img.size(), (8, 8));
         let (r, g, b, a) = pixel(&img, 3, 5);
         assert!(r.abs_diff(128) <= 1 && r == g && g == b && a == 255, "{:?}", (r, g, b, a));
+    }
+
+    #[test]
+    fn svg_at_own_size_and_scaled_down() {
+        let svg = br##"<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="20" height="20" fill="#00ff00"/></svg>"##;
+        let img = Image::decode(svg, 100).unwrap();
+        assert_eq!(img.size(), (40, 20));
+        assert_eq!(pixel(&img, 5, 5), (0, 255, 0, 255));
+        assert_eq!(pixel(&img, 30, 5).3, 0);
+        assert_eq!(Image::decode(svg, 10).unwrap().size(), (10, 5));
+        assert!(Image::decode(b"<svg", 100).is_none());
     }
 
     #[test]

@@ -16,3 +16,4 @@ cosmic-text = { version = "0.19", default-features = false, features = ["std", "
 zune-jpeg = "0.5.15"
 gif = "0.14.2"
 image-webp = "0.2.4"
+resvg = { version = "0.50.0", default-features = false, features = ["text", "system-fonts"] }
