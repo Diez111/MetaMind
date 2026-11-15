@@ -58,7 +58,7 @@ pub fn palette(app: &App) -> Palette {
     let c = app.theme.compute(
         &Body(app.dark),
         &[class],
-        Env { dark: app.dark, reduced_motion: false },
+        Env { dark: app.dark, reduced_motion: app.reduced_motion },
         None,
         None,
     );
@@ -1559,6 +1559,36 @@ pub fn caret_rect(app: &App, dom: &Dom, info: &ViewInfo, fonts: &mut Fonts) -> O
     let d = bv.to_display(head);
     let r = *fonts.range_rects(&bv.display, &node.el.spans, &node.style.text, Some(cb.w), d, d).first()?;
     Some(Rect::new(cb.x + r.x, cb.y + r.y, r.w, r.h))
+}
+
+/// The input method's uncommitted text, drawn over the caret in the editor's font size.
+pub fn add_preedit(app: &App, dom: &mut Dom, info: &ViewInfo, caret: Rect) -> Option<NodeId> {
+    if app.preedit.is_empty() {
+        return None;
+    }
+    let head = app.tab()?.editor.buf.sels[0].head;
+    let bv = info.blocks.iter().find(|b| head >= b.src_start && head <= b.src_end)?;
+    let size = dom.nodes[bv.node].style.text.size;
+    let el = El::div().class("ime-preedit").text(app.preedit.clone()).style(&format!(
+        "left: {:.1}px; top: {:.1}px; height: {:.1}px; line-height: {:.1}px; font-size: {size:.1}px",
+        caret.x, caret.y, caret.h, caret.h
+    ));
+    Some(dom.add(0, el))
+}
+
+/// After layout: the underline that marks text as still composing, and the input method's cursor.
+pub fn mark_preedit(app: &App, dom: &mut Dom, id: NodeId, fonts: &mut Fonts) {
+    let text = app.preedit.as_str();
+    let style = dom.nodes[id].style.text.clone();
+    let rects = fonts.range_rects(text, &[], &style, None, 0, text.len());
+    let pal = palette(app);
+    let mut over: Vec<_> =
+        rects.iter().map(|r| (Rect::new(r.x, r.y + r.h - 3.0, r.w, 1.5), pal.caret)).collect();
+    let at = app.preedit_cursor.unwrap_or(text.len()).min(text.len());
+    if let Some(r) = fonts.range_rects(text, &[], &style, None, at, at).first() {
+        over.push((Rect::new(r.x, r.y + 2.0, 1.5, r.h - 4.0), pal.caret));
+    }
+    dom.nodes[id].overlays_top.extend(over);
 }
 
 const SUGGEST_W: f32 = 300.0;

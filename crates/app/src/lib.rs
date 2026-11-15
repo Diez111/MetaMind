@@ -13,6 +13,7 @@ pub mod icons;
 pub mod media;
 pub mod mentions;
 pub mod menu;
+pub mod motion;
 pub mod panes;
 pub mod pdf;
 pub mod plugins;
@@ -40,6 +41,8 @@ use theme_engine::Env;
 pub struct Frame {
     pub dom: Dom,
     pub info: view::ViewInfo,
+    /// Where the editor caret is, for placing the input method's candidate window.
+    pub caret: Option<rustsidian_ui::Rect>,
 }
 
 /// Build, style, lay out and paint the window into `pixmap`.
@@ -50,17 +53,23 @@ pub fn render(app: &mut App, fonts: &mut Fonts, pixmap: &mut Pixmap, scale: f32)
     app.animate_changes();
     app.window_w = pixmap.width() as f32 / scale;
     let (mut dom, info) = view::build(app, pixmap.height() as f32 / scale);
-    let env = Env { dark: app.dark, reduced_motion: false };
+    let env = Env { dark: app.dark, reduced_motion: app.reduced_motion };
     dom.style(&app.theme, env);
     dom.layout(fonts, pixmap.width() as f32 / scale, pixmap.height() as f32 / scale);
-    // The suggestion sits at the caret, which is only known after layout.
-    if let Some(caret) = app.suggest.as_ref().and_then(|_| view::caret_rect(app, &dom, &info, fonts)) {
+    // The suggestion and the composing text sit at the caret, which is only known after layout.
+    let caret = view::caret_rect(app, &dom, &info, fonts);
+    let mut preedit = None;
+    if let Some(caret) = caret.filter(|_| app.suggest.is_some() || !app.preedit.is_empty()) {
         view::add_suggest(app, &mut dom, caret, pixmap.height() as f32 / scale);
+        preedit = view::add_preedit(app, &mut dom, &info, caret);
         dom.style(&app.theme, env);
         dom.layout(fonts, pixmap.width() as f32 / scale, pixmap.height() as f32 / scale);
     }
     icons::paint(&mut dom);
     view::add_carets(app, &mut dom, &info, fonts);
+    if let Some(id) = preedit {
+        view::mark_preedit(app, &mut dom, id, fonts);
+    }
     view::add_graph(app, &mut dom, &info);
     canvasview::add_canvas(app, &mut dom, &info);
     rich::paint(&mut dom, &info.rich, fonts);
@@ -68,7 +77,7 @@ pub fn render(app: &mut App, fonts: &mut Fonts, pixmap: &mut Pixmap, scale: f32)
     let clear = dom.nodes[0].style.background;
     rustsidian_ui::render(&scene, fonts, pixmap, scale, clear);
     app.last_frame_us = t.elapsed().as_micros() as u64;
-    Frame { dom, info }
+    Frame { dom, info, caret }
 }
 
 impl App {

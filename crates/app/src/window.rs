@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use vault_core::fsio::now_ms;
 use vault_core::watch::VaultWatcher;
 use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
+use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event::{ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key as WKey, ModifiersState, NamedKey};
@@ -50,6 +50,8 @@ struct Win {
     started: Instant,
     profile: bool,
     first_frame_done: bool,
+    /// The caret rectangle last given to the input method.
+    ime_area: Option<rustsidian_ui::Rect>,
     proxy: EventLoopProxy<UserEvent>,
     access: Option<accesskit_winit::Adapter>,
     /// Counts opened vaults; a watcher stops when its generation is no longer current.
@@ -104,6 +106,13 @@ impl Win {
         }
         let _ = buffer.present();
         self.update_access();
+        let caret = self.frame.as_ref().and_then(|f| f.caret);
+        if caret != self.ime_area {
+            self.ime_area = caret;
+            if let (Some(c), Some(w)) = (caret, &self.window) {
+                w.set_ime_cursor_area(LogicalPosition::new(c.x, c.y), LogicalSize::new(c.w.max(1.0), c.h));
+            }
+        }
         let Some(app) = &mut self.app else { return };
         if !self.first_frame_done {
             self.first_frame_done = true;
@@ -225,7 +234,9 @@ impl Win {
         self.app = None;
         self.frame = None;
         let mut welcome = Welcome::new();
-        welcome.intro();
+        if !rustsidian_app::motion::os_reduced_motion() {
+            welcome.intro();
+        }
         self.welcome = Some(welcome);
         if let Some(w) = &self.window {
             w.set_title(&self.title());
@@ -421,12 +432,30 @@ impl ApplicationHandler<UserEvent> for Win {
                 el.exit();
             }
             WindowEvent::Focused(false) => app.save_all(),
+            // The preference has no change event on every OS, so it is re-read on focus.
+            WindowEvent::Focused(true) => {
+                let reduced = rustsidian_app::motion::os_reduced_motion();
+                if reduced != app.reduced_motion {
+                    app.set_reduced_motion(reduced);
+                    self.request_redraw();
+                }
+            }
             WindowEvent::DroppedFile(file) => {
                 app.import_files(&[&file]);
                 self.request_redraw();
             }
+            WindowEvent::Ime(Ime::Preedit(text, cursor)) => {
+                app.preedit = text;
+                app.preedit_cursor = cursor.map(|(_, end)| end);
+                self.request_redraw();
+            }
             WindowEvent::Ime(Ime::Commit(text)) => {
+                app.preedit.clear();
                 app.text_input(&text);
+                self.request_redraw();
+            }
+            WindowEvent::Ime(Ime::Disabled) => {
+                app.preedit.clear();
                 self.request_redraw();
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
@@ -576,7 +605,7 @@ fn load(vault: &Path, note: Option<&str>, profile: bool, started: Instant) -> Re
         eprintln!("[profile] vault opened in {:?} ({} files)", started.elapsed(), app.store.index.len());
     }
     app.defer_graph = true;
-    app.anims.enabled = true;
+    app.set_reduced_motion(rustsidian_app::motion::os_reduced_motion());
     app.system_clipboard = true;
     if rustsidian_app::update::auto_check_due(now_ms()) {
         app.update.start_check(false);
@@ -636,6 +665,7 @@ pub fn run(vault: Option<&Path>, note: Option<&str>, profile: bool) -> i32 {
         started,
         profile,
         first_frame_done: false,
+        ime_area: None,
         proxy: event_loop.create_proxy(),
         access: None,
         generation: Arc::new(AtomicU64::new(0)),

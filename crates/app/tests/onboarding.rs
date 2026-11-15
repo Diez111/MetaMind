@@ -206,3 +206,52 @@ fn app_icon_is_opaque_inside_and_clear_at_the_corners() {
         assert_eq!(px[mid + 3], 255, "centre is opaque");
     }
 }
+
+#[test]
+fn reduced_motion_stops_animations_and_reaches_themes() {
+    let d = vault();
+    let w = |p: &str, t: &str| {
+        fs::create_dir_all(d.path().join(p).parent().unwrap()).unwrap();
+        fs::write(d.path().join(p), t).unwrap();
+    };
+    w(
+        ".obsidian/snippets/m.css",
+        "@media (prefers-reduced-motion: reduce) { body { --text-accent: #123456 } }",
+    );
+    w(".obsidian/appearance.json", r#"{"enabledCssSnippets":["m"]}"#);
+    let mut app = App::open(d.path()).unwrap();
+    let still = rustsidian_app::view::palette(&app).accent;
+    app.set_reduced_motion(true);
+    assert_ne!(rustsidian_app::view::palette(&app).accent, still);
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(800, 600).unwrap();
+    render(&mut app, &mut fonts, &mut pm, 1.0);
+    app.run("app:toggle-left-sidebar");
+    render(&mut app, &mut fonts, &mut pm, 1.0);
+    assert!(!app.anims.active());
+    app.set_reduced_motion(false);
+    app.run("app:toggle-left-sidebar");
+    render(&mut app, &mut fonts, &mut pm, 1.0);
+    assert!(app.anims.active());
+}
+
+#[test]
+fn ime_preedit_shows_at_caret_until_committed() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("open:B.md");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(800, 600).unwrap();
+    let caret = render(&mut app, &mut fonts, &mut pm, 1.0).caret.unwrap();
+    app.preedit = "にほん".into();
+    app.preedit_cursor = Some(3);
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let n = frame.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == "ime-preedit")).unwrap();
+    assert_eq!(n.el.text.as_deref(), Some("にほん"));
+    assert_eq!((n.rect.x, n.rect.y), (caret.x, caret.y));
+    assert_eq!(n.overlays_top.len(), 2);
+    assert_eq!(app.tab().unwrap().editor.buf.text(), "b\n");
+    app.preedit.clear();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    assert!(!frame.dom.nodes.iter().any(|n| n.el.classes.iter().any(|c| c == "ime-preedit")));
+}

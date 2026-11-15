@@ -335,6 +335,12 @@ pub struct App {
     pub dark: bool,
     /// The OS light/dark preference, when the window system reports one.
     pub system_dark: Option<bool>,
+    /// The OS asks for minimal motion: themes see `prefers-reduced-motion`, panels stop animating.
+    pub reduced_motion: bool,
+    /// Text the input method is composing, not yet part of the note.
+    pub preedit: String,
+    /// The input method's cursor as a byte offset into `preedit`.
+    pub preedit_cursor: Option<usize>,
     pub tabs: Vec<Tab>,
     pub active: usize,
     pub left_open: bool,
@@ -521,6 +527,9 @@ impl App {
             theme,
             dark,
             system_dark: None,
+            reduced_motion: false,
+            preedit: String::new(),
+            preedit_cursor: None,
             keymap,
             config,
             tabs: Vec::new(),
@@ -1002,6 +1011,11 @@ impl App {
         if self.config.color_scheme().is_none() {
             self.dark = dark.unwrap_or(true);
         }
+    }
+
+    pub fn set_reduced_motion(&mut self, on: bool) {
+        self.reduced_motion = on;
+        self.anims.enabled = !on;
     }
 
     /// Indices of the best fuzzy matches of `query` among `names`.
