@@ -75,7 +75,7 @@ fn is_hidden(name: &str) -> bool {
     name.starts_with('.')
 }
 
-/// Walk the vault, skipping dot-files and dot-folders like Obsidian does.
+/// Walk the vault, skipping dot-files and dot-folders.
 fn walk(root: &Path) -> Vec<(String, Stamp)> {
     fn dir(abs: &Path, rel: &str) -> Vec<(String, Stamp)> {
         let Ok(rd) = fs::read_dir(abs) else { return Vec::new() };

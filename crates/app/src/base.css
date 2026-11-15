@@ -1,4 +1,4 @@
-/* Rustsidian base theme. Variable and class names follow Obsidian's documented ones so that
+/* Rustsidian base theme. Variable and class names follow the community theme conventions so that
    community themes and snippets apply; the values are Rustsidian's own. */
 body {
   --font-text-size: 16px;
@@ -170,6 +170,34 @@ body {
 .graph-control { padding: 1px 8px; border-radius: 10px; border: 1px solid var(--background-modifier-border); color: var(--text-faint); white-space: nowrap }
 .graph-control:hover { color: var(--text-normal) }
 .graph-control.is-enabled { color: var(--text-normal); background-color: var(--background-modifier-hover) }
+.graph-controls-button { position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; border-radius: var(--radius-s); color: var(--text-muted); background-color: var(--background-secondary) }
+.graph-controls-button:hover { color: var(--text-normal) }
+.graph-controls-panel { position: absolute; top: 10px; right: 10px; width: 250px; overflow-y: auto; display: flex; flex-direction: column; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); font-size: var(--font-ui-small); color: var(--text-normal) }
+.graph-control-section { padding: 6px 14px 10px 8px; border-bottom: 1px solid var(--background-modifier-border); display: flex; flex-direction: column }
+.graph-control-section.is-collapsed { padding-bottom: 6px }
+.graph-control-section-header { display: flex; align-items: center; gap: 2px }
+.graph-control-section-title { display: flex; align-items: center; gap: 4px; flex-grow: 1; font-weight: 600; padding: 4px 0; color: var(--text-normal) }
+.graph-control-section-title .svg-icon { color: var(--text-muted) }
+.graph-control-section-body { display: flex; flex-direction: column; gap: 8px; padding: 6px 0 0 8px }
+.graph-setting { display: flex; align-items: center; justify-content: space-between; gap: 8px }
+.graph-setting.mod-end { justify-content: flex-end }
+.graph-setting-name { color: var(--text-normal) }
+.graph-slider-label { margin-top: 4px }
+.graph-slider { display: flex; align-items: center; gap: 8px }
+.graph-slider-value { width: 38px; flex-shrink: 0; color: var(--text-muted); font-size: var(--font-ui-smaller) }
+.graph-slider-track { display: flex; align-items: center; flex-grow: 1; height: 18px }
+.graph-slider-fill { height: 4px; border-radius: 2px; background-color: var(--interactive-accent) }
+.graph-slider-rest { height: 4px; border-radius: 2px; background-color: var(--background-modifier-border) }
+.graph-slider-thumb { width: 16px; height: 16px; flex-shrink: 0; border-radius: 8px; background-color: #ffffff; border: 1px solid var(--background-modifier-border) }
+.graph-input { display: flex; align-items: center; gap: 6px; flex-grow: 1; padding: 5px 8px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); background-color: var(--background-primary); color: var(--text-muted) }
+.graph-input.is-editing { border-color: var(--interactive-accent) }
+.graph-input-text { color: var(--text-normal); white-space: nowrap; overflow: hidden }
+.graph-input-text.is-placeholder { color: var(--text-faint) }
+.graph-color-group { display: flex; align-items: center; gap: 6px }
+.graph-color-swatch { width: 18px; height: 18px; flex-shrink: 0; border-radius: 9px; border: 1px solid var(--background-modifier-border) }
+.graph-button { padding: 5px 12px; border-radius: var(--radius-s); border: 1px solid var(--background-modifier-border); background-color: var(--interactive-normal, var(--background-secondary-alt)); color: var(--text-normal); white-space: nowrap }
+.graph-button:hover { background-color: var(--interactive-hover, var(--background-modifier-hover)) }
+.graph-button.mod-wide { text-align: center }
 body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-color-3: 224, 222, 113; --canvas-color-4: 68, 207, 110; --canvas-color-5: 83, 223, 221; --canvas-color-6: 168, 130, 255 }
 .canvas-wrapper { padding: 0; overflow: hidden; background-color: var(--canvas-background, var(--background-primary)) }
 .canvas-view-colors { display: none }

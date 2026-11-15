@@ -60,13 +60,20 @@ impl App {
         if self.menu_click(frame, x, y) {
             return;
         }
-        if let Some((_, action)) = frame.dom.action_at(x, y) {
+        if let Some((node, action)) = frame.dom.action_at(x, y) {
             let action = action.to_string();
             if !action.starts_with("prop:") && !action.starts_with("settings:") {
                 self.commit_prop_edit();
             }
+            if !action.starts_with("graph:edit:") {
+                self.graph_end_edit();
+            }
+            if let Some(key) = action.strip_prefix("graph:slider:") {
+                return self.graph_slider_press(key, frame.dom.nodes[node].rect, x);
+            }
             return self.run(&action);
         }
+        self.graph_end_edit();
         if self.prompt.is_some() {
             return self.run("prompt:dismiss");
         }
@@ -90,6 +97,9 @@ impl App {
 
     /// Extend the selection while dragging with the button held.
     pub fn drag(&mut self, frame: &Frame, fonts: &mut Fonts, x: f32, y: f32) {
+        if self.graph_slider_drag(x) {
+            return;
+        }
         if let (Some(rect), Some(g)) = (graph_rect(frame), &mut self.graph_view) {
             return g.drag(&rect, x, y);
         }
@@ -108,7 +118,7 @@ impl App {
     pub fn wheel(&mut self, frame: &Frame, x: f32, y: f32, lines: f32) {
         self.menu = None;
         if let (Some(rect), Some(g)) = (graph_rect(frame), &mut self.graph_view) {
-            if rect.contains(x, y) {
+            if rect.contains(x, y) && !in_graph_panel(frame, x, y) {
                 return g.wheel(&rect, x, y, lines / 3.0);
             }
         }
@@ -143,6 +153,9 @@ impl App {
 
     /// The left button was released.
     pub fn release(&mut self) {
+        if self.graph_slider_release() {
+            return;
+        }
         if let Some(kind) = self.graph_view.as_mut().and_then(graphview::GraphView::release) {
             self.graph_clicked(kind);
         }
@@ -155,11 +168,19 @@ impl App {
         let changed = action != self.hover_action;
         self.hover_action = action;
         let graph = match (graph_rect(frame), &mut self.graph_view) {
-            (Some(rect), Some(g)) => g.hover_at(&rect, x, y),
+            (Some(rect), Some(g)) => {
+                // Over the settings panel no node is hovered.
+                let x = if in_graph_panel(frame, x, y) { f32::NEG_INFINITY } else { x };
+                g.hover_at(&rect, x, y)
+            }
             _ => false,
         };
         graph || changed
     }
+}
+
+fn in_graph_panel(frame: &Frame, x: f32, y: f32) -> bool {
+    frame.info.graph_panel.is_some_and(|n| frame.dom.nodes[n].rect.contains(x, y))
 }
 
 /// The graph pane of a frame, when the graph is showing.

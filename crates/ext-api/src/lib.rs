@@ -1,4 +1,4 @@
-//! Stable, versioned host API for every extension kind (WASM plugins, scripts, Obsidian JS plugins).
+//! Stable, versioned host API for every extension kind (WASM plugins, scripts, JS plugins).
 //!
 //! Extensions talk to the app through one JSON call boundary: [`Api::call`] takes
 //! `{"method": "...", "params": {...}}` and returns `{"ok": ...}` or `{"error": "..."}`. The app

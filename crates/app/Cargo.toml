@@ -1,6 +1,6 @@
 [package]
 name = "rustsidian"
-description = "Rustsidian: an Obsidian-compatible knowledge base"
+description = "Rustsidian: a fast native Markdown knowledge base"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

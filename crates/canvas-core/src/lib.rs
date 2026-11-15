@@ -242,7 +242,7 @@ impl Edge {
 }
 
 impl Canvas {
-    /// Parse a `.canvas` file. An empty file is an empty canvas (Obsidian creates those).
+    /// Parse a `.canvas` file. An empty file is an empty canvas (other editors create those).
     pub fn parse(src: &str) -> Result<Canvas, Error> {
         if src.trim().is_empty() {
             return Ok(Canvas::default());
@@ -256,7 +256,7 @@ impl Canvas {
         Ok(Canvas { nodes, edges, extra: top })
     }
 
-    /// Serialize in Obsidian's layout: tab indentation at the top, one node or edge per line.
+    /// Serialize in the usual JSON Canvas layout: tab indentation at the top, one node or edge per line.
     pub fn to_json(&self) -> String {
         let mut out = String::from("{\n");
         let compact = |v: &Value| serde_json::to_string(v).unwrap_or_default();

@@ -68,7 +68,7 @@ pub fn atomic_write(path: &Path, data: &[u8]) -> io::Result<()> {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum TrashMode {
-    /// `.trash/` inside the vault (Obsidian's "Obsidian trash").
+    /// `.trash/` inside the vault (the "vault trash" option).
     #[default]
     Vault,
     /// The desktop trash (XDG trash on Linux). Falls back to the vault trash where unsupported.

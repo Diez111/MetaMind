@@ -40,7 +40,7 @@ impl FileEntry {
     }
 }
 
-/// How newly generated links are written. Mirrors Obsidian's "New link format".
+/// How newly generated links are written. The "New link format" setting.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum LinkFormat {
     #[default]

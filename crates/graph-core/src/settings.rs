@@ -1,4 +1,4 @@
-//! `graph.json`: Obsidian's graph view settings. Unknown keys are preserved by keeping the JSON
+//! `graph.json`: the graph view settings. Unknown keys are preserved by keeping the JSON
 //! document and reading/writing only the keys that are understood.
 
 use crate::layout::Forces;
@@ -152,7 +152,7 @@ mod tests {
 }"##;
 
     #[test]
-    fn reads_obsidian_graph_json_and_preserves_unknown_keys() {
+    fn reads_graph_json_and_preserves_unknown_keys() {
         let mut v: Value = serde_json::from_str(OBSIDIAN).unwrap();
         let mut s = GraphSettings::from_json(&v);
         assert_eq!(s.search, "tag:#project");

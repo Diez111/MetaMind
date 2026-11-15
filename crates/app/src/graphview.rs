@@ -11,6 +11,8 @@ use theme_engine::Color;
 
 const MAX_LABELS: usize = 300;
 const HIT_SLOP: f32 = 4.0;
+/// Width the settings panel takes from the right of the pane, with its margins.
+const PANEL_W: f32 = 270.0;
 /// Line pixels drawn per frame before links are sampled.
 const LINE_PIXEL_BUDGET: f32 = 3.0e6;
 
@@ -95,9 +97,74 @@ pub const COLOR_CLASSES: [&str; 9] = [
     "color-text",
 ];
 
+/// Collapsible sections of the settings panel: (`graph.json` key suffix, title).
+pub const SECTIONS: [(&str, &str); 4] =
+    [("filter", "Filters"), ("color-groups", "Groups"), ("display", "Display"), ("forces", "Forces")];
+
+pub struct Slider {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub min: f32,
+    pub max: f32,
+    pub step: f32,
+}
+
+const fn slider(key: &'static str, label: &'static str, min: f32, max: f32, step: f32) -> Slider {
+    Slider { key, label, min, max, step }
+}
+
+pub const DEPTH: Slider = slider("depth", "Depth", 1.0, 3.0, 1.0);
+pub const DISPLAY_SLIDERS: [Slider; 3] = [
+    slider("text-fade", "Text fade threshold", -3.0, 3.0, 0.01),
+    slider("node-size", "Node size", 0.1, 5.0, 0.01),
+    slider("line-size", "Link thickness", 0.1, 5.0, 0.01),
+];
+pub const FORCE_SLIDERS: [Slider; 4] = [
+    slider("center", "Center force", 0.0, 1.0, 0.01),
+    slider("repel", "Repel force", 0.0, 20.0, 0.01),
+    slider("link", "Link force", 0.0, 1.0, 0.01),
+    slider("distance", "Link distance", 30.0, 500.0, 1.0),
+];
+
+/// Colors given to new groups, in turn.
+pub const GROUP_COLORS: [u32; 8] =
+    [0xe93147, 0xe9973f, 0xe0de71, 0x44cf6e, 0x53dfdd, 0x027aff, 0xa882ff, 0xfa99cd];
+
+/// State of the settings panel over the graph.
+#[derive(Default)]
+pub struct Panel {
+    pub open: bool,
+    /// Indexed like `SECTIONS`.
+    pub collapsed: [bool; 4],
+    /// Text field being edited (`search` or `group:<i>`) and its text.
+    pub edit: Option<(String, String)>,
+    /// Slider being dragged and its track's x and width in window coordinates.
+    slider: Option<(&'static str, f32, f32)>,
+}
+
+impl Panel {
+    fn from_json(v: &serde_json::Value) -> Panel {
+        let flag = |k: &str| v.get(k).and_then(serde_json::Value::as_bool).unwrap_or(false);
+        Panel {
+            open: !flag("close"),
+            collapsed: SECTIONS.map(|(id, _)| flag(&format!("collapse-{id}"))),
+            ..Panel::default()
+        }
+    }
+
+    fn write_into(&self, v: &mut serde_json::Value) {
+        let Some(o) = v.as_object_mut() else { return };
+        o.insert("close".into(), (!self.open).into());
+        for ((id, _), c) in SECTIONS.iter().zip(self.collapsed) {
+            o.insert(format!("collapse-{id}"), c.into());
+        }
+    }
+}
+
 pub struct GraphView {
     pub graph: Arc<Graph>,
     pub settings: GraphSettings,
+    pub panel: Panel,
     /// Centre note of a local graph; `None` for the whole vault.
     pub local: Option<String>,
     pub depth: u32,
@@ -178,7 +245,79 @@ impl GraphView {
             hover: None,
             dirty: false,
             press: None,
+            panel: Panel::from_json(&app.config.graph.value),
         }
+    }
+
+    /// Restart the layout with the current forces: from the current positions, or from the
+    /// starting spiral when `fresh` (the Animate button).
+    pub fn restart(&mut self, fresh: bool) {
+        self.sync();
+        let n = self.graph.nodes.len();
+        let layout = if fresh {
+            Layout::new(n)
+        } else {
+            Layout::with_positions(n, self.pos.iter().copied().enumerate())
+        };
+        self.shared.lock().stop = true;
+        self.shared.wake.notify_all();
+        self.pos.clone_from(&layout.pos);
+        self.shared = start(&self.graph, layout, self.settings.forces);
+        self.press = None;
+    }
+
+    pub fn slider_value(&self, key: &str) -> f32 {
+        let s = &self.settings;
+        match key {
+            "depth" => self.depth as f32,
+            "text-fade" => s.text_fade,
+            "node-size" => s.node_size,
+            "line-size" => s.line_size,
+            "center" => s.forces.center_strength,
+            "repel" => s.forces.repel_strength,
+            "link" => s.forces.link_strength,
+            "distance" => s.forces.link_distance,
+            _ => 0.0,
+        }
+    }
+
+    fn set_slider(&mut self, key: &str, v: f32) {
+        if (self.slider_value(key) - v).abs() < f32::EPSILON {
+            return;
+        }
+        let s = &mut self.settings;
+        match key {
+            "depth" => {
+                self.depth = v as u32;
+                self.dirty = true;
+                return;
+            }
+            "text-fade" => s.text_fade = v,
+            "node-size" => s.node_size = v,
+            "line-size" => s.line_size = v,
+            "center" => s.forces.center_strength = v,
+            "repel" => s.forces.repel_strength = v,
+            "link" => s.forces.link_strength = v,
+            "distance" => s.forces.link_distance = v,
+            _ => return,
+        }
+        if FORCE_SLIDERS.iter().any(|f| f.key == key) {
+            self.restart(false);
+        }
+    }
+
+    /// Set the dragged slider from the pointer's x.
+    fn slide_to(&mut self, x: f32) {
+        let Some((key, x0, w)) = self.panel.slider else { return };
+        let Some(sl) =
+            std::iter::once(&DEPTH).chain(&DISPLAY_SLIDERS).chain(&FORCE_SLIDERS).find(|s| s.key == key)
+        else {
+            return;
+        };
+        // The thumb is 16 px wide, so its centre travels 8 px inside each end of the track.
+        let t = ((x - x0 - 8.0) / (w - 16.0).max(1.0)).clamp(0.0, 1.0);
+        let v = sl.min + (sl.max - sl.min) * t;
+        self.set_slider(key, ((v / sl.step).round() * sl.step).clamp(sl.min, sl.max));
     }
 
     /// Rebuild after the vault or the settings changed, keeping the positions of nodes that
@@ -246,9 +385,12 @@ impl GraphView {
                 hi[k] = hi[k].max(p[k]);
             }
         }
-        self.cam = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0];
+        // Keep the graph clear of the settings panel when the pane is wide enough for both.
+        let panel = if self.panel.open && rect.w - PANEL_W >= 300.0 { PANEL_W } else { 0.0 };
+        let free = rect.w - panel;
         let (w, h) = ((hi[0] - lo[0]).max(1.0), (hi[1] - lo[1]).max(1.0));
-        self.zoom = ((rect.w - 80.0).max(40.0) / w).min((rect.h - 80.0).max(40.0) / h).clamp(0.005, 1.5);
+        self.zoom = ((free - 80.0).max(40.0) / w).min((rect.h - 80.0).max(40.0) / h).clamp(0.005, 1.5);
+        self.cam = [(lo[0] + hi[0]) / 2.0 + panel / 2.0 / self.zoom, (lo[1] + hi[1]) / 2.0];
     }
 
     /// Where node `i` is drawn in a pane.
@@ -503,10 +645,137 @@ impl App {
         let Some(view) = &mut self.graph_view else { return };
         change(view);
         view.dirty = true;
+        self.save_graph();
+    }
+
+    fn save_graph(&mut self) {
+        let Some(view) = &self.graph_view else { return };
         view.settings.write_into(&mut self.config.graph.value);
+        view.panel.write_into(&mut self.config.graph.value);
         if let Err(e) = self.config.graph.save() {
             self.notice = Some(format!("Cannot save graph.json: {e}"));
         }
+    }
+
+    /// A press on a slider track (`key`) at window x.
+    pub(crate) fn graph_slider_press(&mut self, key: &str, track: Rect, x: f32) {
+        let Some(v) = &mut self.graph_view else { return };
+        let Some(sl) =
+            std::iter::once(&DEPTH).chain(&DISPLAY_SLIDERS).chain(&FORCE_SLIDERS).find(|s| s.key == key)
+        else {
+            return;
+        };
+        v.panel.slider = Some((sl.key, track.x, track.w));
+        v.slide_to(x);
+    }
+
+    /// Pointer moved with the button held. Returns true when a slider is being dragged.
+    pub(crate) fn graph_slider_drag(&mut self, x: f32) -> bool {
+        match &mut self.graph_view {
+            Some(v) if v.panel.slider.is_some() => {
+                v.slide_to(x);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Button released. Returns true when it ended a slider drag (the value is saved).
+    pub(crate) fn graph_slider_release(&mut self) -> bool {
+        let Some(v) = &mut self.graph_view else { return false };
+        if v.panel.slider.take().is_none() {
+            return false;
+        }
+        self.save_graph();
+        true
+    }
+
+    /// Put the edited text of a panel field into the settings.
+    fn graph_apply_edit(&mut self) {
+        let Some(v) = &mut self.graph_view else { return };
+        let Some((key, text)) = &v.panel.edit else { return };
+        match key.strip_prefix("group:").and_then(|i| i.parse::<usize>().ok()) {
+            Some(i) => {
+                if let Some(g) = v.settings.color_groups.get_mut(i) {
+                    g.query.clone_from(text);
+                }
+            }
+            None => v.settings.search.clone_from(text),
+        }
+        v.dirty = true;
+    }
+
+    /// Finish editing a panel field and save.
+    pub(crate) fn graph_end_edit(&mut self) {
+        if self.graph_view.as_mut().and_then(|v| v.panel.edit.take()).is_some() {
+            self.save_graph();
+        }
+    }
+
+    pub(crate) fn graph_text(&mut self, text: &str) -> bool {
+        let Some((_, buf)) = self.graph_view.as_mut().and_then(|v| v.panel.edit.as_mut()) else {
+            return false;
+        };
+        buf.push_str(text);
+        self.graph_apply_edit();
+        true
+    }
+
+    pub(crate) fn graph_key(&mut self, key: &crate::shell::Key) -> Option<bool> {
+        let (_, buf) = self.graph_view.as_mut()?.panel.edit.as_mut()?;
+        match key.key.as_str() {
+            "Backspace" if key.ctrl => buf.clear(),
+            "Backspace" => {
+                buf.pop();
+            }
+            "Enter" | "Escape" | "Tab" => {
+                self.graph_end_edit();
+                return Some(true);
+            }
+            _ if key.ctrl || key.alt => return None,
+            _ => return Some(true),
+        }
+        self.graph_apply_edit();
+        Some(true)
+    }
+
+    fn graph_panel_command(&mut self, command: &str) -> bool {
+        let Some(v) = &mut self.graph_view else { return command.starts_with("graph:") };
+        if let Some(id) = command.strip_prefix("graph:section:") {
+            if let Some(i) = SECTIONS.iter().position(|(s, _)| *s == id) {
+                v.panel.collapsed[i] ^= true;
+                self.save_graph();
+            }
+        } else if let Some(key) = command.strip_prefix("graph:edit:") {
+            let text = match key.strip_prefix("group:").and_then(|i| i.parse::<usize>().ok()) {
+                Some(i) => v.settings.color_groups.get(i).map(|g| g.query.clone()),
+                None => Some(v.settings.search.clone()),
+            };
+            v.panel.edit = text.map(|t| (key.to_string(), t));
+        } else if let Some(i) =
+            command.strip_prefix("graph:group-color:").and_then(|i| i.parse::<usize>().ok())
+        {
+            if let Some(g) = v.settings.color_groups.get_mut(i) {
+                let at = GROUP_COLORS.iter().position(|&c| c == g.rgb).map_or(0, |p| p + 1);
+                g.rgb = GROUP_COLORS[at % GROUP_COLORS.len()];
+                self.graph_setting(|_| {});
+            }
+        } else if let Some(i) =
+            command.strip_prefix("graph:group-remove:").and_then(|i| i.parse::<usize>().ok())
+        {
+            if i < v.settings.color_groups.len() {
+                v.panel.edit = None;
+                self.graph_setting(|v| {
+                    v.settings.color_groups.remove(i);
+                });
+            }
+        } else if command.starts_with("graph:slider:") || command == "graph:panel" {
+            // Sliders are set by pointer position in `App::click`; the panel background
+            // only stops clicks from reaching the graph.
+        } else {
+            return false;
+        }
+        true
     }
 
     /// Graph commands. Returns false when `command` is not one.
@@ -534,7 +803,41 @@ impl App {
                     v.auto_fit = true;
                 }
             }
-            _ => return false,
+            "graph:toggle-panel" => {
+                if let Some(v) = &mut self.graph_view {
+                    v.panel.open ^= true;
+                    v.panel.edit = None;
+                    self.save_graph();
+                }
+            }
+            "graph:reset-settings" => self.graph_setting(|v| {
+                let keep = std::mem::take(&mut v.settings);
+                v.settings.color_groups = keep.color_groups;
+                v.settings.search = keep.search;
+                v.settings.scale = keep.scale;
+                v.depth = 1;
+            }),
+            "graph:animate" => {
+                if let Some(v) = &mut self.graph_view {
+                    v.auto_fit = true;
+                    v.restart(true);
+                }
+            }
+            "graph:group-new" => {
+                if let Some(v) = &mut self.graph_view {
+                    let rgb = GROUP_COLORS[v.settings.color_groups.len() % GROUP_COLORS.len()];
+                    v.settings.color_groups.push(graph_core::ColorGroup {
+                        query: String::new(),
+                        rgb,
+                        alpha: 1.0,
+                    });
+                    v.panel.collapsed[1] = false;
+                    let i = v.settings.color_groups.len() - 1;
+                    v.panel.edit = Some((format!("group:{i}"), String::new()));
+                    self.save_graph();
+                }
+            }
+            _ => return self.graph_panel_command(command),
         }
         true
     }

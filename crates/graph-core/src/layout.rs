@@ -4,7 +4,7 @@
 use crate::model::Graph;
 use rayon::prelude::*;
 
-/// Mirrors the force sliders in Obsidian's graph view (`graph.json`).
+/// The force sliders of the graph view (`graph.json`).
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Forces {
     pub center_strength: f32,

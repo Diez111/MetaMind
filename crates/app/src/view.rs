@@ -167,6 +167,8 @@ pub struct ViewInfo {
     /// The graph pane and the hidden elements its colors are read from.
     pub graph: Option<NodeId>,
     pub graph_colors: Vec<NodeId>,
+    /// The graph's settings panel (or its gear button); input over it does not reach the graph.
+    pub graph_panel: Option<NodeId>,
     pub canvas: Option<NodeId>,
     pub canvas_colors: Vec<NodeId>,
     /// Math and diagram blocks painted after layout.
@@ -618,7 +620,7 @@ fn hide_quote_markers(src: &str, src_start: usize, decos: &mut Vec<Deco>) {
     }
 }
 
-/// Obsidian's default colour for a callout type.
+/// Default colour for a callout type.
 fn callout_color(kind: &str) -> Color {
     let (r, g, b) = match kind.trim().to_ascii_lowercase().as_str() {
         "abstract" | "summary" | "tldr" | "tip" | "hint" | "important" => (83, 223, 221),
@@ -787,7 +789,7 @@ fn embeds(app: &App, dom: &mut Dom, view: NodeId, source: &str, tree: &md_engine
             let Some(img) = app.media.borrow_mut().image(&app.store, rel) else { continue };
             let (iw, ih) = img.size();
             let (iw, ih) = (iw.max(1) as f32, ih.max(1) as f32);
-            // `![[image.png|100]]` and `|100x80` set the size, as in Obsidian.
+            // `![[image.png|100]]` and `|100x80` set the size.
             let mut dims = size.split('x').map(|v| v.trim().parse::<f32>().ok().filter(|v| *v > 0.0));
             let (w, h) = match (dims.next().flatten(), dims.next().flatten()) {
                 (Some(w), Some(h)) => (w, h),
@@ -891,8 +893,13 @@ pub fn logo() -> rustsidian_ui::Image {
     .clone()
 }
 
-/// Build the whole window.
-fn graph(g: &crate::graphview::GraphView, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
+fn graph(
+    g: &crate::graphview::GraphView,
+    dom: &mut Dom,
+    parent: NodeId,
+    info: &mut ViewInfo,
+    viewport_h: f32,
+) {
     let header = dom.add(parent, El::div().class("view-header graph-controls"));
     dom.add(
         header,
@@ -902,22 +909,14 @@ fn graph(g: &crate::graphview::GraphView, dom: &mut Dom, parent: NodeId, info: &
             g.graph.edges.len()
         )),
     );
-    let f = &g.settings.filters;
-    let mut chips = vec![
-        ("Tags", "graph:toggle-tags", f.show_tags),
-        ("Attachments", "graph:toggle-attachments", f.show_attachments),
-        ("Existing files only", "graph:toggle-unresolved", f.hide_unresolved),
-        ("Orphans", "graph:toggle-orphans", f.show_orphans),
-        ("Arrows", "graph:toggle-arrows", g.settings.show_arrows),
-    ];
-    let depth = format!("Depth {}", g.depth);
-    if g.local.is_some() {
-        chips.push((&depth, "graph:cycle-depth", true));
-    }
-    chips.push(("Fit", "graph:reset-view", g.auto_fit));
-    for (label, cmd, on) in chips {
-        dom.add(header, El::div().class("graph-control").class_if(on, "is-enabled").text(label).action(cmd));
-    }
+    dom.add(
+        header,
+        El::div()
+            .class("graph-control")
+            .class_if(g.auto_fit, "is-enabled")
+            .text("Fit")
+            .action("graph:reset-view"),
+    );
     let pane = dom.add(parent, El::div().class("view-content graph-view-container"));
     let colors = dom.add(pane, El::div().class("graph-view-colors"));
     info.graph_colors = crate::graphview::COLOR_CLASSES
@@ -925,6 +924,154 @@ fn graph(g: &crate::graphview::GraphView, dom: &mut Dom, parent: NodeId, info: &
         .map(|c| dom.add(colors, El::div().class("graph-view").class(c)))
         .collect();
     info.graph = Some(pane);
+    graph_panel(g, dom, pane, info, viewport_h);
+}
+
+/// The floating settings panel in the top right corner of the graph.
+fn graph_panel(
+    g: &crate::graphview::GraphView,
+    dom: &mut Dom,
+    pane: NodeId,
+    info: &mut ViewInfo,
+    viewport_h: f32,
+) {
+    use crate::graphview::{DEPTH, DISPLAY_SLIDERS, FORCE_SLIDERS, SECTIONS};
+    if !g.panel.open {
+        let b = dom
+            .add(pane, El::div().class("graph-controls-button clickable-icon").action("graph:toggle-panel"));
+        dom.add(b, icons::el("settings"));
+        info.graph_panel = Some(b);
+        return;
+    }
+    let panel = dom.add(
+        pane,
+        El::div()
+            .class("graph-controls-panel")
+            .id("graph-panel")
+            .style(&format!("max-height: {:.0}px", (viewport_h - 110.0).max(120.0)))
+            .action("graph:panel"),
+    );
+    info.graph_panel = Some(panel);
+    let edit = g.panel.edit.as_ref();
+    let field = |dom: &mut Dom, parent: NodeId, key: &str, value: &str, placeholder: &str| {
+        let editing = edit.filter(|e| e.0 == key);
+        let (text, faint) = match editing {
+            Some((_, t)) => (format!("{t}▏"), false),
+            None if value.is_empty() => (placeholder.to_string(), true),
+            None => (value.to_string(), false),
+        };
+        let f = dom.add(
+            parent,
+            El::div()
+                .class("graph-input")
+                .class_if(editing.is_some(), "is-editing")
+                .action(format!("graph:edit:{key}")),
+        );
+        dom.add(f, icons::el("search"));
+        dom.add(f, El::div().class("graph-input-text").class_if(faint, "is-placeholder").text(text));
+    };
+    let toggle = |dom: &mut Dom, parent: NodeId, label: &str, on: bool, action: &str| {
+        let row = dom.add(parent, El::div().class("graph-setting"));
+        dom.add(row, El::div().class("graph-setting-name").text(label));
+        let c = dom.add(row, El::div().class("checkbox-container").class_if(on, "is-enabled").action(action));
+        dom.add(c, El::div().class("checkbox-thumb"));
+    };
+    let slider = |dom: &mut Dom, parent: NodeId, sl: &crate::graphview::Slider| {
+        let v = g.slider_value(sl.key);
+        dom.add(parent, El::div().class("graph-setting-name graph-slider-label").text(sl.label));
+        let row = dom.add(parent, El::div().class("graph-slider"));
+        let shown = if sl.step >= 1.0 { format!("{v:.0}") } else { format!("{v:.2}") };
+        dom.add(row, El::div().class("graph-slider-value").text(shown));
+        let track =
+            dom.add(row, El::div().class("graph-slider-track").action(format!("graph:slider:{}", sl.key)));
+        // Fill and rest share the space left by the thumb in proportion to the value.
+        let t = ((v - sl.min) / (sl.max - sl.min)).clamp(0.0, 1.0);
+        dom.add(track, El::div().class("graph-slider-fill").style(&format!("flex-grow: {t:.4}")));
+        dom.add(track, El::div().class("graph-slider-thumb"));
+        dom.add(track, El::div().class("graph-slider-rest").style(&format!("flex-grow: {:.4}", 1.0 - t)));
+    };
+    for (i, (id, title)) in SECTIONS.iter().enumerate() {
+        let collapsed = g.panel.collapsed[i];
+        let sec =
+            dom.add(panel, El::div().class("graph-control-section").class_if(collapsed, "is-collapsed"));
+        let head = dom.add(sec, El::div().class("graph-control-section-header"));
+        let t = dom
+            .add(head, El::div().class("graph-control-section-title").action(format!("graph:section:{id}")));
+        dom.add(t, icons::el(if collapsed { "chevron-right" } else { "chevron-down" }));
+        dom.add(t, El::div().text(*title));
+        if i == 0 {
+            let b = dom.add(
+                head,
+                El::div()
+                    .class("clickable-icon")
+                    .attr("aria-label", "Restore default settings")
+                    .action("graph:reset-settings"),
+            );
+            dom.add(b, icons::el("rotate-ccw"));
+            let b = dom.add(
+                head,
+                El::div().class("clickable-icon").attr("aria-label", "Close").action("graph:toggle-panel"),
+            );
+            dom.add(b, icons::el("x"));
+        }
+        if collapsed {
+            continue;
+        }
+        let body = dom.add(sec, El::div().class("graph-control-section-body"));
+        let s = &g.settings;
+        match *id {
+            "filter" => {
+                field(dom, body, "search", &s.search, "Search files...");
+                let f = &s.filters;
+                toggle(dom, body, "Tags", f.show_tags, "graph:toggle-tags");
+                toggle(dom, body, "Attachments", f.show_attachments, "graph:toggle-attachments");
+                toggle(dom, body, "Existing files only", f.hide_unresolved, "graph:toggle-unresolved");
+                toggle(dom, body, "Orphans", f.show_orphans, "graph:toggle-orphans");
+                if g.local.is_some() {
+                    slider(dom, body, &DEPTH);
+                }
+            }
+            "color-groups" => {
+                for (gi, cg) in s.color_groups.iter().enumerate() {
+                    let row = dom.add(body, El::div().class("graph-color-group"));
+                    field(dom, row, &format!("group:{gi}"), &cg.query, "Enter query...");
+                    dom.add(
+                        row,
+                        El::div()
+                            .class("graph-color-swatch")
+                            .style(&format!("background-color: #{:06x}", cg.rgb))
+                            .attr("aria-label", "Change color")
+                            .action(format!("graph:group-color:{gi}")),
+                    );
+                    let x = dom.add(
+                        row,
+                        El::div()
+                            .class("clickable-icon")
+                            .attr("aria-label", "Remove group")
+                            .action(format!("graph:group-remove:{gi}")),
+                    );
+                    dom.add(x, icons::el("x"));
+                }
+                dom.add(
+                    body,
+                    El::div().class("graph-button mod-wide").text("New group").action("graph:group-new"),
+                );
+            }
+            "display" => {
+                toggle(dom, body, "Arrows", s.show_arrows, "graph:toggle-arrows");
+                for sl in &DISPLAY_SLIDERS {
+                    slider(dom, body, sl);
+                }
+                let row = dom.add(body, El::div().class("graph-setting mod-end"));
+                dom.add(row, El::div().class("graph-button").text("Animate").action("graph:animate"));
+            }
+            _ => {
+                for sl in &FORCE_SLIDERS {
+                    slider(dom, body, sl);
+                }
+            }
+        }
+    }
 }
 
 /// After layout: draw the graph into its pane.
@@ -1028,7 +1175,7 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
         dom.add(tabs, El::div().class("workspace-tab-header-new-tab").action("file-explorer:new-file"));
     dom.add(new_tab, icons::el("plus"));
     match &app.graph_view {
-        Some(g) if app.show_graph => graph(g, &mut dom, root, &mut info),
+        Some(g) if app.show_graph => graph(g, &mut dom, root, &mut info, viewport_h),
         _ if app.canvas_active() => {
             crate::canvasview::pane(app.canvas_view.as_ref().unwrap(), &mut dom, root, &mut info)
         }

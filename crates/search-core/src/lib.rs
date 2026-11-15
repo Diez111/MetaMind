@@ -1,4 +1,4 @@
-//! Search for Rustsidian: Obsidian's query language, a parallel full-text scan and fuzzy matching.
+//! Search for Rustsidian: the vault query language, a parallel full-text scan and fuzzy matching.
 
 pub mod engine;
 pub mod fuzzy;

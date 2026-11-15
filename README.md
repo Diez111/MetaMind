@@ -1,199 +1,137 @@
+<div align="center">
+
+<img src="packaging/rustsidian.svg" width="104" alt="Rustsidian icon">
+
 # Rustsidian
 
-An Obsidian-vault-compatible knowledge base written in Rust: no Electron, no webview, no
-JavaScript in the core. It opens an existing Obsidian vault without migration and keeps its own
-extra data in `.rustsidian/`.
+**A fast, native Markdown knowledge base. Plain files, linked thinking, no Electron.**
 
-**Status: partial.** The headless core (Markdown, vault index, search, graph model, editor model,
-CSS engine, JSON Canvas) and a working desktop shell are implemented and tested. Large parts of
-the original specification are **not implemented**: Obsidian JS plugin compatibility, Bases, PDF rendering, packaged
-releases. The checklist below is
-the authoritative list; nothing outside it is claimed.
+[![CI](https://github.com/siddarth1872004/RustSidian/actions/workflows/ci.yml/badge.svg)](https://github.com/siddarth1872004/RustSidian/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/siddarth1872004/RustSidian?color=f47a30)](https://github.com/siddarth1872004/RustSidian/releases/latest)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-34264e)](#license)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-555)
 
-## Build and run
+[Download](https://github.com/siddarth1872004/RustSidian/releases/latest) ·
+[Website](https://siddarth1872004.github.io/RustSidian/) ·
+[Features](FEATURES.md) ·
+[Roadmap](ROADMAP.md)
 
-```sh
-cargo build --release -p rustsidian          # 12.0 MB binary at target/release/rustsidian
-target/release/rustsidian examples/vault     # open the demo vault in a window
-target/release/rustsidian help               # CLI: index, search, export, doctor, screenshot, commands
-cargo test --workspace                   # 239 tests
-cargo run --release -p rustsidian --example perf_budget    # performance gate (headless)
-scripts/window-budget.sh <vault dir>     # performance gate (needs a display)
-```
+<img src="docs/img/editor.png" alt="Rustsidian editing a note with highlighted code and typeset math" width="880">
 
-Requires stable Rust 1.85 or later. All dependencies are pure Rust; no C toolchain is needed.
-Verified on Linux (WSL2 Ubuntu under WSLg, Wayland and X11 backends compiled in). Windows
-(`x86_64-pc-windows-gnu`) and macOS (`aarch64-apple-darwin`) pass `cargo check --all-targets` and
-Windows also passes clippy, but **neither has been built, linked or run**.
+</div>
+
+## Why Rustsidian
+
+- **Your notes stay yours.** A vault is a folder of Markdown files. Open an existing vault as it
+  is; Rustsidian keeps its own data in `.rustsidian/` and never rewrites what it does not
+  understand.
+- **Fast.** A 12 MB native binary with no browser engine inside. It opens 5,000 notes in under
+  100 ms, uses about 34 MB of RAM idle at 10,000 notes, and uses no CPU while you're not typing.
+- **Linked thinking.** Wikilinks, backlinks, embeds, block references, tags, properties and a
+  live graph of how your notes connect.
+- **Yours to shape.** CSS themes and snippets, rebindable hotkeys, sandboxed WASM plugins and Rhai
+  scripts.
+
+## Highlights
+
+<table>
+<tr>
+<td width="50%"><img src="docs/img/graph.png" alt="Graph view with its settings panel"></td>
+<td width="50%"><img src="docs/img/palette.png" alt="Command palette"></td>
+</tr>
+<tr>
+<td><b>Graph view</b>: global and local graphs with filters, color groups, display and force
+settings, all saved with the vault.</td>
+<td><b>Command palette and quick switcher</b>: every action has a stable id and a rebindable
+hotkey.</td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/img/light.png" alt="Light theme"></td>
+<td width="50%"><img src="docs/img/welcome.png" alt="Welcome screen"></td>
+</tr>
+<tr>
+<td><b>Light and dark themes</b>: drop in a community CSS theme or your own snippets; they
+reload live.</td>
+<td><b>Gentle start</b>: open a folder, create a vault, or explore the sample vault.</td>
+</tr>
+</table>
+
+| | |
+|---|---|
+| **Editor** | Live preview, source and reading modes, multi-cursor, undo tree, folding, smart lists, tables, Vim mode, properties editor |
+| **Markdown** | CommonMark + GFM, wikilinks, embeds, callouts, footnotes, highlights, math (typeset), Mermaid flowcharts and sequence diagrams, syntax highlighting for 15+ languages |
+| **Navigation** | File explorer with right-click menus, tabs, back and forward, outline, backlinks, quick switcher, full-text search with `tag:`, `path:`, `line:`, `[property:value]`, regex and boolean operators |
+| **Canvas** | JSON Canvas boards with text, file, link and group nodes, saved without losing anything |
+| **Files** | Rename with automatic link updates, atomic saves, conflict detection, trash, daily notes |
+| **Extend** | WASM plugins with a permission model, Rhai user scripts, CSS themes and snippets |
+| **Export** | HTML and Markdown bundles; a CLI for indexing, search, export and health checks |
+
+[FEATURES.md](FEATURES.md) lists every feature with its status, including what is missing.
 
 ## Install
 
-Release archives (Linux x86_64, Windows x86_64, macOS arm64 and x86_64, with SHA256SUMS.txt) are
-built by `.github/workflows/release.yml` when a `v*` tag is pushed and attached to the GitHub
-Release (see the Releases page). On Linux, `packaging/rustsidian.desktop` and
-`packaging/rustsidian.svg` can be copied to `~/.local/share/applications` and
-`~/.local/share/icons/hicolor/scalable/apps`. Under X11 the window needs `libxkbcommon-x11`
-(`sudo apt install libxkbcommon-x11-0` on Debian and Ubuntu); Wayland sessions need `libxkbcommon`.
-Copy and paste on Linux use `wl-clipboard`, `xclip` or `xsel`, whichever is installed.
+Download the archive for your system from the
+[latest release](https://github.com/siddarth1872004/RustSidian/releases/latest) and check it
+against `SHA256SUMS.txt`.
+
+| System | Archive | Notes |
+|---|---|---|
+| Windows 10/11 x64 | `rustsidian-*-windows-x86_64.zip` | Unzip anywhere and run `rustsidian.exe` |
+| macOS (Apple silicon / Intel) | `rustsidian-*-macos-arm64.tar.gz` / `macos-x86_64` | Unsigned: right-click → Open the first time |
+| Linux x64 | `rustsidian-*-linux-x86_64.tar.gz` | Needs `libxkbcommon-x11` on X11 (`sudo apt install libxkbcommon-x11-0`) and `wl-clipboard`, `xclip` or `xsel` for copy and paste |
+
+On Linux, `packaging/rustsidian.desktop` and `packaging/rustsidian.svg` add a menu entry when
+copied to `~/.local/share/applications` and `~/.local/share/icons/hicolor/scalable/apps`.
 
 ## Build from source
 
+Requires stable Rust 1.85 or later. Every dependency is pure Rust.
+
 ```sh
 git clone https://github.com/siddarth1872004/RustSidian && cd RustSidian
-cargo build --release -p rustsidian      # target/release/rustsidian (rustsidian.exe on Windows)
+cargo build --release -p rustsidian          # target/release/rustsidian
+target/release/rustsidian examples/vault     # open the sample vault
+target/release/rustsidian help               # CLI: index, search, export, doctor, screenshot
+cargo test --workspace                       # 251 tests
 ```
 
-Linux needs only a normal system linker (`build-essential`); Windows needs the MSVC build tools.
-The repo forces no linker settings. A machine with no C toolchain can link with `rust-lld` through
-a git-ignored `.cargo/config.toml` of its own. Licensed under MIT OR Apache-2.0
-(`LICENSE-MIT`, `LICENSE-APACHE`).
+## Performance
 
-## Measured against the budgets
+Measured on WSL2 Ubuntu (12 cores, software rendering) with synthetic vaults. The full table and
+caveats are in [FEATURES.md](FEATURES.md#performance-budgets).
 
-Machine: WSL2 Ubuntu, 12 logical cores, 7 GB RAM, software rendering (no GPU passthrough).
-Synthetic vaults from `perf_budget`.
-
-| Budget | Target | Measured | |
-|---|---|---|---|
-| Release binary, stripped | < 15 MB (aim < 10) | 12.0 MB with the default `wasm-plugins` and `scripting` features (6.5 MB before the plugin stack) | met |
-| Cold start to presented frame, 5,000 notes | < 150 ms | 65–98 ms (worst of 5 runs, three sessions) | met |
-| Cold start to presented frame, 50,000 notes | < 400 ms | 188–260 ms | met |
-| Idle RAM, 10,000 notes | < 80 MB | 34 MB | met |
-| Idle CPU | 0% | 0 CPU ticks over 5 s | met |
-| Keystroke to pixels, 1 MB note | < 8 ms | 4.9 ms median, 6.2 ms p95, 8.7 ms worst seen | met at p95 |
-| Scroll frame, 5 MB note | display rate | 7.4 ms mean (60 Hz needs 16.7 ms; 144 Hz would need 6.9 ms) | met for 60 Hz |
-| Full-text search, 50,000 notes | first results < 30 ms | 14–29 ms for plain terms, tags, tasks, properties and regex (regex 15–16 ms); `line:(paragraph 3 alias)` takes 43–51 ms | **missed** for `line:` queries with several terms |
-| Quick switcher, 50,000 paths | < 5 ms per keystroke | 1.8–2.0 ms | met |
-| Graph, 50,000 nodes at 60 fps | pan/zoom | 21 ms per frame at 50,000 nodes / 600,000 links, 15.5 ms at 10,000 / 120,000 (single runs), 1.7 ms for a small vault; CPU rasterizer, links sampled past 3M line pixels; layout tick 26 ms on a worker thread | **missed** |
-| Mermaid render | < 50 ms | flowchart/sequence layout + paint inside the 5-7 ms frame | met |
-
-Caveats, stated plainly:
-
-- "Cold start" means a fresh process with the persisted index present. The very first open of a
-  vault has to parse every note: 47 ms at 5,000 notes, 433 ms at 50,000.
-- Start-up and typing figures are for the software renderer and include everything up to the
-  frame being handed to the compositor, not the compositor's own latency.
-- Idle RAM counts resident pages after the mapped index has been released (`madvise`). Note
-  metadata is decoded from the mapped index on demand, so a vault-wide metadata query (graph
-  build, `tag:` search) briefly raises it. On Windows there is no release call yet.
-- The budgets are gated by `perf_budget` and `scripts/window-budget.sh`. They are wired into
-  `.github/workflows/ci.yml` and `release.yml`, which **have never been run**.
-
-## Feature checklist
-
-`done` = implemented and covered by tests. `partial` = usable, gaps listed. `none` = not implemented.
-
-### Vault and files
-
-| Feature | Status | Notes |
+| | Budget | Measured |
 |---|---|---|
-| Open an Obsidian vault with zero migration | done | Dot-folders are skipped like Obsidian does |
-| Read/write `.obsidian/*.json`, unknown keys preserved | done | `app`, `appearance`, `core-plugins`, `community-plugins`, `hotkeys`, `bookmarks`, `workspace`, `graph`. Only `app`, `appearance`, `hotkeys` and `graph` are *acted on*; the rest are loaded and preserved but unused |
-| Atomic writes | done | temp file + fsync + rename |
-| Conflict detection with external edits | done | A changed file is never overwritten |
-| File watcher with debounce | done | Linux inotify verified; other platforms untested |
-| Metadata cache (links, embeds, tags, headings, blocks, front matter, list items, sections) | done | |
-| Link resolution (Obsidian rules) | done | |
-| Rename with link updates | done | Property-tested over 40,000 random vaults. Links in `.canvas` files are **not** updated by the app yet (`canvas-core` has the function) |
-| Persisted index, mmap, mtime/size revalidation, rebuild on corruption | done | |
-| Trash | partial | Vault `.trash/` and XDG trash; Windows recycle bin falls back to `.trash/` |
-| File recovery snapshots | partial | Snapshots are written on save; there is no UI to browse or restore them |
+| Cold start, 5,000 notes | < 150 ms | 65–98 ms |
+| Cold start, 50,000 notes | < 400 ms | 188–260 ms |
+| Idle RAM, 10,000 notes | < 80 MB | 34 MB |
+| Keystroke to pixels, 1 MB note | < 8 ms | 4.9 ms median, 6.2 ms p95 |
+| Quick switcher, 50,000 paths | < 5 ms | 1.8–2.0 ms |
+| Full-text search, 50,000 notes | < 30 ms | 14–29 ms (multi-term `line:` queries: 43–51 ms) |
 
-### Markdown
-
-| Feature | Status | Notes |
-|---|---|---|
-| CommonMark + GFM blocks and inlines | partial | Not run against the CommonMark spec suite; known simplifications in lazy continuation and HTML blocks |
-| Wikilinks, embeds, block ids, callouts, comments, highlights, tags, footnotes, front matter, task lists, tables, math spans | done | Parsed with byte-exact spans |
-| Incremental re-parse | done | Property-tested equal to a full parse (60,000 cases) |
-| HTML rendering | done | Used by export |
-| Math rendering | partial | `math-core`: `$$` blocks typeset (fractions, roots, scripts, big operators with limits, `\left\right`, matrices, aligned, `\text`, `\mathbf/rm/bb/cal`); inline `$..$` is typeset in a row under its paragraph (not in the text flow); unknown commands show their source; no `\underbrace`, `\overset`, colors, tags |
-| Code syntax highlighting | done | `highlight-core`, hand-written (no dependencies): rust, js/ts, python, json, yaml, toml, bash, html, css, c/c++, go, java and relatives, sql, markdown, diff, generic fallback. Colors come from Obsidian's `--code-*` variables. Cached per block text, blocks over 256 KB are left plain. Not incremental inside one huge block |
-| Mermaid diagrams | partial | `mermaid-core`: `graph`/`flowchart` (TD/LR/RL/BT, node shapes, edge labels and styles, subgraph frames, layered layout) and `sequenceDiagram` (messages, notes, loop/alt frames, autonumber); other diagram types show the source with a notice |
-| Fuzzing with `cargo-fuzz` | none | Property tests with arbitrary input stand in for it |
-
-### Editor
-
-| Feature | Status | Notes |
-|---|---|---|
-| Source mode, live preview | partial | Inline markup is hidden/revealed around the cursor. Quotes, callouts (coloured by type, foldable ones collapsed when written `-`) and tables are rendered while the cursor is outside them and turn back into source when it enters. Table columns are sized by estimate, not measurement; right alignment is not applied; callouts have no icons and no fold toggle. Math and Mermaid are shown as source |
-| Reading mode | partial | Live preview without a cursor; not a separate rendered document |
-| Multi-cursor, undo tree, smart lists, auto-pair, indent, formatting toggles, move/duplicate line | done | |
-| Folding | done | Headings, list items, quotes/callouts and code blocks. Arrow next to each heading, `Toggle fold`, `Fold all`, `Unfold all`. Folds follow edits and undo; they are not saved between sessions. While any fold is active the whole note is rescanned after each edit |
-| Table editing | partial | In live preview with the cursor in a table: Tab/Shift+Tab/Enter move between cells and re-align the source; palette commands add, move, delete, align and sort rows and columns, and insert a table. Editing happens in the table's source, not in the rendered grid |
-| Vim mode | partial | On when `vimMode` is set in `.obsidian/app.json`, or with `Toggle Vim key bindings`. Subset documented in `editor-core/src/vim.rs`; the mode is shown in the status bar; the caret does not change shape |
-| IME | partial | Committed text is accepted; no pre-edit display. fcitx/ibus untested |
-| RTL, ligatures | partial | Whatever `cosmic-text` shaping provides; not tested |
-| Spellcheck, drag and drop, paste of files/images, hover preview, slash commands | none | |
-| Properties editor | partial | Front matter shown as a table in live preview and reading view: text, number, checkbox, date, list pills (tags, aliases, cssclasses). Edit, add (`properties:add`), rename, remove; edits are buffer edits (undo works) and only the changed entry is rewritten. `properties:toggle-source` or the `propertiesInDocument` setting shows raw source. No type picker or `types.json`; flow lists become block lists when edited; nested values are read-only |
-| Embeds of notes and images | partial | `![[Note]]`, `![[Note#Heading]]`, `![[Note#^block]]` show the note or section below the paragraph (first 30 blocks; tables and nested embeds inside it as source). `![[image.png\|100x80]]` and `![](image.png)` show PNG images only, decoded on the UI thread at first display; JPEG, GIF, WebP, SVG and remote images are not shown |
-| Embeds of audio, video, PDF | none | |
-
-### Navigation and views
-
-| Feature | Status | Notes |
-|---|---|---|
-| File explorer | partial | Virtualised, collapsible, file icons; right-click menus for files, folders, tabs and the editor (new note/folder, rename with link updates, make a copy, delete to trash, copy path or link, show in system explorer, cut/copy/paste). No sorting options or drag-rearrange |
-| Quick switcher, command palette | done | |
-| Search panel with Obsidian operators | done | All operators; no embedded `query` blocks |
-| Back/forward, tabs | done | No split panes, stacked or pinned tabs, pop-out windows, linked panes, workspaces |
-| Outline, backlinks (linked), word count | done | No unlinked mentions, outgoing-links or tags panes |
-| Daily notes, random note | partial | Daily note uses the UTC date and `YYYY-MM-DD`; custom formats and templates are not supported |
-| Graph view | partial | Global and local graph (depth 1-3) in the main pane: pan, zoom about the pointer, drag nodes, hover highlight, click to open (unresolved creates the note, tags search). Filters and arrows as header chips, read from and saved to `graph.json`; search filter and color groups from `graph.json` are applied but have no UI. No force sliders, no layout cache on disk, dense graphs draw a sample of links |
-| Canvas view | done | Text/file/link/group nodes, colors, curved edges with arrows and labels; pan, wheel zoom, move, resize, double-click to edit text, add/delete node, lossless save. No edge editing; file nodes show a text preview |
-| Bookmarks, tags pane, properties view, periodic notes, templates, unique note creator, slides, format converter, audio recorder, footnotes view | none | |
-| Bases | none | |
-
-### Theming and customisation
-
-| Feature | Status | Notes |
-|---|---|---|
-| CSS subset engine | done | See `THEME_COMPAT.md` for the exact subset |
-| Themes from `.obsidian/themes/`, snippets from `.obsidian/snippets/`, live reload | partial | Loaded and reloaded on change. **No community theme has been tested**; themes that rely on unsupported CSS will apply only in part |
-| Light/dark | partial | Follows `appearance.json` and a toggle command; does not follow the OS setting |
-| Commands with stable ids, rebindable through `hotkeys.json`, key sequences | done | Settings window (`Ctrl+,`, ribbon gear): Editor, Files & links, Appearance (scheme, theme, snippets, font size), Hotkeys (rebind, reset; first binding only), About. Saved to `app.json`, `appearance.json`, `hotkeys.json` with unknown keys kept. Dropdowns cycle on click |
-| Everything else in the customisation section (TOML config, JSON Schema, data-driven layout, theme inspector UI, feature flags, profiles, portable mode, `--config-dir`) | none | The theme engine has an `inspect` API; no UI uses it |
-
-### Export, plugins, platform
-
-| Feature | Status | Notes |
-|---|---|---|
-| Export HTML, Markdown bundle | done | |
-| Export PDF, print | none | |
-| Native WASM plugins (`.obsidian/plugins/<id>/main.wasm`), `plugins:list`, `plugins:reload`, `community-plugins.json` enable list | partial | wasmi host with fuel/memory limits and a permission model (see `PLUGIN_SDK.md`); example plugin in `examples/plugins/hello-wasm`. No SDK crate, no `rustsidian plugin` scaffold, no plugin settings UI (the app exposes `App::plugin_list` / `set_plugin_enabled` for it) |
-| User scripts in Rhai (`.obsidian/scripts/*.rhai`) | partial | `scripting` crate on the same API as WASM plugins: commands, events, vault and editor helpers; sandboxed with operation, size and time limits. No hotkeys from `hotkeys.json` |
-| Obsidian JS plugin compatibility, CM6 adapter, community browser | none | Only the JS engine spike was done |
-| Accessibility (`accesskit`), high contrast, reduced motion | none | Keyboard operation works for what exists; there is no screen-reader support |
-| GPU rendering (`wgpu`) | none | Software rendering only, by measured decision (DECISIONS.md §2) |
-| Multi-window, system tray, file dialogs, URI scheme, file associations, single-instance IPC | none | |
-| Packaging (MSI, zip, Flatpak, AppImage, deb, rpm) | none | Release workflow produces tar.gz/zip archives (unrun); `.desktop` file and SVG icon included |
-| `rustsidian doctor`, `--profile`, perf overlay (Ctrl+Shift+F12) | done | |
-
-## Layout
+## Project layout
 
 ```
-crates/md-engine     Markdown parser, incremental re-parse, HTML, front matter
-crates/vault-core    index, link resolution, rename, cache, IO, watcher, .obsidian config
-crates/search-core   query language, corpus scan, fuzzy matcher
-crates/graph-core    graph model, filters, Barnes-Hut layout, graph.json
-crates/editor-core   rope buffer, undo tree, commands, folding, decorations, tables, vim
-crates/theme-engine  CSS parser, selectors, cascade, values
-crates/canvas-core   JSON Canvas model
-crates/ext-api       extension API: JSON call boundary, permissions, registry
-crates/plugin-host-wasm  sandboxed WASM plugin host (wasmi)
-crates/scripting     Rhai user scripts on ext-api
+crates/md-engine         Markdown parser, incremental re-parse, HTML, front matter
+crates/vault-core        index, link resolution, rename, cache, IO, watcher, vault config
+crates/search-core       query language, corpus scan, fuzzy matcher
+crates/graph-core        graph model, filters, Barnes-Hut layout, graph.json
+crates/editor-core       rope buffer, undo tree, commands, folding, decorations, tables, vim
+crates/theme-engine      CSS parser, selectors, cascade, values
+crates/canvas-core       JSON Canvas model
+crates/math-core, mermaid-core, highlight-core   rendering of math, diagrams and code
+crates/ext-api           extension API: JSON call boundary, permissions, registry
+crates/plugin-host-wasm  sandboxed WASM plugin host
+crates/scripting         Rhai user scripts
 crates/rustsidian-ui     element tree, flex layout, software renderer
-crates/app           shell, commands, view, CLI, window  (binary: rustsidian)
-spikes/              the three risk spikes behind DECISIONS.md
-examples/vault/      demo vault
+crates/app               shell, commands, view, CLI, window (binary: rustsidian)
 ```
 
-`PLAN.md` has the per-crate ledger, `DECISIONS.md` the tradeoffs with measurements.
+More documentation: [CUSTOMIZATION.md](CUSTOMIZATION.md) (settings, hotkeys, themes),
+[THEME_COMPAT.md](THEME_COMPAT.md) (supported CSS), [PLUGIN_SDK.md](PLUGIN_SDK.md) (WASM
+plugins), [DECISIONS.md](DECISIONS.md) (design tradeoffs with measurements),
+[PLAN.md](PLAN.md) (per-crate status).
 
-## Deliverables from the specification that were not produced
+## License
 
-Packaged releases; `criterion` benchmarks (the gates are plain timing programs instead); `insta`
-snapshots beyond `md-engine`; visual-regression screenshots; `cargo-fuzz` targets; the
-vault-compatibility suite on real-world vaults; sample WASM plugins, sample JS plugins, sample
-themes and macros. `examples/vault/` has one sample CSS snippet. `cargo deny` has a config file
-but was never run.
+Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.

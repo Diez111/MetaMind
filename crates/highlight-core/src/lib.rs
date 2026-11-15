@@ -1,7 +1,7 @@
 //! Hand-written, dependency-free tokenizer for the languages that show up in notes.
 //!
 //! Tokens are non-overlapping and sorted; text between tokens is plain. Class names follow
-//! Prism/CodeMirror (`.token.keyword`, `.cm-keyword`) and map to Obsidian's `--code-*` variables.
+//! Prism/CodeMirror (`.token.keyword`, `.cm-keyword`) and map to the theme's `--code-*` variables.
 
 mod langs;
 mod markup;

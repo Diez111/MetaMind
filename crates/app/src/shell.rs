@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::Path;
 use theme_engine::Theme;
-use vault_core::config::ObsidianConfig;
+use vault_core::config::VaultConfig;
 use vault_core::fsio::{self, Recovery, Stamp};
 use vault_core::{path, FileKind, VaultStore, WriteError};
 
@@ -29,7 +29,7 @@ impl Key {
     pub fn new(key: &str) -> Key {
         Key { key: normalize_key(key), ctrl: false, shift: false, alt: false }
     }
-    /// Parse `Ctrl+Shift+P`. `Mod` is accepted as an alias of `Ctrl` (Obsidian's name).
+    /// Parse `Ctrl+Shift+P`. `Mod` is accepted as an alias of `Ctrl` (the name used in `hotkeys.json`).
     pub fn parse(s: &str) -> Option<Key> {
         let mut k = Key { key: String::new(), ctrl: false, shift: false, alt: false };
         let parts: Vec<&str> = if s == "+" { vec!["+"] } else { s.split('+').collect() };
@@ -177,6 +177,9 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("graph:toggle-arrows", "Graph view: Toggle arrows", ""),
     ("graph:cycle-depth", "Graph view: Change local graph depth", ""),
     ("graph:reset-view", "Graph view: Fit graph to pane", ""),
+    ("graph:toggle-panel", "Graph view: Toggle settings panel", ""),
+    ("graph:animate", "Graph view: Animate layout", ""),
+    ("graph:reset-settings", "Graph view: Restore default settings", ""),
     ("daily-notes", "Daily notes: Open today's daily note", ""),
     ("random-note", "Random note: Open random note", ""),
     ("app:delete-file", "Delete current file", ""),
@@ -301,7 +304,7 @@ pub struct App {
     pub canvas_view: Option<crate::canvasview::CanvasView>,
     pub show_canvas: bool,
     pub store: VaultStore,
-    pub config: ObsidianConfig,
+    pub config: VaultConfig,
     pub theme: Theme,
     pub dark: bool,
     pub tabs: Vec<Tab>,
@@ -365,7 +368,7 @@ fn tree_key(p: &str) -> String {
     key
 }
 
-pub(crate) fn load_theme(config: &ObsidianConfig) -> Theme {
+pub(crate) fn load_theme(config: &VaultConfig) -> Theme {
     let mut theme = Theme::new();
     theme.add_sheet("base", BASE_CSS);
     if let Some(name) = config.css_theme() {
@@ -384,12 +387,12 @@ pub(crate) fn load_theme(config: &ObsidianConfig) -> Theme {
     theme
 }
 
-pub(crate) fn default_keymap(config: &ObsidianConfig) -> Vec<(Vec<Key>, String)> {
+pub(crate) fn default_keymap(config: &VaultConfig) -> Vec<(Vec<Key>, String)> {
     let mut map: Vec<(Vec<Key>, String)> = Vec::new();
     let overrides = config.hotkeys.value.as_object();
     for (id, _, default) in COMMANDS {
         match overrides.and_then(|o| o.get(*id)).and_then(|v| v.as_array()) {
-            // Obsidian format: [{"modifiers": ["Mod", "Shift"], "key": "P"}]; an empty array unbinds.
+            // `hotkeys.json` format: [{"modifiers": ["Mod", "Shift"], "key": "P"}]; an empty array unbinds.
             Some(list) => {
                 for h in list {
                     let mods: Vec<&str> = h
@@ -423,7 +426,7 @@ pub(crate) fn default_keymap(config: &ObsidianConfig) -> Vec<(Vec<Key>, String)>
 impl App {
     pub fn open(root: &Path) -> io::Result<App> {
         let (mut store, _) = VaultStore::open(root)?;
-        let config = ObsidianConfig::load(root)?;
+        let config = VaultConfig::load(root)?;
         store.index.link_format = config.link_format();
         store.trash_mode = config.trash_option();
         let _ = store.save_cache();
@@ -1146,7 +1149,7 @@ impl App {
             }
             "theme:toggle-light-dark" => self.dark = !self.dark,
             "app:reload-theme" => {
-                if let Ok(c) = ObsidianConfig::load(&self.store.root) {
+                if let Ok(c) = VaultConfig::load(&self.store.root) {
                     self.config = c;
                 }
                 self.theme = load_theme(&self.config);

@@ -92,7 +92,7 @@ pub fn kind_of(p: &str) -> FileKind {
 /// How characters that are unsafe in file names are handled when a note is created or renamed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum SanitizePolicy {
-    /// Remove characters Obsidian disallows (`* " \ / < > : | ?`) plus link-breaking ones (`# ^ [ ]`).
+    /// Remove characters not allowed in note names (`* " \ / < > : | ?`) plus link-breaking ones (`# ^ [ ]`).
     #[default]
     Strip,
     /// Replace them with `-`.

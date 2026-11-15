@@ -1,4 +1,4 @@
-//! Front matter: the YAML subset Obsidian properties use.
+//! Front matter: the YAML subset that note properties use.
 //!
 //! Supported: block maps and lists, flow lists/maps, plain/single/double quoted scalars, `|` and
 //! `>` block scalars, comments. Not supported: anchors, aliases, tags, multi-document streams,
@@ -23,7 +23,7 @@ impl Value {
             _ => None,
         }
     }
-    /// Scalars as text; lists flattened. Used for tags, aliases and cssclasses, which Obsidian
+    /// Scalars as text; lists flattened. Used for tags, aliases and cssclasses, which the vault format
     /// accepts as either a list or a single (possibly comma separated) string.
     pub fn as_string_list(&self) -> Vec<String> {
         match self {
@@ -245,7 +245,7 @@ impl<'a> P<'a> {
             let mut f = Flow { b: buf.as_bytes(), s: &buf, i: 0, depth: 0 };
             return match f.value() {
                 Some(v) if f.rest_is_empty() => Ok(v),
-                // Obsidian treats `[[link]]`-looking plain text as a string.
+                // The vault format treats `[[link]]`-looking plain text as a string.
                 _ => Ok(scalar(rest)),
             };
         }

@@ -4,7 +4,7 @@ use crate::shell::{App, Key};
 use search_core::{Corpus, Query, RankWeights, Sort};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use vault_core::config::ObsidianConfig;
+use vault_core::config::VaultConfig;
 use vault_core::{path, VaultStore};
 
 pub const USAGE: &str = "Rustsidian
@@ -13,7 +13,7 @@ USAGE:
   rustsidian                                    Show the welcome screen to pick or create a vault
   rustsidian [open] <vault> [note]              Open a vault in a window
   rustsidian index <vault>                      Build or refresh the index and print statistics
-  rustsidian search <vault> <query> [--limit N] Search with Obsidian query syntax
+  rustsidian search <vault> <query> [--limit N] Search with the query syntax
   rustsidian export <vault> <note> [--format html|md] [-o <path>]
   rustsidian doctor <vault>                     Diagnose configuration, index and notes
   rustsidian screenshot <vault> <out.png> [--note <path>] [--size WxH] [--keys \"Ctrl+P ...\"] [--type <text>] [--run <command id>,...] [--light]
@@ -360,7 +360,7 @@ fn doctor(root: &Path, out: &mut dyn std::io::Write) -> Outcome {
         }
         let _ = writeln!(out, "[{}] {msg}", if ok { " ok " } else { "WARN" });
     };
-    match ObsidianConfig::load(root) {
+    match VaultConfig::load(root) {
         Ok(c) => {
             line(
                 true,

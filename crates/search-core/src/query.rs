@@ -1,4 +1,4 @@
-//! Obsidian search query language.
+//! Search query language (`tag:`, `path:`, `line:`, `[prop:value]`, regex, boolean groups).
 //!
 //! `a b` (and), `a OR b`, `-a`, `( … )`, `"exact phrase"`, `/regex/`, `file:`, `path:`,
 //! `content:`, `tag:`, `line:`, `block:`, `section:`, `task:`, `task-todo:`, `task-done:`,
@@ -184,7 +184,7 @@ impl<'a> P<'a> {
                     c => out.push(c),
                 }
             }
-            // Unterminated quote: take the rest as the phrase, as Obsidian does while typing.
+            // Unterminated quote: take the rest as the phrase, so results update while typing.
             self.i = self.s.len();
             return Ok(Expr::Term(out));
         }

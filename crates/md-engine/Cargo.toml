@@ -1,6 +1,6 @@
 [package]
 name = "md-engine"
-description = "Obsidian-flavored Markdown: incremental, error-tolerant parser with byte-exact spans"
+description = "Wiki-style Markdown: incremental, error-tolerant parser with byte-exact spans"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

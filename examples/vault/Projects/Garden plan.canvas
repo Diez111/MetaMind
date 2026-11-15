@@ -6,7 +6,7 @@
 		{"id":"f1","type":"file","file":"Projects/Garden.md","x":-120,"y":-210,"width":200,"height":150,"color":"#d9a441"},
 		{"id":"f2","type":"file","file":"Attachments/pixel.png","x":-120,"y":-30,"width":160,"height":120},
 		{"id":"f3","type":"file","file":"Welcome.md","x":220,"y":-220,"width":260,"height":160,"color":"6"},
-		{"id":"l1","type":"link","url":"https://obsidian.md/canvas","x":220,"y":0,"width":260,"height":90,"color":"5"},
+		{"id":"l1","type":"link","url":"https://jsoncanvas.org","x":220,"y":0,"width":260,"height":90,"color":"5"},
 		{"id":"t3","type":"text","x":220,"y":160,"width":260,"height":90,"text":"## Later\nPrune the roses","color":"2"}
 	],
 	"edges":[

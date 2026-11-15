@@ -1,6 +1,6 @@
 # Rustsidian build plan
 
-Rustsidian is an Obsidian-vault-compatible knowledge base written in Rust. This file is the
+Rustsidian is a native Markdown knowledge base written in Rust. This file is the
 build order and the status ledger. `DECISIONS.md` holds the tradeoffs and measurements.
 Status values are honest: **done** means implemented with passing tests, **partial** means usable
 with listed gaps, **stub** means the interface exists but not the behavior, **not started** means
@@ -23,9 +23,9 @@ L6  app  (shell, CLI, IPC, settings, hotkeys, URI handler, packaging)
 | # | Step | Gate to move on |
 |---|------|-----------------|
 | 0 | Toolchain, workspace, lint config, three risk spikes | spikes measured, recorded in DECISIONS.md |
-| 1 | `md-engine`: block + inline parser, Obsidian extensions, incremental region reparse | unit + proptest + snapshot tests |
+| 1 | `md-engine`: block + inline parser, vault extensions, incremental region reparse | unit + proptest + snapshot tests |
 | 2 | `vault-core`: atomic IO, metadata cache, link resolution, rename propagation, persisted index, watcher, trash, snapshots | unit + proptest (link rewriting) |
-| 3 | `search-core`: query language with every Obsidian operator, index, fuzzy switcher | operator tests, budget bench |
+| 3 | `search-core`: query language with every search operator, index, fuzzy switcher | operator tests, budget bench |
 | 4 | `graph-core`: graph build, filters, groups, Barnes-Hut layout, `graph.json` | construction tests, layout bench |
 | 5 | `editor-core`: rope, multi-cursor, undo tree, folding, decorations, vim, smart lists, tables | unit tests, typing bench |
 | 6 | `theme-engine`: CSS subset parser, cascade, variables, media queries | parser + cascade tests, fuzz target |
@@ -46,11 +46,11 @@ were not started; steps 9 and 11 are partial.
 | spikes | done | results in DECISIONS.md §2–4 |
 | md-engine | done | 54 unit/render tests, 5 property tests (incremental == full reparse), 2 snapshots. CommonMark-oriented, not run against the CommonMark spec suite. Full parse 30 MB/s; re-parse per keystroke 78 µs at 1 MB, 630 µs at 5 MB |
 | vault-core | done | 26 unit tests + rename property test (40k cases: every link resolves to the same file after a rename). Warm open 13 ms / 25 ms / 130 ms at 5k / 10k / 50k notes; first index 47 ms / 87 ms / 433 ms. System trash is XDG-only (Windows falls back to `.trash/`). |
-| search-core | done (native backend) | Every Obsidian operator, boolean/grouping, regex, properties; 14 test groups. 50k notes: 3–29 ms per query, quick switcher 1.5–4.7 ms. The `tantivy` backend is **not implemented** (DECISIONS.md §6). Embedded `query` blocks are rendered by the app through this API. |
+| search-core | done (native backend) | Every search operator, boolean/grouping, regex, properties; 14 test groups. 50k notes: 3–29 ms per query, quick switcher 1.5–4.7 ms. The `tantivy` backend is **not implemented** (DECISIONS.md §6). Embedded `query` blocks are rendered by the app through this API. |
 | graph-core | done (headless part) | Global/local graph, depth, all filters, color groups, forces, pin, `graph.json` round trip, layout disk format; 10 tests. Barnes-Hut tick 3 / 5 / 26 ms at 1k / 10k / 50k nodes. GPU instanced rendering and LOD labels belong to the UI layer. |
 | editor-core | done (model) | Rope buffer with incremental parse, transactions, undo tree with branches, multi-cursor, smart lists, auto-pair, indent, formatting toggles, folding, source/live-preview decorations, table grid editing, vim subset (documented in `vim.rs`); 30 unit tests + property test. Keystroke: 55 µs at 1 MB, 273 µs at 5 MB (edit + re-parse + viewport decorations). Spellcheck is a hook only; drag/drop and paste of files are UI-layer work. |
 | theme-engine | done (engine) | Parser, selectors, cascade, `var()`, `calc()`, media queries, shorthands, transitions (parse + easing), inspector; 15 unit tests + never-panic property tests (40k cases). Supported/unsupported subset is listed in the crate docs. Loading `.obsidian/themes` and snippets with live reload is app-layer work. |
-| canvas-core | done | JSON Canvas parse/edit/write with lossless round trip (unknown fields, key order, Obsidian's layout); 3 tests. View in `app/canvasview.rs`. |
+| canvas-core | done | JSON Canvas parse/edit/write with lossless round trip (unknown fields, key order, the usual layout); 3 tests. View in `app/canvasview.rs`. |
 | bases-core | not started | Crate does not exist. |
 | mermaid-core | partial | Flowchart and sequence diagrams with own layered layout, painted with display-list commands; 10 tests. Other diagram types show their source. |
 | math-core | partial | LaTeX subset to a box layout, painted with display-list commands; 12 tests. |

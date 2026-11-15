@@ -2,7 +2,7 @@ use crate::{Permissions, PluginKind};
 use serde::Deserialize;
 use std::path::Path;
 
-/// `manifest.json` as Obsidian defines it, plus an optional `rustsidian.permissions` list.
+/// `manifest.json` in the community plugin format, plus an optional `rustsidian.permissions` list.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {

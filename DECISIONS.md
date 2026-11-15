@@ -56,7 +56,7 @@ add to start-up time. (A cached font list was considered and not needed.)
 **CSS.** A browser engine is excluded by the constraints. `theme-engine` implements a CSS subset
 (selectors with combinators, pseudo-classes for state, cascade with specificity and `!important`,
 custom properties with `var()` fallbacks, `calc()` on lengths, `@media (prefers-color-scheme)`,
-transitions) and maps Obsidian's documented variables and class names onto the native widget tree.
+transitions) and maps the community theme variables and class names onto the native widget tree.
 Layout was planned on `taffy`; see §7 for why the toolkit has its own flexbox subset instead.
 What is outside the CSS subset is listed in `THEME_COMPAT.md`.
 
@@ -92,7 +92,7 @@ the budget is spent elsewhere: reparsing and repainting. Both are bounded to the
 (`md-engine` reparses the enclosing block run; the UI repaints damaged lines only). Cheap snapshots
 make the undo tree and background reparsing straightforward.
 
-**CM6 adapter.** Obsidian plugins reach the editor through CodeMirror 6 objects. Re-implementing
+**CM6 adapter.** JS community plugins reach the editor through CodeMirror 6 objects. Re-implementing
 CM6 is out of scope; the adapter exposes a compatible *surface* backed by `editor-core`:
 `EditorState` (doc, selection, `field()`), `Transaction`/`ChangeSet`, `StateField`, `StateEffect`,
 `Compartment`, `EditorView` (`dispatch`, `state`, coords queries), `ViewPlugin`, `Decoration`
@@ -106,19 +106,19 @@ Rows marked *(not built)* are decisions for components that do not exist yet.
 
 | Area | Choice | Why |
 |---|---|---|
-| Markdown parser | Own parser in `md-engine` | Incremental region reparse, Obsidian syntax and byte-exact source spans are needed together; no existing crate offers all three. |
+| Markdown parser | Own parser in `md-engine` | Incremental region reparse, wikilink syntax and byte-exact source spans are needed together; no existing crate offers all three. |
 | Search | Native parallel scan; `tantivy` not built | See §6. |
 | Scripting *(not built)* | Rhai | Pure Rust, sandboxed by construction, no C. `mlua` vendored needs a C compiler and could not be measured here. |
 | WASM runtime *(not built)* | `wasmi` | Pure-Rust interpreter with fuel metering, small. `wasmtime` (even with Winch/Pulley) could not be built here to compare. |
 | Async | No runtime; `std::thread` + channels, `rayon` for indexing and search | Idle CPU must be 0%; a blocking event loop with worker threads is the simplest way to guarantee it. |
-| YAML | Own front-matter reader/writer in `md-engine` | Front matter edits must preserve key order and untouched values, which serde-based YAML crates do not guarantee. It covers the YAML subset Obsidian properties use (scalars, quoted strings, flow and block lists, nested maps, block scalars); anchors, tags and multi-document streams are not supported. |
+| YAML | Own front-matter reader/writer in `md-engine` | Front matter edits must preserve key order and untouched values, which serde-based YAML crates do not guarantee. It covers the YAML subset note properties use (scalars, quoted strings, flow and block lists, nested maps, block scalars); anchors, tags and multi-document streams are not supported. |
 | Syntax highlighting | Own tokenizer in `highlight-core` | `tree-sitter` needs a C compiler; `syntect` was not tried to keep the binary small (the whole rich-block work added 0.24 MB). |
 
 ## 6. Search backend
 
 The native backend keeps a length-preserving lowercased copy of every note in memory (56 MB for
 the 50,000-note synthetic vault, about 11 MB at 10,000 notes) and scans it in parallel with
-`memchr::memmem`. Obsidian search is substring-based, not token-based, which a scan answers
+`memchr::memmem`. Vault search is substring-based, not token-based, which a scan answers
 exactly; a token index such as tantivy would need n-gram fields to do the same.
 
 | Query, 50,000 notes | Time (best of 5) |

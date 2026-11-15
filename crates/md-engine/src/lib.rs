@@ -1,4 +1,4 @@
-//! Obsidian-flavored Markdown engine.
+//! Markdown engine with wikilinks, embeds, callouts and the other vault extensions.
 //!
 //! The document is a sequence of top-level blocks that tile the source text. Each top-level block
 //! owns a flat node arena whose spans are relative to the block start, so an edit only needs to
@@ -266,7 +266,7 @@ impl<'a> Iterator for Children<'a> {
     }
 }
 
-/// Syntax extensions. Every Obsidian extension can be switched off individually.
+/// Syntax extensions. Every extension can be switched off individually.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Options {
     pub front_matter: bool,
@@ -305,7 +305,7 @@ impl Default for Options {
 }
 
 impl Options {
-    /// Plain CommonMark + GFM, no Obsidian syntax.
+    /// Plain CommonMark + GFM, no vault extensions.
     pub fn gfm() -> Self {
         Options {
             wikilinks: false,

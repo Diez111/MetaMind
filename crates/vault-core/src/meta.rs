@@ -1,4 +1,4 @@
-//! Per-note metadata extracted from the parse tree: the equivalent of Obsidian's `CachedMetadata`.
+//! Per-note metadata extracted from the parse tree (links, embeds, tags, headings, blocks, front matter, sections).
 
 use crate::path::percent_decode;
 use md_engine::frontmatter::{self, Properties, Value};

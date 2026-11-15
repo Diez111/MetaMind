@@ -1,6 +1,6 @@
 # Plugin SDK (WASM)
 
-A plugin is a folder `.obsidian/plugins/<id>/` with Obsidian's `manifest.json` and a `main.wasm`.
+A plugin is a folder `.obsidian/plugins/<id>/` with a community-plugin `manifest.json` and a `main.wasm`.
 Enable it by listing the id in `.obsidian/community-plugins.json`; run `plugins:reload` to apply.
 Optional manifest section `"rustsidian": {"permissions": [...]}` with any of `vault.read`,
 `vault.write`, `editor.read`, `editor.write`, `ui`. Without it a WASM plugin gets

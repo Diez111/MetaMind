@@ -1,7 +1,7 @@
-# Obsidian API compatibility
+# JavaScript plugin API compatibility
 
 **Nothing is implemented.** There is no JavaScript runtime in this build, so every export of
-`obsidian.d.ts` is **Unsupported**. A per-export table would be several hundred identical rows and
+the community plugin typings is **Unsupported**. A per-export table would be several hundred identical rows and
 is omitted until `compat-js` exists; it must be generated from the typings at that point, not
 written by hand.
 

@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
 Name=Rustsidian
-Comment=Obsidian-compatible knowledge base
+Comment=Fast native Markdown knowledge base
 Exec=rustsidian %f
 Icon=rustsidian
 Terminal=false
 Categories=Office;Utility;TextEditor;
-Keywords=notes;markdown;obsidian;vault;
+Keywords=notes;markdown;wiki;vault;

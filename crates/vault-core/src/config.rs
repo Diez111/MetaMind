@@ -57,7 +57,7 @@ impl JsonFile {
         }
     }
 
-    /// Serialized the way Obsidian writes its config: two-space indentation.
+    /// Serialized the way the vault config is usually written: two-space indentation.
     pub fn to_text(&self) -> String {
         serde_json::to_string_pretty(&self.value).unwrap_or_else(|_| "{}".into())
     }
@@ -73,8 +73,8 @@ impl JsonFile {
     }
 }
 
-/// The set of Obsidian config files Rustsidian reads and writes.
-pub struct ObsidianConfig {
+/// The set of vault config files Rustsidian reads and writes.
+pub struct VaultConfig {
     pub dir: PathBuf,
     pub app: JsonFile,
     pub appearance: JsonFile,
@@ -87,12 +87,12 @@ pub struct ObsidianConfig {
     pub graph: JsonFile,
 }
 
-impl ObsidianConfig {
-    pub fn load(vault_root: &Path) -> io::Result<ObsidianConfig> {
+impl VaultConfig {
+    pub fn load(vault_root: &Path) -> io::Result<VaultConfig> {
         let dir = vault_root.join(".obsidian");
         let obj = || Value::Object(Map::new());
         let f = |name: &str, default: Value| JsonFile::load(&dir.join(name), default);
-        Ok(ObsidianConfig {
+        Ok(VaultConfig {
             app: f("app.json", obj())?,
             appearance: f("appearance.json", obj())?,
             core_plugins: f("core-plugins.json", Value::Array(Vec::new()))?,
@@ -205,7 +205,7 @@ mod tests {
         let app = "{\n  \"zzzFutureKey\": {\n    \"nested\": [\n      1,\n      2\n    ]\n  },\n  \"newLinkFormat\": \"relative\",\n  \"alwaysUpdateLinks\": true\n}";
         fs::write(d.path().join(".obsidian/app.json"), app).unwrap();
         fs::write(d.path().join(".obsidian/core-plugins.json"), "[\"graph\",\"backlink\"]").unwrap();
-        let mut c = ObsidianConfig::load(d.path()).unwrap();
+        let mut c = VaultConfig::load(d.path()).unwrap();
         assert_eq!(c.link_format(), LinkFormat::Relative);
         assert_eq!(c.save_all().unwrap(), 0, "loading and saving without changes writes nothing");
         c.app.set("useMarkdownLinks", Value::Bool(true));
@@ -226,13 +226,13 @@ mod tests {
         fs::create_dir_all(d.path().join(".obsidian")).unwrap();
         fs::write(d.path().join(".obsidian/core-plugins.json"), "{\"graph\": true, \"canvas\": false}")
             .unwrap();
-        let c = ObsidianConfig::load(d.path()).unwrap();
+        let c = VaultConfig::load(d.path()).unwrap();
         assert_eq!(
             (c.core_plugin_enabled("graph"), c.core_plugin_enabled("canvas"), c.core_plugin_enabled("x")),
             (Some(true), Some(false), None)
         );
         fs::write(d.path().join(".obsidian/app.json"), "{ not json").unwrap();
-        assert!(ObsidianConfig::load(d.path()).is_err());
+        assert!(VaultConfig::load(d.path()).is_err());
         assert_eq!(fs::read_to_string(d.path().join(".obsidian/app.json")).unwrap(), "{ not json");
     }
 }

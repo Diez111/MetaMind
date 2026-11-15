@@ -60,7 +60,7 @@ fn settings_persist_and_keep_unknown_keys() {
 }
 
 #[test]
-fn hotkey_rebind_writes_obsidian_format() {
+fn hotkey_rebind_writes_vault_format() {
     let d = vault();
     let mut app = App::open(d.path()).unwrap();
     app.run("app:open-settings");

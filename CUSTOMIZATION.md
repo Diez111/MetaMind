@@ -6,7 +6,7 @@ implemented**.
 
 ## Hotkeys
 
-`.obsidian/hotkeys.json`, Obsidian's format. Each command id maps to a list of bindings; an empty
+`.obsidian/hotkeys.json`, the vault's hotkey format. Each command id maps to a list of bindings; an empty
 list unbinds the command. `Mod` means Ctrl.
 
 ```json

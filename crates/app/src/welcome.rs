@@ -274,7 +274,7 @@ impl Welcome {
             (
                 "folder",
                 "Open folder as vault",
-                "Use a folder of Markdown notes, or an existing Obsidian vault.",
+                "Use a folder of Markdown notes, or an existing vault.",
                 "welcome:open",
             ),
             (

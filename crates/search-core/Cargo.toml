@@ -1,6 +1,6 @@
 [package]
 name = "search-core"
-description = "Obsidian search query language, full-text scan, fuzzy quick switcher"
+description = "Search query language, full-text scan, fuzzy quick switcher"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

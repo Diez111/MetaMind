@@ -29,7 +29,7 @@ Pseudo-elements (`::before`, `::after`), `:nth-child()`, `:has()`, `@supports`, 
 background images, shadows, transforms, filters, grid, `color-mix()`. `transition` is parsed but
 not animated. Rules using an unsupported selector are skipped as a whole.
 
-## Obsidian names the base theme defines
+## Names the base theme defines
 
 Body classes `theme-dark` / `theme-light`. Variables: `--background-primary`,
 `--background-primary-alt`, `--background-secondary`, `--background-secondary-alt`,
@@ -43,5 +43,5 @@ Body classes `theme-dark` / `theme-light`. Variables: `--background-primary`,
 `cm-line`, `nav-files-container`, `nav-file-title`, `nav-folder-title`, `status-bar`,
 `status-bar-item`, `prompt`, `prompt-input`, `suggestion-item`, `is-active`, `is-selected`.
 
-Obsidian defines several hundred variables and many more classes; a theme that targets ones not
+Community themes use several hundred variables and many more classes; a theme that targets ones not
 listed here has no effect on those parts.

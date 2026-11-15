@@ -1,5 +1,5 @@
 //! Settings window: Editor, Files & links, Appearance, Hotkeys and About. Every control writes
-//! the same `.obsidian/*.json` key Obsidian uses (other keys are left as they are) and takes
+//! the same `.obsidian/*.json` key the vault format uses (other keys are left as they are) and takes
 //! effect at once.
 
 use crate::shell::{default_keymap, load_theme, App, Key, COMMANDS};
@@ -248,7 +248,7 @@ fn number_json(n: f64) -> Value {
 }
 
 /// Editor options from `app.json`.
-pub fn editor_settings(config: &vault_core::config::ObsidianConfig) -> editor_core::Settings {
+pub fn editor_settings(config: &vault_core::config::VaultConfig) -> editor_core::Settings {
     let a = &config.app;
     editor_core::Settings {
         auto_pair_brackets: a.bool("autoPairBrackets", true),
@@ -517,6 +517,9 @@ impl App {
         if let Some(r) = self.prop_key(key) {
             return Some(r);
         }
+        if let Some(r) = self.graph_key(key) {
+            return Some(r);
+        }
         let s = self.settings.as_mut()?;
         let plain = !key.ctrl && !key.alt && !key.shift;
         if let Some(cmd) = s.capture.clone() {
@@ -558,7 +561,7 @@ impl App {
     }
 
     pub(crate) fn modal_text(&mut self, text: &str) -> bool {
-        if self.prop_text(text) {
+        if self.prop_text(text) || self.graph_text(text) {
             return true;
         }
         let Some(s) = &mut self.settings else { return false };
@@ -693,7 +696,7 @@ fn hotkeys_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
 }
 
 fn about_view(app: &App, dom: &mut Dom, parent: NodeId) {
-    let ctl = row(dom, parent, "Rustsidian", "Obsidian-compatible knowledge base.");
+    let ctl = row(dom, parent, "Rustsidian", "Fast native Markdown knowledge base.");
     dom.add(ctl, El::div().class("setting-value").text(format!("v{}", env!("CARGO_PKG_VERSION"))));
     let ctl = row(dom, parent, "Vault", "");
     dom.add(ctl, El::div().class("setting-value").text(app.store.root.display().to_string()));
@@ -751,7 +754,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hotkey_json_uses_obsidian_names() {
+    fn hotkey_json_uses_vault_names() {
         let k = Key::parse("Ctrl+Shift+h").unwrap();
         assert_eq!(hotkey_json(&k), json!([{ "modifiers": ["Mod", "Shift"], "key": "H" }]));
         let k = Key::parse("Alt+ArrowUp").unwrap();
