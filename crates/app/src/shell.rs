@@ -418,10 +418,45 @@ pub(crate) fn load_theme(config: &VaultConfig) -> Theme {
             theme.add_sheet(&format!("snippet:{snippet}"), &css);
         }
     }
-    if let Some(n) = config.appearance.get("baseFontSize").and_then(serde_json::Value::as_f64) {
-        theme.add_sheet("settings", &format!("body {{ --font-text-size: {n}px }}"));
+    let a = &config.appearance;
+    let mut vars = String::new();
+    if let Some(n) = a.get("baseFontSize").and_then(serde_json::Value::as_f64) {
+        vars += &format!("--font-text-size: {n}px; ");
+    }
+    if let Some(f) = a.str("textFontFamily").filter(|f| !f.trim().is_empty()) {
+        vars += &format!("--font-text: {f}; ");
+    }
+    if let Some(n) = a.get("lineWidth").and_then(serde_json::Value::as_f64) {
+        vars += &format!("--file-line-width: {n}px; ");
+    }
+    if let Some(c) = a.str("accentColor").and_then(theme_engine::parse_color) {
+        let (h, s, l) = hsl(c);
+        vars += &format!("--accent-h: {h:.0}; --accent-s: {s:.0}%; --accent-l: {l:.0}%; ");
+    }
+    if !vars.is_empty() {
+        theme.add_sheet("settings", &format!("body {{ {vars}}}"));
     }
     theme
+}
+
+/// Hue in degrees, saturation and lightness in percent.
+fn hsl(c: theme_engine::Color) -> (f32, f32, f32) {
+    let [r, g, b] = [c.r, c.g, c.b].map(|v| f32::from(v) / 255.0);
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    let l = (max + min) / 2.0;
+    let d = max - min;
+    if d == 0.0 {
+        return (0.0, 0.0, l * 100.0);
+    }
+    let s = d / (1.0 - (2.0 * l - 1.0).abs());
+    let h = if max == r {
+        ((g - b) / d).rem_euclid(6.0)
+    } else if max == g {
+        (b - r) / d + 2.0
+    } else {
+        (r - g) / d + 4.0
+    };
+    (h * 60.0, s * 100.0, l * 100.0)
 }
 
 pub(crate) fn default_keymap(config: &VaultConfig) -> Vec<(Vec<Key>, String)> {

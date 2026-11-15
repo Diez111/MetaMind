@@ -118,6 +118,7 @@ fn text_queries() {
         italic: false,
         mono: false,
         wrap: true,
+        family: None,
     };
     let text = "hello world\nsecond line";
     let (w, h) = fonts.measure(text, &[], &style, Some(500.0));

@@ -94,6 +94,7 @@ impl Default for Style {
                 italic: false,
                 mono: false,
                 wrap: true,
+                family: None,
             },
             center_text: false,
             opacity: 1.0,
@@ -139,7 +140,8 @@ impl Style {
             Some(v) => theme_engine::parse_length(v, &cx).unwrap_or(size * 1.5),
             None => size * 1.5,
         };
-        let family = c.get("font-family").unwrap_or("").to_ascii_lowercase();
+        let family_list = c.get("font-family").map(str::trim).filter(|f| !f.is_empty());
+        let family = family_list.unwrap_or("").to_ascii_lowercase();
         let overflow = |axis: &str| c.get(axis).map(str::trim).unwrap_or("visible").to_string();
         let (ox, oy) = (overflow("overflow-x"), overflow("overflow-y"));
         let display = c.get("display").map(str::trim).unwrap_or("block");
@@ -189,6 +191,7 @@ impl Style {
                 italic: c.get("font-style").is_some_and(|v| v.trim() == "italic"),
                 mono: family.contains("mono") || family.contains("code") || family.contains("courier"),
                 wrap: !matches!(c.get("white-space").map(str::trim), Some("nowrap" | "pre")),
+                family: family_list.map(Into::into),
             },
             center_text: c.get("text-align").is_some_and(|v| v.trim() == "center"),
             opacity: c.number("opacity").unwrap_or(1.0).clamp(0.0, 1.0),

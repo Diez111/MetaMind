@@ -5,6 +5,7 @@ use cosmic_text::{
 };
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 use theme_engine::Color;
 
 /// A styled run inside a text block. Offsets are bytes into the block's text.
@@ -32,6 +33,8 @@ pub struct TextStyle {
     pub italic: bool,
     pub mono: bool,
     pub wrap: bool,
+    /// The CSS `font-family` list; `None` uses the default sans font.
+    pub family: Option<Arc<str>>,
 }
 
 /// A rectangle produced by text decoration or caret queries, relative to the text origin.
@@ -49,6 +52,8 @@ pub struct Fonts {
     cache: HashMap<u64, Buffer>,
     sans: String,
     mono: String,
+    /// Installed family names by lowercase name.
+    names: HashMap<String, String>,
 }
 
 const SANS_CANDIDATES: &[&str] = &[
@@ -74,6 +79,24 @@ const MONO_CANDIDATES: &[&str] = &[
     "Monaco",
 ];
 
+/// The first installed family of a CSS `font-family` list. A generic family such as
+/// `sans-serif` ends the search, as it would in a browser.
+fn installed_family<'a>(names: &'a HashMap<String, String>, list: Option<&str>) -> Option<&'a str> {
+    for f in list?.split(',') {
+        let f = f.trim().trim_matches(['"', '\'']).trim().to_lowercase();
+        if let Some(n) = names.get(&f) {
+            return Some(n);
+        }
+        if matches!(
+            f.as_str(),
+            "sans-serif" | "serif" | "monospace" | "system-ui" | "ui-sans-serif" | "cursive"
+        ) {
+            return None;
+        }
+    }
+    None
+}
+
 fn key(text: &str, spans: &[Span], style: &TextStyle, width: Option<f32>) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     text.hash(&mut h);
@@ -84,6 +107,7 @@ fn key(text: &str, spans: &[Span], style: &TextStyle, width: Option<f32>) -> u64
     (style.size.to_bits(), style.line_height.to_bits(), style.bold, style.italic, style.mono, style.wrap)
         .hash(&mut h);
     (style.color.r, style.color.g, style.color.b, style.color.a).hash(&mut h);
+    style.family.hash(&mut h);
     width.map(|w| (w * 4.0) as i64).hash(&mut h);
     h.finish()
 }
@@ -99,10 +123,15 @@ impl Fonts {
     /// it on a worker thread while the index loads.
     pub fn new() -> Fonts {
         let system = FontSystem::new();
-        let has = |name: &str| system.db().faces().any(|f| f.families.iter().any(|(n, _)| n == name));
-        let sans = SANS_CANDIDATES.iter().find(|n| has(n)).map_or_else(String::new, |s| s.to_string());
-        let mono = MONO_CANDIDATES.iter().find(|n| has(n)).map_or_else(String::new, |s| s.to_string());
-        Fonts { system, swash: SwashCache::new(), cache: HashMap::new(), sans, mono }
+        let names: HashMap<String, String> = system
+            .db()
+            .faces()
+            .flat_map(|f| f.families.iter().map(|(n, _)| (n.to_lowercase(), n.clone())))
+            .collect();
+        let has = |name: &&&str| names.contains_key(&name.to_lowercase());
+        let sans = SANS_CANDIDATES.iter().find(has).map_or_else(String::new, |s| s.to_string());
+        let mono = MONO_CANDIDATES.iter().find(has).map_or_else(String::new, |s| s.to_string());
+        Fonts { system, swash: SwashCache::new(), cache: HashMap::new(), sans, mono, names }
     }
 
     pub fn font_count(&self) -> usize {
@@ -110,6 +139,7 @@ impl Fonts {
     }
 
     fn attrs<'a>(
+        named: Option<&'a str>,
         sans: &'a str,
         mono: &'a str,
         color: Color,
@@ -117,11 +147,12 @@ impl Fonts {
         italic: bool,
         is_mono: bool,
     ) -> Attrs<'a> {
-        let family = match (is_mono, sans.is_empty(), mono.is_empty()) {
-            (true, _, false) => Family::Name(mono),
-            (true, _, true) => Family::Monospace,
-            (false, false, _) => Family::Name(sans),
-            (false, true, _) => Family::SansSerif,
+        let family = match (is_mono, named, sans.is_empty(), mono.is_empty()) {
+            (true, _, _, false) => Family::Name(mono),
+            (true, _, _, true) => Family::Monospace,
+            (false, Some(n), _, _) => Family::Name(n),
+            (false, None, false, _) => Family::Name(sans),
+            (false, None, true, _) => Family::SansSerif,
         };
         Attrs::new()
             .family(family)
@@ -140,7 +171,9 @@ impl Fonts {
         }
         let mut buf = Buffer::new(&mut self.system, Metrics::new(style.size, style.line_height));
         buf.set_size(if style.wrap { width } else { None }, None);
-        let base = Self::attrs(&self.sans, &self.mono, style.color, style.bold, style.italic, style.mono);
+        let named = installed_family(&self.names, style.family.as_deref());
+        let base =
+            Self::attrs(named, &self.sans, &self.mono, style.color, style.bold, style.italic, style.mono);
         if spans.is_empty() {
             buf.set_text(text, &base, Shaping::Advanced, None);
         } else {
@@ -156,6 +189,7 @@ impl Fonts {
                     runs.push((&text[pos..a], base.clone()));
                 }
                 let mut at = Self::attrs(
+                    named,
                     &self.sans,
                     &self.mono,
                     s.color.unwrap_or(style.color),

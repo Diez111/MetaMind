@@ -233,6 +233,30 @@ const ITEMS: &[Item] = &[
         desc: "Size of text in notes, in pixels.",
         control: Number(16.0, 10.0, 30.0),
     },
+    Item {
+        section: Appearance,
+        file: File::Appearance,
+        key: "textFontFamily",
+        name: "Text font",
+        desc: "Font for note text, as a comma-separated list. The first installed font is used.",
+        control: Text,
+    },
+    Item {
+        section: Appearance,
+        file: File::Appearance,
+        key: "accentColor",
+        name: "Accent color",
+        desc: "Color for links, tags and highlights, such as #8a5cf5. Empty uses the default.",
+        control: Text,
+    },
+    Item {
+        section: Appearance,
+        file: File::Appearance,
+        key: "lineWidth",
+        name: "Line width",
+        desc: "Maximum width of note text in pixels while Readable line length is on.",
+        control: Number(800.0, 400.0, 2400.0),
+    },
 ];
 
 fn item(key: &str) -> Option<&'static Item> {
@@ -313,7 +337,8 @@ impl App {
             "newLinkFormat" => self.store.index.link_format = self.config.link_format(),
             "trashOption" => self.store.trash_mode = self.config.trash_option(),
             "theme" => self.dark = self.config.color_scheme().or(self.system_dark).unwrap_or(true),
-            "cssTheme" | "baseFontSize" | "enabledCssSnippets" => self.theme = load_theme(&self.config),
+            "cssTheme" | "baseFontSize" | "textFontFamily" | "accentColor" | "lineWidth"
+            | "enabledCssSnippets" => self.theme = load_theme(&self.config),
             "propertiesInDocument" => self.prop_edit = None,
             _ => {}
         }
@@ -386,6 +411,18 @@ impl App {
                     return;
                 }
             },
+            _ if it.key == "accentColor" && !text.trim().is_empty() => {
+                if theme_engine::parse_color(text.trim()).is_none() {
+                    self.notice = Some(format!("\"{}\" is not a color", text.trim()));
+                    return;
+                }
+                json!(text.trim())
+            }
+            // The value goes into a CSS declaration.
+            _ if it.key == "textFontFamily" && text.contains([';', '{', '}']) => {
+                self.notice = Some("A font list cannot contain ; { or }".to_string());
+                return;
+            }
             _ => json!(text.trim()),
         };
         self.save_setting(it.file, it.key, v);

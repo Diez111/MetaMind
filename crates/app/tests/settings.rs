@@ -137,3 +137,44 @@ fn color_scheme_follows_system_unless_set() {
     app.set_system_dark(Some(true));
     assert!(!app.dark);
 }
+
+#[test]
+fn font_accent_and_line_width_settings_style_notes() {
+    let d = vault();
+    fs::write(d.path().join(".obsidian/app.json"), r#"{"readableLineLength":true}"#).unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("open:Home.md");
+    app.run("app:open-settings");
+    app.run("settings:section:appearance");
+    for (k, v) in
+        [("textFontFamily", "No Such Font, serif"), ("accentColor", "#ff0000"), ("lineWidth", "600")]
+    {
+        app.run(&format!("settings:edit:{k}"));
+        for _ in 0..20 {
+            app.key(key("Backspace"));
+        }
+        typed(&mut app, v);
+        app.key(key("Enter"));
+    }
+    app.run("settings:edit:accentColor");
+    typed(&mut app, "zz");
+    app.key(key("Enter"));
+    assert_eq!(app.notice.as_deref(), Some("\"#ff0000zz\" is not a color"));
+    let a = read_json(&d, ".obsidian/appearance.json");
+    assert_eq!(
+        (a["textFontFamily"].as_str(), a["accentColor"].as_str(), &a["lineWidth"]),
+        (Some("No Such Font, serif"), Some("#ff0000"), &json!(600))
+    );
+    app.key(key("Escape"));
+
+    let mut fonts = rustsidian_ui::Fonts::new();
+    let mut pm = rustsidian_ui::Pixmap::new(1000, 600).unwrap();
+    let frame = rustsidian_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+    let has = |n: &&rustsidian_ui::dom::Node, c: &str| n.el.classes.iter().any(|x| x == c);
+    let line = frame.dom.nodes.iter().find(|n| has(n, "cm-line")).unwrap();
+    assert_eq!(line.style.text.family.as_deref(), Some("No Such Font, serif"));
+    assert_eq!(line.style.max_w, 600.0);
+    let icon = frame.dom.nodes.iter().find(|n| has(n, "workspace-tab-header-inner-icon")).unwrap();
+    let c = icon.style.text.color;
+    assert!(c.r > 200 && c.g < 60 && c.b < 60, "{c:?}");
+}
