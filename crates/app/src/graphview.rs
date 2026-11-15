@@ -23,6 +23,12 @@ struct SimState {
     holds: Vec<(u32, [f32; 2])>,
     releases: Vec<u32>,
     reheat: bool,
+    /// Force sliders changed: apply them and warm the layout gently.
+    forces: Option<Forces>,
+    /// A frame was shown; the layout may advance one tick, so it moves at display pace.
+    tick: bool,
+    /// Tick without waiting for frames (headless rendering and tests).
+    free_run: bool,
     stop: bool,
 }
 
@@ -36,9 +42,17 @@ impl Shared {
     fn lock(&self) -> MutexGuard<'_, SimState> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
+
+    /// Hand work to the layout thread. It counts as running until it has looked, so the
+    /// window keeps supplying frames.
+    fn send(&self, f: impl FnOnce(&mut SimState)) {
+        f(&mut self.lock());
+        self.running.store(true, Ordering::Release);
+        self.wake.notify_all();
+    }
 }
 
-fn simulate(shared: &Shared, graph: &Graph, mut layout: Layout, forces: Forces) {
+fn simulate(shared: &Shared, graph: &Graph, mut layout: Layout, mut forces: Forces) {
     loop {
         {
             let mut st = shared.lock();
@@ -46,6 +60,10 @@ fn simulate(shared: &Shared, graph: &Graph, mut layout: Layout, forces: Forces) 
                 if st.stop {
                     shared.running.store(false, Ordering::Release);
                     return;
+                }
+                if let Some(f) = st.forces.take() {
+                    forces = f;
+                    layout.alpha = layout.alpha.max(0.3);
                 }
                 let mut touched = std::mem::take(&mut st.reheat);
                 for (i, p) in st.holds.drain(..) {
@@ -64,13 +82,15 @@ fn simulate(shared: &Shared, graph: &Graph, mut layout: Layout, forces: Forces) 
                 if touched {
                     layout.reheat();
                 }
-                if !layout.is_settled() {
+                let settled = layout.is_settled();
+                if !settled && (std::mem::take(&mut st.tick) || st.free_run) {
                     break;
                 }
-                st.pos.clone_from(&layout.pos);
-                shared.running.store(false, Ordering::Release);
+                if settled {
+                    st.pos.clone_from(&layout.pos);
+                }
+                shared.running.store(!settled, Ordering::Release);
                 st = shared.wake.wait(st).unwrap_or_else(|e| e.into_inner());
-                shared.running.store(true, Ordering::Release);
             }
         }
         layout.step(graph, &forces);
@@ -179,6 +199,8 @@ pub struct GraphView {
     /// The graph must be rebuilt before the next frame (vault or settings changed).
     pub dirty: bool,
     press: Option<Press>,
+    /// Graph centroid the camera follows after a force change.
+    anchor: Option<[f32; 2]>,
     shared: Arc<Shared>,
 }
 
@@ -203,6 +225,12 @@ fn start(graph: &Arc<Graph>, layout: Layout, forces: Forces) -> Arc<Shared> {
         shared.running.store(false, Ordering::Release);
     }
     shared
+}
+
+fn centroid(pos: &[[f32; 2]]) -> [f32; 2] {
+    let n = pos.len().max(1) as f32;
+    let s = pos.iter().fold([0.0; 2], |a, p| [a[0] + p[0], a[1] + p[1]]);
+    [s[0] / n, s[1] / n]
 }
 
 fn build_graph(app: &mut App, settings: &GraphSettings, local: Option<&str>, depth: u32) -> Graph {
@@ -245,20 +273,14 @@ impl GraphView {
             hover: None,
             dirty: false,
             press: None,
+            anchor: None,
             panel: Panel::from_json(&app.config.graph.value),
         }
     }
 
-    /// Restart the layout with the current forces: from the current positions, or from the
-    /// starting spiral when `fresh` (the Animate button).
-    pub fn restart(&mut self, fresh: bool) {
-        self.sync();
-        let n = self.graph.nodes.len();
-        let layout = if fresh {
-            Layout::new(n)
-        } else {
-            Layout::with_positions(n, self.pos.iter().copied().enumerate())
-        };
+    /// Restart the layout from the starting spiral (the Animate button).
+    pub fn restart(&mut self) {
+        let layout = Layout::new(self.graph.nodes.len());
         self.shared.lock().stop = true;
         self.shared.wake.notify_all();
         self.pos.clone_from(&layout.pos);
@@ -302,7 +324,12 @@ impl GraphView {
             _ => return,
         }
         if FORCE_SLIDERS.iter().any(|f| f.key == key) {
-            self.restart(false);
+            // Freeze the framing so the graph does not jump while the forces move it.
+            self.auto_fit = false;
+            self.sync();
+            self.anchor = Some(centroid(&self.pos));
+            let forces = self.settings.forces;
+            self.shared.send(|st| st.forces = Some(forces));
         }
     }
 
@@ -355,6 +382,7 @@ impl GraphView {
 
     /// Block until the layout has settled (headless rendering and tests).
     pub fn settle(&mut self) {
+        self.shared.send(|st| st.free_run = true);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
         while self.animating() && std::time::Instant::now() < deadline {
             std::thread::sleep(std::time::Duration::from_millis(1));
@@ -442,8 +470,7 @@ impl GraphView {
                 if let Some(p) = self.pos.get_mut(n as usize) {
                     *p = w;
                 }
-                self.shared.lock().holds.push((n, w));
-                self.shared.wake.notify_all();
+                self.shared.send(|st| st.holds.push((n, w)));
             }
             None => {
                 press.at = (x, y);
@@ -459,8 +486,7 @@ impl GraphView {
         let press = self.press.take()?;
         let n = press.node?;
         if press.moved {
-            self.shared.lock().releases.push(n);
-            self.shared.wake.notify_all();
+            self.shared.send(|st| st.releases.push(n));
             return None;
         }
         self.graph.nodes.get(n as usize).map(|n| n.kind.clone())
@@ -485,6 +511,17 @@ impl GraphView {
     /// Display list for the pane, in window coordinates.
     pub fn paint(&mut self, rect: Rect, colors: &[Color; 9], text: &TextStyle) -> Vec<Cmd> {
         self.sync();
+        if self.animating() {
+            self.shared.lock().tick = true;
+            self.shared.wake.notify_all();
+        }
+        // While a force change settles, follow the graph's centre so it stays where it was.
+        if let Some(a) = self.anchor {
+            let c = centroid(&self.pos);
+            self.cam[0] += c[0] - a[0];
+            self.cam[1] += c[1] - a[1];
+            self.anchor = self.animating().then_some(c);
+        }
         self.fit(&rect);
         let g = self.graph.clone();
         let n = g.nodes.len().min(self.pos.len());
@@ -591,26 +628,34 @@ impl GraphView {
             }
         }
         cmds.extend(batches.into_iter().map(|(color, items)| Cmd::Circles { items, color }));
-        // Labels fade in with zoom; the hovered node and its neighbours are always labelled.
+        // Labels fade in smoothly over a zoom range of four times around the threshold. While a
+        // node is hovered its neighbours are labelled at full strength and the rest dimmed.
         let threshold = 0.5 * 2f32.powf(-self.settings.text_fade / 1.5);
-        let fade = ((self.zoom - threshold) / (threshold * 0.6)).clamp(0.0, 1.0);
-        let mut labelled: Vec<usize> =
-            visible.into_iter().filter(|&i| if focus.is_some() { near[i] } else { fade > 0.0 }).collect();
+        let t = ((self.zoom / threshold).log2() / 2.0 + 0.5).clamp(0.0, 1.0);
+        let fade = t * t * (3.0 - 2.0 * t);
+        let alpha = |i: usize| match focus {
+            Some(_) if near[i] => 1.0,
+            Some(_) => fade * 0.2,
+            None => fade,
+        };
+        let mut labelled: Vec<usize> = visible.into_iter().filter(|&i| alpha(i) > 0.01).collect();
         if labelled.len() > MAX_LABELS {
-            labelled.sort_by_key(|&i| std::cmp::Reverse(g.nodes[i].degree));
+            labelled.sort_by_key(|&i| {
+                (std::cmp::Reverse(near.get(i).copied()), std::cmp::Reverse(g.nodes[i].degree))
+            });
             labelled.truncate(MAX_LABELS);
         }
-        let alpha = if focus.is_some() { 1.0 } else { fade };
         for i in labelled {
+            let size = if focus == Some(i as u32) { text.size * 0.9 } else { text.size };
             let label: String = g.nodes[i].label.chars().take(40).collect();
-            let w = label.chars().count() as f32 * text.size * 0.52;
+            let w = label.chars().count() as f32 * size * 0.52;
             cmds.push(Cmd::Text {
                 x: screen[i].0 - w / 2.0,
                 y: screen[i].1 + self.radius(i) + 3.0,
                 width: None,
                 text: label,
                 spans: Vec::new(),
-                style: TextStyle { color: colors[8].with_alpha(alpha), wrap: false, ..text.clone() },
+                style: TextStyle { color: colors[8].with_alpha(alpha(i)), size, wrap: false, ..text.clone() },
             });
         }
         cmds.push(Cmd::PopClip);
@@ -820,7 +865,7 @@ impl App {
             "graph:animate" => {
                 if let Some(v) = &mut self.graph_view {
                     v.auto_fit = true;
-                    v.restart(true);
+                    v.restart();
                 }
             }
             "graph:group-new" => {

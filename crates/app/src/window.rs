@@ -48,6 +48,8 @@ struct Win {
     animating: bool,
     pointer: bool,
     last_anim: Instant,
+    /// Time between animation frames, from the refresh rate of the window's monitor.
+    frame_interval: Duration,
     started: Instant,
     profile: bool,
     first_frame_done: bool,
@@ -82,6 +84,14 @@ fn named(k: &NamedKey) -> Option<&'static str> {
 }
 
 impl Win {
+    /// Animate at the refresh rate of the monitor the window is on (60 Hz when unknown).
+    fn measure_refresh_rate(&mut self) {
+        let mhz =
+            self.window.as_ref().and_then(|w| w.current_monitor()).and_then(|m| m.refresh_rate_millihertz());
+        let hz = mhz.map_or(60.0, |m| f64::from(m) / 1000.0).clamp(24.0, 360.0);
+        self.frame_interval = Duration::from_secs_f64(1.0 / hz);
+    }
+
     fn redraw(&mut self) {
         let (Some(window), Some(surface)) = (&self.window, &mut self.surface) else { return };
         let size = window.inner_size();
@@ -368,6 +378,7 @@ impl ApplicationHandler<UserEvent> for Win {
         self.access = Some(accesskit_winit::Adapter::with_event_loop_proxy(el, &window, self.proxy.clone()));
         window.set_visible(true);
         self.window = Some(window);
+        self.measure_refresh_rate();
     }
 
     fn user_event(&mut self, el: &ActiveEventLoop, event: UserEvent) {
@@ -401,7 +412,11 @@ impl ApplicationHandler<UserEvent> for Win {
         }
         match event {
             WindowEvent::RedrawRequested => return self.redraw(),
-            WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => return self.request_redraw(),
+            WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                self.measure_refresh_rate();
+                return self.request_redraw();
+            }
+            WindowEvent::Moved(_) => return self.measure_refresh_rate(),
             WindowEvent::ModifiersChanged(m) => {
                 self.mods = m.state();
                 let (x, y, ctrl) = (self.mouse.0, self.mouse.1, self.mods.control_key());
@@ -542,7 +557,7 @@ impl ApplicationHandler<UserEvent> for Win {
     }
 
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
-        let frame_due = self.last_anim.elapsed().as_millis() as u64 >= 16;
+        let frame_due = self.last_anim.elapsed() >= self.frame_interval;
         let Some(app) = &mut self.app else {
             // Welcome screen: only its own animations need frames.
             let animating = self.welcome.as_ref().is_some_and(|w| w.anims.active());
@@ -552,7 +567,7 @@ impl ApplicationHandler<UserEvent> for Win {
             }
             self.animating = animating;
             return el.set_control_flow(if animating {
-                ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(16))
+                ControlFlow::WaitUntil(self.last_anim + self.frame_interval)
             } else {
                 ControlFlow::Wait
             });
@@ -591,11 +606,13 @@ impl ApplicationHandler<UserEvent> for Win {
         if redraw {
             self.request_redraw();
         }
-        let next = if animating { Some(next.map_or(16, |ms| ms.min(16)).max(1)) } else { next };
-        match next {
-            Some(ms) => {
-                el.set_control_flow(ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(ms)))
-            }
+        let mut wake = next.map(|ms| Instant::now() + Duration::from_millis(ms));
+        if animating {
+            let frame = self.last_anim + self.frame_interval;
+            wake = Some(wake.map_or(frame, |w| w.min(frame)));
+        }
+        match wake {
+            Some(at) => el.set_control_flow(ControlFlow::WaitUntil(at)),
             None => el.set_control_flow(ControlFlow::Wait),
         }
     }
@@ -666,6 +683,7 @@ pub fn run(vault: Option<&Path>, note: Option<&str>, profile: bool) -> i32 {
         animating: false,
         pointer: false,
         last_anim: started,
+        frame_interval: Duration::from_millis(16),
         started,
         profile,
         first_frame_done: false,

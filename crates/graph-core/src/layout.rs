@@ -33,6 +33,11 @@ const ALPHA_MIN: f32 = 0.002;
 const ALPHA_DECAY: f32 = 0.0228;
 const VELOCITY_DECAY: f32 = 0.6;
 const THETA2: f32 = 0.81;
+/// Nodes closer than this push each other apart regardless of temperature, so leaves spread
+/// around a hub instead of piling onto it.
+const COLLIDE: f32 = 18.0;
+/// World units a node may move per tick; keeps reheats from flinging nodes across the view.
+const MAX_SPEED: f32 = 40.0;
 
 #[derive(Clone, Copy)]
 struct Cell {
@@ -143,9 +148,10 @@ impl Tree {
         }
     }
 
-    /// Repulsive force on body `i` at `p`.
-    fn force(&self, i: u32, p: [f32; 2], strength: f32) -> [f32; 2] {
+    /// Repulsive force on body `i` at `p`, and the push from bodies overlapping it.
+    fn force(&self, i: u32, p: [f32; 2], strength: f32) -> ([f32; 2], [f32; 2]) {
         let mut f = [0.0f32; 2];
+        let mut push = [0.0f32; 2];
         let mut stack = [0u32; 128];
         let mut sp = 1;
         while sp > 0 {
@@ -165,6 +171,12 @@ impl Tree {
                 let k = strength * c.mass / d2;
                 f[0] += dx * k;
                 f[1] += dy * k;
+                if leaf && d2 < COLLIDE * COLLIDE {
+                    let d = d2.sqrt();
+                    let k = (COLLIDE - d) / d * 0.5 * c.mass;
+                    push[0] += dx * k;
+                    push[1] += dy * k;
+                }
             } else {
                 for &k in &c.kids {
                     if k != 0 && sp < stack.len() {
@@ -174,7 +186,7 @@ impl Tree {
                 }
             }
         }
-        f
+        (f, push)
     }
 }
 
@@ -227,11 +239,11 @@ impl Layout {
         let tree = Tree::build(&self.pos);
         let strength = forces.repel_strength * 100.0;
         let pos = &self.pos;
-        let rep: Vec<[f32; 2]> =
+        let rep: Vec<([f32; 2], [f32; 2])> =
             (0..n).into_par_iter().map(|i| tree.force(i as u32, pos[i], strength)).collect();
-        for (v, f) in self.vel.iter_mut().zip(&rep) {
-            v[0] += f[0] * alpha;
-            v[1] += f[1] * alpha;
+        for (v, (f, push)) in self.vel.iter_mut().zip(&rep) {
+            v[0] += f[0] * alpha + push[0];
+            v[1] += f[1] * alpha + push[1];
         }
         // Springs along links, weakened for hubs so they do not collapse.
         for &(a, b) in &g.edges {
@@ -260,6 +272,11 @@ impl Layout {
             let v = &mut self.vel[i];
             v[0] = (v[0] - self.pos[i][0] * c) * VELOCITY_DECAY;
             v[1] = (v[1] - self.pos[i][1] * c) * VELOCITY_DECAY;
+            let speed = (v[0] * v[0] + v[1] * v[1]).sqrt();
+            if speed > MAX_SPEED {
+                v[0] *= MAX_SPEED / speed;
+                v[1] *= MAX_SPEED / speed;
+            }
             if v[0].is_finite() && v[1].is_finite() {
                 self.pos[i][0] += v[0];
                 self.pos[i][1] += v[1];
@@ -344,12 +361,25 @@ mod tests {
     }
 
     #[test]
+    fn leaves_spread_around_a_hub() {
+        let edges: Vec<(u32, u32)> = (1..60).map(|i| (0, i)).collect();
+        let g = graph(60, &edges);
+        let mut l = Layout::new(60);
+        while l.step(&g, &Forces::default()) {}
+        for i in 1..60 {
+            for j in 1..i {
+                assert!(dist(&l, i, j) > COLLIDE * 0.6, "leaves {i} and {j} pile up: {}", dist(&l, i, j));
+            }
+        }
+    }
+
+    #[test]
     fn barnes_hut_matches_brute_force() {
         let l = Layout::new(400);
         let tree = Tree::build(&l.pos);
         let mut worst: f32 = 0.0;
         for i in (0..400).step_by(37) {
-            let approx = tree.force(i as u32, l.pos[i], 1000.0);
+            let approx = tree.force(i as u32, l.pos[i], 1000.0).0;
             let mut exact = [0.0f32; 2];
             let mut total = 0.0f32;
             for j in 0..400 {
