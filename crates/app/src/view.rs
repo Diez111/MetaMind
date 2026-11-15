@@ -1259,7 +1259,20 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
             dom.add(status, El::div().class("status-bar-item").text(label));
         }
         dom.add(status, El::div().class("status-bar-item").text(format!("{backlinks} backlinks")));
-        dom.add(status, El::div().class("status-bar-item").text(format!("{words} words")));
+        let goal =
+            t.meta.as_ref().and_then(|(_, m)| m.frontmatter.as_ref()?.iter().find(|(k, _)| k == "word-goal"));
+        let goal = goal.and_then(|(_, v)| match v {
+            md_engine::frontmatter::Value::Number(n) if *n >= 1.0 => Some(*n as u32),
+            md_engine::frontmatter::Value::String(s) => s.trim().parse().ok().filter(|n| *n > 0),
+            _ => None,
+        });
+        let count = match goal {
+            Some(g) => format!("{words} / {g} words"),
+            None => format!("{words} words"),
+        };
+        dom.add(status, El::div().class("status-bar-item").text(count));
+        // 200 words a minute, a common estimate for silent reading.
+        dom.add(status, El::div().class("status-bar-item").text(format!("{} min read", words.div_ceil(200))));
         dom.add(
             status,
             El::div()

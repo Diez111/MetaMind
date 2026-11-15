@@ -188,6 +188,7 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("graph:animate", "Graph view: Animate layout", ""),
     ("graph:reset-settings", "Graph view: Restore default settings", ""),
     ("daily-notes", "Daily notes: Open today's daily note", ""),
+    ("zk-prefixer", "Unique note creator: Create new unique note", ""),
     ("random-note", "Random note: Open random note", ""),
     ("app:delete-file", "Delete current file", ""),
     ("theme:toggle-light-dark", "Toggle light/dark mode", ""),
@@ -1285,6 +1286,7 @@ impl App {
             "editor:toggle-strikethrough" => wrap(self, "~~"),
             "editor:follow-link" => self.follow_link(),
             "daily-notes" => self.open_daily_note(),
+            "zk-prefixer" => self.new_unique_note(),
             "random-note" => {
                 let notes: Vec<String> = self.store.index.notes().map(|(_, f)| f.path.to_string()).collect();
                 if !notes.is_empty() {

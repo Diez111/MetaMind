@@ -599,3 +599,30 @@ fn canvas_view() {
     assert_eq!(app.canvas_view.as_ref().unwrap().canvas.nodes.len(), 2);
     render(&mut app, &mut fonts, &mut pm, 1.0);
 }
+
+#[test]
+fn status_bar_shows_word_goal_and_reading_time() {
+    let d = tempfile::tempdir().unwrap();
+    let body = "word ".repeat(450);
+    fs::write(d.path().join("Goal.md"), format!("---\nword-goal: 1000\n---\n{body}\n")).unwrap();
+    fs::write(d.path().join("Plain.md"), "one two three\n").unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(1000, 600).unwrap();
+    let mut status = |app: &mut App| -> Vec<String> {
+        let frame = render(app, &mut fonts, &mut pm, 1.0);
+        frame
+            .dom
+            .nodes
+            .iter()
+            .filter_map(|n| n.el.text.clone())
+            .filter(|t| t.contains("word") || t.contains("min read"))
+            .collect()
+    };
+    app.run("open:Goal.md");
+    let s = status(&mut app);
+    assert!(s.contains(&"450 / 1000 words".to_string()) && s.contains(&"3 min read".to_string()), "{s:?}");
+    app.run("open:Plain.md");
+    let s = status(&mut app);
+    assert!(s.contains(&"3 words".to_string()) && s.contains(&"1 min read".to_string()), "{s:?}");
+}

@@ -113,34 +113,59 @@ impl App {
         let name = datetime::format(&non_empty(&v, "format", "YYYY-MM-DD"), secs);
         let folder = non_empty(&v, "folder", "").trim_matches('/').to_string();
         let rel = path::join(&folder, &format!("{name}.md"));
-        if self.store.index.id(&rel).is_none() {
-            let template = non_empty(&v, "template", "");
-            let text = if template.is_empty() {
-                String::new()
-            } else {
-                let t = if template.to_lowercase().ends_with(".md") {
-                    template
-                } else {
-                    format!("{template}.md")
-                };
-                match self.template_text(&t, path::stem(&rel)) {
-                    Some(text) => text,
-                    None => return,
-                }
-            };
-            if let Some(dir) = Some(path::parent(&rel)).filter(|d| !d.is_empty()) {
-                if let Err(e) = std::fs::create_dir_all(self.store.abs(dir)) {
-                    self.notice = Some(format!("Cannot create {dir}: {e}"));
-                    return;
-                }
-            }
-            if let Err(e) = self.store.create(&rel, &text) {
-                self.notice = Some(format!("Cannot create daily note: {e}"));
-                return;
-            }
-            self.tree = None;
+        if self.store.index.id(&rel).is_none()
+            && !self.create_from_template(&rel, &non_empty(&v, "template", ""))
+        {
+            return;
         }
         self.open_note(&rel);
+    }
+
+    /// Create a note named by the current time, with the format, folder and template from
+    /// `zk-prefixer.json`. A name already taken gets a counter.
+    pub(crate) fn new_unique_note(&mut self) {
+        let v = read_json(self, "zk-prefixer.json");
+        let name = datetime::format(&non_empty(&v, "format", "YYYYMMDDHHmm"), fsio::now_ms() / 1000);
+        let folder = non_empty(&v, "folder", "").trim_matches('/').to_string();
+        let mut rel = path::join(&folder, &format!("{name}.md"));
+        let mut n = 1;
+        while self.store.index.id(&rel).is_some() || self.store.abs(&rel).exists() {
+            rel = path::join(&folder, &format!("{name} {n}.md"));
+            n += 1;
+        }
+        if self.create_from_template(&rel, &non_empty(&v, "template", "")) {
+            self.open_note(&rel);
+        }
+    }
+
+    /// Create `rel` with the filled-in template, or empty when `template` is empty. Reports
+    /// failures as a notice and returns false.
+    fn create_from_template(&mut self, rel: &str, template: &str) -> bool {
+        let text = if template.is_empty() {
+            String::new()
+        } else {
+            let t = if template.to_lowercase().ends_with(".md") {
+                template.to_string()
+            } else {
+                format!("{template}.md")
+            };
+            match self.template_text(&t, path::stem(rel)) {
+                Some(text) => text,
+                None => return false,
+            }
+        };
+        if let Some(dir) = Some(path::parent(rel)).filter(|d| !d.is_empty()) {
+            if let Err(e) = std::fs::create_dir_all(self.store.abs(dir)) {
+                self.notice = Some(format!("Cannot create {dir}: {e}"));
+                return false;
+            }
+        }
+        if let Err(e) = self.store.create(rel, &text) {
+            self.notice = Some(format!("Cannot create {rel}: {e}"));
+            return false;
+        }
+        self.tree = None;
+        true
     }
 
     pub(crate) fn run_templates(&mut self, command: &str) -> bool {

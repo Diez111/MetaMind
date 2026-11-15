@@ -60,11 +60,12 @@ The authoritative list of what Rustsidian does today. Nothing outside it is clai
 | Quick switcher, command palette | done | |
 | Search panel with query operators | done | All operators; no embedded `query` blocks |
 | Back/forward, tabs | done | Open tabs, view mode, scroll, cursor, folds and sidebar state are restored when the vault reopens. No split panes, stacked or pinned tabs, pop-out windows, linked panes, workspaces |
-| Outline, backlinks, unlinked mentions, word count | done | Unlinked mentions match the file name and aliases as whole words, with a Link button per note. No outgoing-links pane |
+| Outline, backlinks, unlinked mentions, word count | done | Unlinked mentions match the file name and aliases as whole words, with a Link button per note. Status bar shows reading time (200 words a minute) and progress against a `word-goal` property. No outgoing-links pane |
+| Unique note creator | done | Format, folder and template from `zk-prefixer.json`; a name already taken gets a counter |
 | Daily notes, random note | partial | Daily note uses the UTC date and `YYYY-MM-DD`; custom formats and templates are not supported |
 | Graph view | partial | Global and local graph (depth 1-3) in the main pane: pan, zoom about the pointer, drag nodes, hover highlight, click to open (unresolved creates the note, tags search). Settings panel with search filter, filter toggles, color groups, arrows, text fade, node size, link thickness, the four forces and Animate, all saved to `graph.json`. No layout cache on disk; dense graphs draw a sample of links |
 | Canvas view | done | Text/file/link/group nodes, colors, curved edges with arrows and labels; pan, wheel zoom, move, resize, double-click to edit text, add/delete node, lossless save. No edge editing; file nodes show a text preview |
-| Bookmarks, tags pane, properties view, periodic notes, templates, unique note creator, slides, format converter, audio recorder, footnotes view | none | |
+| Bookmarks, tags pane, properties view, periodic notes, templates, slides, format converter, audio recorder, footnotes view | none | |
 | Bases | none | |
 
 ### Theming and customisation

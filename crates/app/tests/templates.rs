@@ -43,3 +43,22 @@ fn daily_note_uses_folder_format_and_template() {
     app.run("daily-notes");
     assert_eq!(app.tab().unwrap().path, p);
 }
+
+#[test]
+fn unique_note_uses_settings_and_never_reuses_a_name() {
+    let d = vault();
+    fs::write(
+        d.path().join(".obsidian/zk-prefixer.json"),
+        r#"{"folder":"Zettel","format":"[Z]YYYY","template":"Tpl/Day"}"#,
+    )
+    .unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("zk-prefixer");
+    let first = app.tab().unwrap().path.clone();
+    assert!(first.starts_with("Zettel/Z20") && first.ends_with(".md"), "{first}");
+    assert!(app.tab().unwrap().editor.buf.text().starts_with("Daily Z20"));
+    app.run("zk-prefixer");
+    let second = app.tab().unwrap().path.clone();
+    assert_eq!(second, first.replace(".md", " 1.md"));
+    assert!(d.path().join(&second).is_file());
+}
