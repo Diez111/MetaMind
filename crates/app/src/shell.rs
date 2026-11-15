@@ -332,9 +332,12 @@ pub struct App {
     pub search_query: String,
     pub search_results: Vec<SearchResult>,
     pub search_error: Option<String>,
-    corpus: Option<Corpus>,
+    pub(crate) corpus: Option<Corpus>,
     pub(crate) graph: Option<std::sync::Arc<vault_core::LinkGraph>>,
     pub(crate) tags: Option<crate::panes::TagCounts>,
+    /// Unlinked mentions of the active note, computed while their section is expanded.
+    pub mentions: Option<crate::mentions::Mentions>,
+    pub show_unlinked: bool,
     pub(crate) tree: Option<Vec<TreeRow>>,
     /// While set, the link graph is not computed (the first frame is presented without it).
     pub defer_graph: bool,
@@ -479,6 +482,8 @@ impl App {
             corpus: None,
             graph: None,
             tags: None,
+            mentions: None,
+            show_unlinked: false,
             tree: None,
             defer_graph: false,
             pending: Vec::new(),
@@ -519,6 +524,9 @@ impl App {
         self.refresh_graph_view();
         if self.left_open && self.panel == Panel::Tags {
             self.tag_counts();
+        }
+        if self.right_open && self.show_unlinked && self.tab().is_some() {
+            self.refresh_mentions();
         }
         if self.tree.is_none() {
             self.tree = Some(self.build_tree());
@@ -733,6 +741,7 @@ impl App {
             self.save();
         }
         self.active = active;
+        self.save_session();
         let _ = self.store.save_cache();
     }
 
@@ -766,6 +775,11 @@ impl App {
             }
             if self.store.refresh(p).is_none() {
                 continue;
+            }
+            if let Some(c) = &mut self.corpus {
+                if let Some(id) = self.store.index.id(p) {
+                    c.update(id, std::fs::read_to_string(self.store.abs(p)).ok().as_deref());
+                }
             }
             let Some(i) = self.tabs.iter().position(|t| t.path.eq_ignore_ascii_case(p)) else { continue };
             if self.tabs[i].editor.buf.is_modified() {
@@ -1020,6 +1034,10 @@ impl App {
         if command == "prompt:dismiss" {
             return;
         }
+        if let Some(rel) = command.strip_prefix("backlinks:link:") {
+            self.link_mentions(rel);
+            return;
+        }
         if self.run_plugin_command(command) || self.run_panes(command) || self.run_templates(command) {
             return;
         }
@@ -1137,6 +1155,7 @@ impl App {
             }
             "app:toggle-left-sidebar" => self.left_open = !self.left_open,
             "app:toggle-right-sidebar" => self.right_open = !self.right_open,
+            "backlinks:toggle-unlinked" => self.show_unlinked = !self.show_unlinked,
             "markdown:toggle-preview" => {
                 if let Some(t) = self.tab_mut() {
                     t.mode =

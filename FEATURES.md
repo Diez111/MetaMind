@@ -40,7 +40,7 @@ The authoritative list of what Rustsidian does today. Nothing outside it is clai
 | Source mode, live preview | partial | Inline markup is hidden/revealed around the cursor. Quotes, callouts (coloured by type, foldable ones collapsed when written `-`) and tables are rendered while the cursor is outside them and turn back into source when it enters. Table columns are sized by estimate, not measurement; right alignment is not applied; callouts have no icons and no fold toggle. Math and Mermaid are shown as source |
 | Reading mode | partial | Live preview without a cursor; not a separate rendered document |
 | Multi-cursor, undo tree, smart lists, auto-pair, indent, formatting toggles, move/duplicate line | done | |
-| Folding | done | Headings, list items, quotes/callouts and code blocks. Arrow next to each heading, `Toggle fold`, `Fold all`, `Unfold all`. Folds follow edits and undo; they are not saved between sessions. While any fold is active the whole note is rescanned after each edit |
+| Folding | done | Headings, list items, quotes/callouts and code blocks. Arrow next to each heading, `Toggle fold`, `Fold all`, `Unfold all`. Folds follow edits and undo and are restored with the session. While any fold is active the whole note is rescanned after each edit |
 | Table editing | partial | In live preview with the cursor in a table: Tab/Shift+Tab/Enter move between cells and re-align the source; palette commands add, move, delete, align and sort rows and columns, and insert a table. Editing happens in the table's source, not in the rendered grid |
 | Vim mode | partial | On when `vimMode` is set in `.obsidian/app.json`, or with `Toggle Vim key bindings`. Subset documented in `editor-core/src/vim.rs`; the mode is shown in the status bar; the caret does not change shape |
 | IME | partial | Committed text is accepted; no pre-edit display. fcitx/ibus untested |
@@ -57,8 +57,8 @@ The authoritative list of what Rustsidian does today. Nothing outside it is clai
 | File explorer | partial | Virtualised, collapsible, file icons; right-click menus for files, folders, tabs and the editor (new note/folder, rename with link updates, make a copy, delete to trash, copy path or link, show in system explorer, cut/copy/paste). No sorting options or drag-rearrange |
 | Quick switcher, command palette | done | |
 | Search panel with query operators | done | All operators; no embedded `query` blocks |
-| Back/forward, tabs | done | No split panes, stacked or pinned tabs, pop-out windows, linked panes, workspaces |
-| Outline, backlinks (linked), word count | done | No unlinked mentions, outgoing-links or tags panes |
+| Back/forward, tabs | done | Open tabs, view mode, scroll, cursor, folds and sidebar state are restored when the vault reopens. No split panes, stacked or pinned tabs, pop-out windows, linked panes, workspaces |
+| Outline, backlinks, unlinked mentions, word count | done | Unlinked mentions match the file name and aliases as whole words, with a Link button per note. No outgoing-links pane |
 | Daily notes, random note | partial | Daily note uses the UTC date and `YYYY-MM-DD`; custom formats and templates are not supported |
 | Graph view | partial | Global and local graph (depth 1-3) in the main pane: pan, zoom about the pointer, drag nodes, hover highlight, click to open (unresolved creates the note, tags search). Settings panel with search filter, filter toggles, color groups, arrows, text fade, node size, link thickness, the four forces and Animate, all saved to `graph.json`. No layout cache on disk; dense graphs draw a sample of links |
 | Canvas view | done | Text/file/link/group nodes, colors, curved edges with arrows and labels; pan, wheel zoom, move, resize, double-click to edit text, add/delete node, lossless save. No edge editing; file nodes show a text preview |

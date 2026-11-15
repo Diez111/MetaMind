@@ -496,8 +496,9 @@ fn load(vault: &Path, note: Option<&str>, profile: bool, started: Instant) -> Re
     if rustsidian_app::update::auto_check_due(now_ms()) {
         app.update.start_check(false);
     }
-    if let Some(n) = note {
-        app.open_note(n);
+    match note {
+        Some(n) => app.open_note(n),
+        None => app.restore_session(),
     }
     recent::remember(vault);
     Ok(app)

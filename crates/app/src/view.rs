@@ -412,6 +412,34 @@ fn right_sidebar(app: &App, dom: &mut Dom, parent: NodeId) {
             }
         }
     }
+    let header = dom.add(parent, El::div().class("nav-header").action("backlinks:toggle-unlinked"));
+    dom.add(header, icons::el(if app.show_unlinked { "chevron-down" } else { "chevron-right" }));
+    dom.add(header, El::div().class("nav-header-title").text("Unlinked mentions"));
+    if !app.show_unlinked {
+        return;
+    }
+    let list = dom.add(parent, El::div().class("pane-section"));
+    let files = app.mentions.as_ref().map(|m| m.files.as_slice()).unwrap_or(&[]);
+    if files.is_empty() {
+        dom.add(list, El::div().class("pane-empty").text("No unlinked mentions."));
+    }
+    for (p, snippets) in files {
+        let row = dom.add(list, El::div().class("tree-item-self bookmark").action(format!("open:{p}")));
+        dom.add(row, El::div().class("tree-item-inner").text(path::strip_md(p).to_string()));
+        dom.add(
+            row,
+            El::div()
+                .class("tree-item-flair clickable-icon")
+                .text("Link")
+                .action(format!("backlinks:link:{p}")),
+        );
+        for s in snippets {
+            dom.add(
+                list,
+                El::div().class("search-result-file-match").text(s.clone()).action(format!("open:{p}")),
+            );
+        }
+    }
 }
 
 fn editor(app: &App, dom: &mut Dom, parent: NodeId, pal: &Palette, info: &mut ViewInfo) {

@@ -80,6 +80,10 @@ impl Folds {
     pub fn is_empty(&self) -> bool {
         self.headers.is_empty()
     }
+    /// Offsets of the folded headings, in order.
+    pub fn headers(&self) -> &[usize] {
+        &self.headers
+    }
     pub fn fold(&mut self, header: usize) {
         if let Err(i) = self.headers.binary_search(&header) {
             self.headers.insert(i, header);

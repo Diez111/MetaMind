@@ -499,6 +499,11 @@ impl Corpus {
         self.lower[id as usize] = text.map(|t| lower_same_len(t).into_boxed_str());
     }
 
+    /// The lowercased text of a note, as `lower_same_len` gives it.
+    pub fn lower(&self, id: FileId) -> Option<&str> {
+        self.lower.get(id as usize)?.as_deref()
+    }
+
     pub fn bytes(&self) -> usize {
         self.lower.iter().flatten().map(|t| t.len()).sum()
     }
