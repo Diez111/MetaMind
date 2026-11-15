@@ -1105,6 +1105,8 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
     for (icon, cmd, active) in [
         ("folder", "file-explorer:open", app.left_open && app.panel == Panel::Files),
         ("search", "global-search:open", app.left_open && app.panel == Panel::Search),
+        ("bookmark", "bookmarks:open", app.left_open && app.panel == Panel::Bookmarks),
+        ("tag", "tag-pane:open", app.left_open && app.panel == Panel::Tags),
         ("switcher", "switcher:open", false),
         ("command", "command-palette:open", false),
         ("graph", "graph:open", app.show_graph),
@@ -1137,6 +1139,8 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
         match app.panel {
             Panel::Files => sidebar_files(app, &mut dom, left, viewport_h),
             Panel::Search => sidebar_search(app, &mut dom, left),
+            Panel::Bookmarks => crate::panes::bookmarks(app, &mut dom, left),
+            Panel::Tags => crate::panes::tags(app, &mut dom, left),
         }
     }
     let root = dom.add(ws, El::div().class("workspace-split mod-root"));

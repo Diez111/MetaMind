@@ -439,8 +439,14 @@ impl ApplicationHandler<Changed> for Win {
             app.notice = None;
             redraw = true;
         }
+        if let Some(msg) = app.update.poll() {
+            app.notice = Some(msg);
+            redraw = true;
+        }
         let now = now_ms();
-        let next = [app.derived_due_in(now), app.autosave_due_in(now), app.notice_due_in()]
+        // A background update job is polled until it reports back.
+        let update = app.update.busy().then_some(250);
+        let next = [app.derived_due_in(now), app.autosave_due_in(now), app.notice_due_in(), update]
             .into_iter()
             .flatten()
             .filter(|&ms| ms > 0)
@@ -475,6 +481,9 @@ fn load(vault: &Path, note: Option<&str>, profile: bool, started: Instant) -> Re
     app.defer_graph = true;
     app.anims.enabled = true;
     app.system_clipboard = true;
+    if rustsidian_app::update::auto_check_due(now_ms()) {
+        app.update.start_check(false);
+    }
     if let Some(n) = note {
         app.open_note(n);
     }
@@ -485,6 +494,7 @@ fn load(vault: &Path, note: Option<&str>, profile: bool, started: Instant) -> Re
 /// Run the window. With no vault given, the most recent vault is reopened; when there is none,
 /// the welcome screen asks for one.
 pub fn run(vault: Option<&Path>, note: Option<&str>, profile: bool) -> i32 {
+    rustsidian_app::update::clean_old();
     let started = Instant::now();
     // Fonts load on a worker thread while the vault index loads on this one.
     let fonts = std::thread::spawn(Fonts::new);

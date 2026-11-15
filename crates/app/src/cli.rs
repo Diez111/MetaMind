@@ -19,6 +19,8 @@ USAGE:
   rustsidian screenshot <vault> <out.png> [--note <path>] [--size WxH] [--keys \"Ctrl+P ...\"] [--type <text>] [--run <command id>,...] [--light]
   rustsidian welcome-screenshot <out.png> [--run <action>,...] [--type <text>]
   rustsidian commands                           List command ids and default hotkeys
+  rustsidian update [--check]                   Install the latest release, or only report it
+  rustsidian version                            Print the version
 
 OPTIONS:
   --profile    Print a start-up timing breakdown (with `open` and `index`)
@@ -85,6 +87,35 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
         "help" => {
             let _ = writeln!(out, "{USAGE}");
             Outcome::Exit(0)
+        }
+        "version" | "--version" => {
+            let _ = writeln!(out, "rustsidian {}", crate::update::CURRENT);
+            Outcome::Exit(0)
+        }
+        "update" => {
+            let r = match crate::update::check() {
+                Ok(Some(r)) => r,
+                Ok(None) => {
+                    let _ = writeln!(out, "rustsidian {} is the latest version", crate::update::CURRENT);
+                    return Outcome::Exit(0);
+                }
+                Err(e) => return fail(&format!("update: {e}")),
+            };
+            let _ = writeln!(out, "{} is available (installed: v{})", r.tag, crate::update::CURRENT);
+            if a.flag("--check") {
+                return Outcome::Exit(0);
+            }
+            let exe = match std::env::current_exe() {
+                Ok(p) => p,
+                Err(e) => return fail(&format!("update: cannot find the program file: {e}")),
+            };
+            match crate::update::install(&r, &exe) {
+                Ok(()) => {
+                    let _ = writeln!(out, "installed {} to {}", r.tag, exe.display());
+                    Outcome::Exit(0)
+                }
+                Err(e) => fail(&format!("update: {e}")),
+            }
         }
         "commands" => {
             for (id, name, key) in crate::shell::COMMANDS {

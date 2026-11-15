@@ -98,6 +98,10 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("switcher:open", "Quick switcher: Open", "Ctrl+O"),
     ("global-search:open", "Search: Search in all files", "Ctrl+Shift+F"),
     ("file-explorer:open", "Files: Show file explorer", ""),
+    ("bookmarks:open", "Bookmarks: Show bookmarks", ""),
+    ("bookmarks:bookmark-current-view", "Bookmarks: Bookmark or unbookmark current note", ""),
+    ("bookmarks:bookmark-current-search", "Bookmarks: Bookmark current search", ""),
+    ("tag-pane:open", "Tags: Show tags", ""),
     ("file-explorer:new-file", "Create new note", "Ctrl+N"),
     ("file-explorer:new-folder", "Create new folder", ""),
     ("workspace:edit-file-title", "Rename file", "F2"),
@@ -192,6 +196,8 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("plugins:list", "Plugins: List plugins and scripts", ""),
     ("plugins:reload", "Plugins: Reload plugins", ""),
     ("app:open-vault", "Open another vault", ""),
+    ("app:check-for-updates", "Check for updates", ""),
+    ("app:install-update", "Install available update", ""),
     ("app:quit", "Quit", "Ctrl+Q"),
 ];
 
@@ -206,6 +212,8 @@ pub enum ViewMode {
 pub enum Panel {
     Files,
     Search,
+    Bookmarks,
+    Tags,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -319,7 +327,8 @@ pub struct App {
     pub search_results: Vec<SearchResult>,
     pub search_error: Option<String>,
     corpus: Option<Corpus>,
-    graph: Option<std::sync::Arc<vault_core::LinkGraph>>,
+    pub(crate) graph: Option<std::sync::Arc<vault_core::LinkGraph>>,
+    pub(crate) tags: Option<crate::panes::TagCounts>,
     pub(crate) tree: Option<Vec<TreeRow>>,
     /// While set, the link graph is not computed (the first frame is presented without it).
     pub defer_graph: bool,
@@ -341,6 +350,7 @@ pub struct App {
     pub anims: crate::anim::Anims,
     pub(crate) seen: Option<crate::anim::Seen>,
     pub(crate) notice_since: Option<std::time::Instant>,
+    pub update: crate::update::State,
     /// Paths of closed tabs, most recent last, for "Reopen closed tab".
     closed_tabs: Vec<String>,
     /// Set by "Open another vault"; the window shows the vault chooser when it sees this.
@@ -461,6 +471,7 @@ impl App {
             search_error: None,
             corpus: None,
             graph: None,
+            tags: None,
             tree: None,
             defer_graph: false,
             pending: Vec::new(),
@@ -477,6 +488,7 @@ impl App {
             anims: Default::default(),
             seen: None,
             notice_since: None,
+            update: crate::update::State::Idle,
             closed_tabs: Vec::new(),
             switch_vault: false,
             menu: None,
@@ -498,6 +510,9 @@ impl App {
             self.store.release_cache_pages();
         }
         self.refresh_graph_view();
+        if self.left_open && self.panel == Panel::Tags {
+            self.tag_counts();
+        }
         if self.tree.is_none() {
             self.tree = Some(self.build_tree());
         }
@@ -984,7 +999,7 @@ impl App {
         if command == "prompt:dismiss" {
             return;
         }
-        if self.run_plugin_command(command) {
+        if self.run_plugin_command(command) || self.run_panes(command) {
             return;
         }
         if self.run_file_action(command) {
@@ -1067,6 +1082,14 @@ impl App {
                     self.collapsed = folders;
                 }
             }
+            "app:check-for-updates" => {
+                self.update.start_check(true);
+                self.notice = Some("Checking for updates…".into());
+            }
+            "app:install-update" => match self.update.start_install() {
+                Ok(()) => self.notice = Some("Downloading the update…".into()),
+                Err(e) => self.notice = Some(format!("Cannot update: {e}")),
+            },
             "app:open-vault" => {
                 self.save_all();
                 self.switch_vault = true;

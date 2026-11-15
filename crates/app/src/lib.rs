@@ -10,12 +10,14 @@ pub mod icon;
 pub mod icons;
 pub mod media;
 pub mod menu;
+pub mod panes;
 pub mod plugins;
 pub mod properties;
 pub mod recent;
 pub mod rich;
 pub mod settings;
 pub mod shell;
+pub mod update;
 pub mod view;
 pub mod welcome;
 

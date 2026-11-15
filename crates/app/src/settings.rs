@@ -493,6 +493,11 @@ impl App {
                 }
             }
             "perf" => self.perf = !self.perf,
+            "auto-update" => {
+                if let Err(e) = crate::update::set_auto_check(!crate::update::auto_check()) {
+                    self.notice = Some(format!("Cannot save the update setting: {e}"));
+                }
+            }
             "hk" => {
                 if let Some(s) = &mut self.settings {
                     s.capture = (s.capture.as_deref() != Some(arg)).then(|| arg.to_string());
@@ -704,6 +709,16 @@ fn about_view(app: &App, dom: &mut Dom, parent: NodeId) {
     dom.add(ctl, El::div().class("setting-value").text(app.store.index.notes().count().to_string()));
     let ctl = row(dom, parent, "Performance overlay", "Show the frame time and node count in the corner.");
     toggle(dom, ctl, app.perf, "settings:perf".into());
+    let ctl = row(dom, parent, "Updates", &app.update.describe());
+    match &app.update {
+        crate::update::State::Available(r) => {
+            button(dom, ctl, &format!("Install {}", r.tag), "app:install-update".into(), true)
+        }
+        s if !s.busy() => button(dom, ctl, "Check now", "app:check-for-updates".into(), false),
+        _ => {}
+    }
+    let ctl = row(dom, parent, "Check for updates automatically", "Once a day, when Rustsidian starts.");
+    toggle(dom, ctl, crate::update::auto_check(), "settings:auto-update".into());
 }
 
 /// The settings window, drawn over everything else.

@@ -89,6 +89,13 @@ body {
 .nav-file-title-content { white-space: nowrap; overflow: hidden; flex-grow: 1 }
 .nav-folder-title { color: var(--text-normal); font-weight: 600 }
 .nav-file-title:hover, .nav-folder-title:hover, .tree-item-self:hover { background-color: var(--background-modifier-hover) }
+.tree-item-self { display: flex; align-items: center; gap: 6px }
+.tree-item-inner { flex-grow: 1; overflow: hidden }
+.tree-item-flair { color: var(--text-faint); font-size: var(--font-ui-smaller) }
+.bookmark .tree-item-flair { opacity: 0 }
+.bookmark:hover .tree-item-flair { opacity: 1 }
+.tree-item-self.is-group { color: var(--text-normal); font-weight: 600 }
+.pane-empty { padding: 12px; color: var(--text-faint); font-size: var(--font-ui-small) }
 .nav-file-title.is-active { background-color: var(--background-modifier-active-hover); color: var(--text-normal) }
 .workspace-tab-header-container { display: flex; background-color: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border); height: 34px; overflow: hidden; padding: 6px 8px 0 8px; gap: 2px }
 .workspace-tab-header { padding: 3px 5px 3px 10px; border-radius: 6px; color: var(--text-muted); white-space: nowrap; max-width: 220px; overflow: hidden; display: flex; align-items: center; gap: 6px }

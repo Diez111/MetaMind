@@ -202,6 +202,7 @@ impl App {
             }
             "new-note-in" => self.new_note_in(arg),
             "duplicate" => self.duplicate(arg),
+            "bookmark" => self.toggle_bookmark(arg),
             "delete" => self.delete_path(arg),
             "copy-path" => {
                 let p = arg.to_string();
@@ -276,6 +277,7 @@ impl App {
         self.save_all();
         match self.store.rename(from, &to) {
             Ok(plan) => {
+                self.bookmarks_moved(&plan.moves);
                 for (old, new) in &plan.moves {
                     for t in self.tabs.iter_mut().filter(|t| t.path.eq_ignore_ascii_case(old)) {
                         t.path = new.clone();
@@ -542,6 +544,8 @@ fn buf_slice(buf: &editor_core::Buffer, start: usize, end: usize) -> String {
 
 fn file_items(b: &mut Builder<'_>, p: &str) {
     b.item("note", "Open", format!("open:{p}"));
+    let mark = if b.app.is_bookmarked(p) { "Remove bookmark" } else { "Bookmark" };
+    b.item("bookmark", mark, format!("bookmark:{p}"));
     b.separator();
     b.item("copy", "Make a copy", format!("duplicate:{p}"));
     b.item("edit", "Rename…", format!("rename-file:{p}"));
