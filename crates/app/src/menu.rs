@@ -547,7 +547,31 @@ impl App {
     }
 
     fn paste(&mut self) {
-        let text = self.take_clip();
+        let into_note = self.focus == Focus::Editor
+            && !self.canvas_active()
+            && !self.show_graph
+            && self.tab().is_some_and(|t| t.mode != ViewMode::Reading);
+        let text = if into_note && self.system_clipboard {
+            match clipboard::get_paste() {
+                Ok(clipboard::Paste::Text(t)) => t,
+                Ok(clipboard::Paste::Files(files)) => {
+                    self.import_files(&files.iter().map(|f| f.as_path()).collect::<Vec<_>>());
+                    self.scroll_to_cursor();
+                    return;
+                }
+                Ok(clipboard::Paste::Png(png)) => {
+                    self.import_png(&png);
+                    self.scroll_to_cursor();
+                    return;
+                }
+                Err(e) => {
+                    self.notice = Some(format!("Cannot read the system clipboard: {e}"));
+                    self.clip.clone()
+                }
+            }
+        } else {
+            self.take_clip()
+        };
         if text.is_empty() {
             return;
         }

@@ -48,7 +48,8 @@ The authoritative list of what Rustsidian does today. Nothing outside it is clai
 | Link and command suggestions | partial | Typing `[[` lists notes and files (fuzzy) with a preview of the selected note; Enter or Tab inserts the link in the vault's link format. `/` at the start of a word lists commands and runs the chosen one. Arrows move, Escape dismisses. Not offered inside code blocks. No heading or block (`#`, `^`) completion |
 | Hover preview | partial | Ctrl+hover over a link in the editor shows the target note's opening lines as plain text. No rendered Markdown, scrolling or nested previews |
 | Drop files from outside the app | done | Copied into `attachmentFolderPath` (`/`, `./`, `./sub` or a vault folder) with a counter on name clashes, then linked at the cursor as `![[file]]` (or a Markdown link) in the vault's link format; files already in the vault are linked in place |
-| Spellcheck, paste of files/images | none | The clipboard is read as text only |
+| Spellcheck | done | Bundled en_US dictionary (SCOWL); misspellings underlined in the editor (not in code, links, tags or front matter), suggestions and "add to dictionary" from the right-click menu, `spellcheck` setting. English only |
+| Paste files and images | done | Files copied in a file manager are imported like dropped files; a copied image (PNG, or a Windows bitmap) is saved as `Pasted image <time>.png` in the attachment folder and embedded. Linux needs `wl-paste` or `xclip` for this (not `xsel`); macOS reads only the first of several copied files |
 | Properties editor | partial | Front matter shown as a table in live preview and reading view: text, number, checkbox, date, list pills (tags, aliases, cssclasses). Edit, add (`properties:add`), rename, remove; edits are buffer edits (undo works) and only the changed entry is rewritten. `properties:toggle-source` or the `propertiesInDocument` setting shows raw source. No type picker or `types.json`; flow lists become block lists when edited; nested values are read-only |
 | Embeds of notes and images | partial | `![[Note]]`, `![[Note#Heading]]`, `![[Note#^block]]` show the note or section below the paragraph (first 30 blocks; tables and nested embeds inside it as source). `![[image.png\|100x80]]` and `![](image.png)` show PNG, JPEG, GIF (first frame), WebP and SVG images, decoded on the UI thread at first display; remote images are not shown |
 | Embeds of audio, video, PDF | none | |
@@ -85,11 +86,11 @@ The authoritative list of what Rustsidian does today. Nothing outside it is clai
 | Feature | Status | Notes |
 |---|---|---|
 | Export HTML, Markdown bundle | done | |
-| Export PDF, print | none | |
+| Export PDF, print | partial | `Export to PDF` writes the note as the reading view lays it out (light theme, A4, vector text with embedded font subsets, page breaks between blocks). No print dialog, page size or margin settings, and links are not clickable in the PDF |
 | Native WASM plugins (`.obsidian/plugins/<id>/main.wasm`), `plugins:list`, `plugins:reload`, `community-plugins.json` enable list | partial | wasmi host with fuel/memory limits and a permission model (see `PLUGIN_SDK.md`); example plugin in `examples/plugins/hello-wasm`. No SDK crate, no `rustsidian plugin` scaffold, no plugin settings UI (the app exposes `App::plugin_list` / `set_plugin_enabled` for it) |
 | User scripts in Rhai (`.obsidian/scripts/*.rhai`) | partial | `scripting` crate on the same API as WASM plugins: commands, events, vault and editor helpers; sandboxed with operation, size and time limits. No hotkeys from `hotkeys.json` |
 | JavaScript community plugin compatibility, CM6 adapter, plugin browser | none | Only the JS engine spike was done |
-| Accessibility (`accesskit`), high contrast, reduced motion | none | Keyboard operation works for what exists; there is no screen-reader support |
+| Accessibility (`accesskit`), high contrast, reduced motion | partial | Screen-reader tree through `accesskit` (AT-SPI, UI Automation, NSAccessibility): buttons, headings, text and labelled images, with click actions. The caret and selection are not exposed; no high-contrast theme; reduced motion is not read from the OS |
 | GPU rendering (`wgpu`) | none | Software rendering only, by measured decision (DECISIONS.md §2) |
 | Multi-window, system tray, file dialogs, URI scheme, file associations, single-instance IPC | none | |
 | Packaging (MSI, zip, Flatpak, AppImage, deb, rpm) | none | Release workflow publishes tar.gz/zip archives with checksums for Linux, Windows and macOS; `.desktop` file and SVG icon included |

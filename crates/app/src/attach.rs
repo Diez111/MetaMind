@@ -1,5 +1,5 @@
-//! Files dropped onto the window from outside: copied into the vault's attachment folder and
-//! linked from the active note at the cursor.
+//! Files dropped onto the window or pasted from outside, and pasted images: copied into the
+//! vault's attachment folder and linked from the active note at the cursor.
 
 use crate::shell::App;
 use editor_core::EditKind;
@@ -37,6 +37,24 @@ impl App {
             };
             added.push(rel);
         }
+        self.link_added(source, added);
+    }
+
+    /// Save a pasted image into the attachment folder as `Pasted image <local time>.png`, the
+    /// name other Markdown apps give it, and link it from the active note.
+    pub fn import_png(&mut self, png: &[u8]) {
+        let source = self.tab().map(|t| t.path.clone()).filter(|p| p.ends_with(".md"));
+        let dir = self.attachment_dir(source.as_deref().unwrap_or(""));
+        let (y, mo, d, h, mi, s, _) = crate::datetime::local(fsio::now_ms() / 1000);
+        let name = format!("Pasted image {y:04}{mo:02}{d:02}{h:02}{mi:02}{s:02}.png");
+        match self.add_attachment(&name, &dir, |abs| std::fs::write(abs, png)) {
+            Ok(rel) => self.link_added(source, vec![rel]),
+            Err(e) => self.notice = Some(format!("Cannot save the pasted image: {e}")),
+        }
+    }
+
+    /// Link newly added vault files from the note at `source`, or report them if no note is open.
+    fn link_added(&mut self, source: Option<String>, added: Vec<String>) {
         if added.is_empty() {
             return;
         }
@@ -69,15 +87,25 @@ impl App {
         }
     }
 
-    /// Copy an outside file into `dir`, adding a counter to the name if it is taken.
+    /// Copy an outside file into `dir`.
     fn copy_in(&mut self, file: &Path, dir: &str) -> std::io::Result<String> {
         if !file.is_file() {
             return Err(std::io::Error::other("only files can be added"));
         }
         let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let (stem, ext) = (path::stem(&name), path::extension(&name));
+        self.add_attachment(&name, dir, |abs| std::fs::copy(file, abs).map(drop))
+    }
+
+    /// Create `dir/name` with `write`, adding a counter to the name if it is taken.
+    fn add_attachment(
+        &mut self,
+        name: &str,
+        dir: &str,
+        write: impl FnOnce(&Path) -> std::io::Result<()>,
+    ) -> std::io::Result<String> {
+        let (stem, ext) = (path::stem(name), path::extension(name));
         let taken = |p: &str| self.store.index.id(p).is_some() || self.store.abs(p).exists();
-        let mut rel = path::join(dir, &name);
+        let mut rel = path::join(dir, name);
         let mut n = 1;
         while taken(&rel) {
             let numbered = if ext.is_empty() { format!("{stem} {n}") } else { format!("{stem} {n}.{ext}") };
@@ -88,7 +116,7 @@ impl App {
         if let Some(parent) = abs.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::copy(file, &abs)?;
+        write(&abs)?;
         self.store.refresh(&rel);
         self.plugins.push(ext_api::Event::Create { path: rel.clone() });
         Ok(rel)

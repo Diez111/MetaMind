@@ -48,3 +48,25 @@ fn markdown_link_setting_and_no_open_note() {
     app.import_files(&[&doc]);
     assert_eq!(app.tab().unwrap().editor.buf.text(), "![my doc 1](my%20doc%201.pdf)");
 }
+
+#[test]
+fn pasted_images_are_saved_and_embedded() {
+    let d = tempfile::tempdir().unwrap();
+    fs::create_dir_all(d.path().join(".obsidian")).unwrap();
+    fs::write(d.path().join(".obsidian/app.json"), r#"{"attachmentFolderPath":"img"}"#).unwrap();
+    fs::write(d.path().join("N.md"), "").unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("open:N.md");
+    app.import_png(b"png bytes");
+    app.import_png(b"second");
+    let names: Vec<String> = fs::read_dir(d.path().join("img"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names.len(), 2);
+    let text = app.tab().unwrap().editor.buf.text();
+    for name in &names {
+        assert!(name.starts_with("Pasted image ") && name.ends_with(".png"), "{name}");
+        assert!(text.contains(&format!("![[{name}]]")), "{text}");
+    }
+}

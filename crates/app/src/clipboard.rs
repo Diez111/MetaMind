@@ -2,6 +2,8 @@
 //! through the standard command-line tools (`pbcopy`, `wl-copy`, `xclip`, `xsel`), so no
 //! windowing-toolkit clipboard crate is needed.
 
+use std::path::PathBuf;
+
 /// Put text on the system clipboard.
 pub fn set(text: &str) -> Result<(), String> {
     imp::set(text)
@@ -12,6 +14,90 @@ pub fn get() -> Result<String, String> {
     imp::get().map(|t| t.replace("\r\n", "\n"))
 }
 
+/// What a paste into a note inserts.
+pub enum Paste {
+    Text(String),
+    Files(Vec<PathBuf>),
+    Png(Vec<u8>),
+}
+
+/// Read the clipboard for a paste into a note. Copied files win over the file names that file
+/// managers also put on the clipboard as text; an image is used only when there is no text, so
+/// copying from an app that offers both still pastes text.
+pub fn get_paste() -> Result<Paste, String> {
+    let files = imp::files()?;
+    if !files.is_empty() {
+        return Ok(Paste::Files(files));
+    }
+    let text = get()?;
+    if text.is_empty() {
+        if let Some(png) = imp::png()? {
+            return Ok(Paste::Png(png));
+        }
+    }
+    Ok(Paste::Text(text))
+}
+
+/// Local paths from a `text/uri-list`; entries that are not `file://` URIs are skipped.
+#[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))]
+fn uri_list(list: &str) -> Vec<PathBuf> {
+    list.lines()
+        .map(str::trim)
+        .filter(|l| !l.starts_with('#'))
+        .filter_map(|l| l.strip_prefix("file://"))
+        // `file://host/path`: only the local host (empty or `localhost`) is reachable.
+        .filter_map(|l| l.strip_prefix("localhost").unwrap_or(l).strip_prefix('/'))
+        .map(|p| PathBuf::from(format!("/{}", vault_core::path::percent_decode(p))))
+        .collect()
+}
+
+/// A Windows device-independent bitmap (`CF_DIB`: header, optional masks and palette, pixels)
+/// as PNG. Screenshots are 24- or 32-bit, which is all that is handled.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn dib_to_png(dib: &[u8]) -> Result<Vec<u8>, String> {
+    let u32_at = |i: usize| dib.get(i..i + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    let bad = || "unreadable clipboard image".to_string();
+    let header = u32_at(0).ok_or_else(bad)? as usize;
+    let width = u32_at(4).ok_or_else(bad)? as i32;
+    let height = u32_at(8).ok_or_else(bad)? as i32;
+    let bits = dib.get(14..16).map(|b| u16::from_le_bytes([b[0], b[1]])).ok_or_else(bad)?;
+    let compression = u32_at(16).ok_or_else(bad)?;
+    let colors = u32_at(32).ok_or_else(bad)? as usize;
+    // BI_RGB = 0 or BI_BITFIELDS = 3. The masks sit right after a 40-byte header, or inside a
+    // larger one at the same offset; only the usual BGR order is accepted.
+    match compression {
+        0 => {}
+        3 if (u32_at(40), u32_at(44), u32_at(48)) == (Some(0x00ff_0000), Some(0x0000_ff00), Some(0xff)) => {}
+        3 => return Err("clipboard image has an unusual pixel layout".into()),
+        _ => return Err(format!("clipboard image compression {compression} is not supported")),
+    }
+    if bits != 24 && bits != 32 {
+        return Err(format!("{bits}-bit clipboard images are not supported"));
+    }
+    let (w, h) = (width.unsigned_abs(), height.unsigned_abs());
+    let start = header + if compression == 3 && header == 40 { 12 } else { 0 } + colors * 4;
+    let stride = (w as usize * bits as usize).div_ceil(32) * 4;
+    let pixels = dib.get(start..start + stride * h as usize).ok_or_else(bad)?;
+    let mut pm = rustsidian_ui::Pixmap::new(w, h).ok_or_else(bad)?;
+    let step = bits as usize / 8;
+    // 32-bit bitmaps often leave alpha at zero; then the image is opaque.
+    let has_alpha = bits == 32 && pixels.chunks(4).any(|p| p.get(3).is_some_and(|&a| a != 0));
+    let out = pm.data_mut();
+    for y in 0..h as usize {
+        // Positive height means rows are stored bottom-up.
+        let src_row = if height > 0 { h as usize - 1 - y } else { y };
+        let row = &pixels[src_row * stride..];
+        for x in 0..w as usize {
+            let p = &row[x * step..x * step + step];
+            let a = if has_alpha { p[3] } else { 255 };
+            let pre = |c: u8| (c as u16 * a as u16 / 255) as u8;
+            let o = (y * w as usize + x) * 4;
+            out[o..o + 4].copy_from_slice(&[pre(p[2]), pre(p[1]), pre(p[0]), a]);
+        }
+    }
+    pm.encode_png().map_err(|e| e.to_string())
+}
+
 #[cfg(windows)]
 #[allow(unsafe_code)]
 mod imp {
@@ -19,6 +105,8 @@ mod imp {
 
     type Handle = *mut c_void;
     const CF_UNICODETEXT: u32 = 13;
+    const CF_DIB: u32 = 8;
+    const CF_HDROP: u32 = 15;
     const GMEM_MOVEABLE: u32 = 2;
 
     #[link(name = "user32")]
@@ -28,6 +116,11 @@ mod imp {
         fn EmptyClipboard() -> i32;
         fn GetClipboardData(format: u32) -> Handle;
         fn SetClipboardData(format: u32, mem: Handle) -> Handle;
+        fn RegisterClipboardFormatW(name: *const u16) -> u32;
+    }
+    #[link(name = "shell32")]
+    extern "system" {
+        fn DragQueryFileW(drop: Handle, index: u32, buf: *mut u16, len: u32) -> u32;
     }
     #[link(name = "kernel32")]
     extern "system" {
@@ -35,6 +128,7 @@ mod imp {
         fn GlobalLock(mem: Handle) -> *mut c_void;
         fn GlobalUnlock(mem: Handle) -> i32;
         fn GlobalFree(mem: Handle) -> Handle;
+        fn GlobalSize(mem: Handle) -> usize;
     }
 
     /// Another program may hold the clipboard for a moment, so opening is retried briefly.
@@ -108,6 +202,71 @@ mod imp {
         unsafe { CloseClipboard() };
         result
     }
+
+    /// Files copied in Explorer (`CF_HDROP`).
+    pub fn files() -> Result<Vec<std::path::PathBuf>, String> {
+        open()?;
+        // SAFETY: the clipboard is open, so the drop handle stays valid until it is closed. Each
+        // name is written into a buffer one longer than the length reported for it.
+        let files = unsafe {
+            let drop = GetClipboardData(CF_HDROP);
+            if drop.is_null() {
+                Vec::new()
+            } else {
+                let count = DragQueryFileW(drop, u32::MAX, std::ptr::null_mut(), 0);
+                (0..count)
+                    .filter_map(|i| {
+                        let len = DragQueryFileW(drop, i, std::ptr::null_mut(), 0);
+                        let mut buf = vec![0u16; len as usize + 1];
+                        let got = DragQueryFileW(drop, i, buf.as_mut_ptr(), len + 1) as usize;
+                        (got > 0).then(|| String::from_utf16_lossy(&buf[..got]).into())
+                    })
+                    .collect()
+            }
+        };
+        // SAFETY: opened above.
+        unsafe { CloseClipboard() };
+        Ok(files)
+    }
+
+    /// An image: the "PNG" format browsers and the Snipping Tool offer, else the bitmap.
+    pub fn png() -> Result<Option<Vec<u8>>, String> {
+        let name: Vec<u16> = "PNG".encode_utf16().chain([0]).collect();
+        open()?;
+        // SAFETY: the clipboard is open; `name` is zero-terminated.
+        let (png, dib) = unsafe {
+            let format = RegisterClipboardFormatW(name.as_ptr());
+            match (format != 0).then(|| bytes(format)).flatten() {
+                Some(png) => (Some(png), None),
+                None => (None, bytes(CF_DIB)),
+            }
+        };
+        // SAFETY: opened above.
+        unsafe { CloseClipboard() };
+        match (png, dib) {
+            (Some(png), _) => Ok(Some(png)),
+            (None, Some(dib)) => super::dib_to_png(&dib).map(Some),
+            (None, None) => Ok(None),
+        }
+    }
+
+    /// A copy of the data in `format`.
+    ///
+    /// # Safety
+    /// The clipboard must be open.
+    unsafe fn bytes(format: u32) -> Option<Vec<u8>> {
+        let mem = GetClipboardData(format);
+        if mem.is_null() {
+            return None;
+        }
+        let src = GlobalLock(mem) as *const u8;
+        if src.is_null() {
+            return None;
+        }
+        let data = std::slice::from_raw_parts(src, GlobalSize(mem)).to_vec();
+        GlobalUnlock(mem);
+        Some(data)
+    }
 }
 
 #[cfg(not(windows))]
@@ -166,5 +325,121 @@ mod imp {
             };
         }
         Err(MISSING.into())
+    }
+
+    /// Standard output of a command that ran and succeeded.
+    fn run(cmd: &[&str]) -> Option<Vec<u8>> {
+        let out = Command::new(cmd[0]).args(&cmd[1..]).stderr(Stdio::null()).output().ok()?;
+        out.status.success().then_some(out.stdout)
+    }
+
+    /// The clipboard's data of type `mime`, if it offers that type.
+    #[cfg(not(target_os = "macos"))]
+    fn fetch(mime: &str) -> Option<Vec<u8>> {
+        let offered = |list: Vec<u8>| String::from_utf8_lossy(&list).lines().any(|l| l.trim() == mime);
+        if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+            if let Some(list) = run(&["wl-paste", "--list-types"]) {
+                return offered(list).then(|| run(&["wl-paste", "--type", mime])).flatten();
+            }
+        }
+        let list = run(&["xclip", "-selection", "clipboard", "-t", "TARGETS", "-o"])?;
+        offered(list).then(|| run(&["xclip", "-selection", "clipboard", "-t", mime, "-o"])).flatten()
+    }
+
+    /// Files copied in a file manager, which offers them as `text/uri-list`.
+    #[cfg(not(target_os = "macos"))]
+    pub fn files() -> Result<Vec<std::path::PathBuf>, String> {
+        Ok(fetch("text/uri-list").map(|b| super::uri_list(&String::from_utf8_lossy(&b))).unwrap_or_default())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn png() -> Result<Option<Vec<u8>>, String> {
+        Ok(fetch("image/png"))
+    }
+
+    /// A file copied in Finder. AppleScript only gives the first of several.
+    #[cfg(target_os = "macos")]
+    pub fn files() -> Result<Vec<std::path::PathBuf>, String> {
+        let out = run(&["osascript", "-e", "POSIX path of (the clipboard as «class furl»)"]);
+        let path = out.map(|b| String::from_utf8_lossy(&b).trim_end_matches('\n').to_string());
+        Ok(path.filter(|p| !p.is_empty()).map(|p| vec![p.into()]).unwrap_or_default())
+    }
+
+    /// An image, which AppleScript prints as `«data PNGf89504E…»`.
+    #[cfg(target_os = "macos")]
+    pub fn png() -> Result<Option<Vec<u8>>, String> {
+        let Some(out) = run(&["osascript", "-e", "the clipboard as «class PNGf»"]) else { return Ok(None) };
+        let out = String::from_utf8_lossy(&out);
+        let Some((_, rest)) = out.split_once("«data PNGf") else { return Ok(None) };
+        let hex = rest.split('»').next().unwrap_or("").as_bytes();
+        let digit = |c: u8| (c as char).to_digit(16).map(|d| d as u8);
+        let bytes: Option<Vec<u8>> =
+            hex.chunks(2).map(|p| Some(digit(p[0])? << 4 | digit(*p.get(1)?)?)).collect();
+        bytes.map(Some).ok_or_else(|| "unreadable clipboard image".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rustsidian_ui::Pixmap;
+
+    #[test]
+    fn uri_lists_become_local_paths() {
+        let list =
+            "# copied\r\nfile:///home/me/My%20Pic.png\r\nfile://localhost/tmp/a.txt\r\nhttps://x.org/b\r\n";
+        assert_eq!(uri_list(list), [PathBuf::from("/home/me/My Pic.png"), PathBuf::from("/tmp/a.txt")]);
+    }
+
+    fn header(w: i32, h: i32, bits: u16, compression: u32) -> Vec<u8> {
+        let mut b = Vec::new();
+        for v in [40u32, w as u32, h as u32] {
+            b.extend(v.to_le_bytes());
+        }
+        b.extend(1u16.to_le_bytes());
+        b.extend(bits.to_le_bytes());
+        b.extend(compression.to_le_bytes());
+        b.extend([0u8; 20]);
+        b
+    }
+
+    fn rgba(png: &[u8], x: u32, y: u32) -> (u8, u8, u8, u8) {
+        let p = Pixmap::decode_png(png).unwrap().pixel(x, y).unwrap().demultiply();
+        (p.red(), p.green(), p.blue(), p.alpha())
+    }
+
+    #[test]
+    fn bottom_up_24_bit_bitmaps_convert() {
+        // 2x2, rows padded to 8 bytes, stored bottom row first, pixels as BGR.
+        let mut dib = header(2, 2, 24, 0);
+        dib.extend([0, 0, 255, 0, 255, 0, 0, 0]); // bottom: red, green
+        dib.extend([255, 0, 0, 255, 255, 255, 0, 0]); // top: blue, white
+        let png = dib_to_png(&dib).unwrap();
+        assert_eq!(rgba(&png, 0, 0), (0, 0, 255, 255));
+        assert_eq!(rgba(&png, 1, 0), (255, 255, 255, 255));
+        assert_eq!(rgba(&png, 0, 1), (255, 0, 0, 255));
+        assert_eq!(rgba(&png, 1, 1), (0, 255, 0, 255));
+    }
+
+    #[test]
+    fn top_down_32_bit_bitmaps_keep_alpha_and_masks_are_checked() {
+        let mut dib = header(1, -2, 32, 3);
+        dib.extend([0x00, 0x00, 0xff, 0x00, 0x00, 0xff, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00]);
+        dib.extend([0, 0, 255, 255, 255, 0, 0, 0]); // red opaque, then transparent blue
+        let png = dib_to_png(&dib).unwrap();
+        assert_eq!(rgba(&png, 0, 0), (255, 0, 0, 255));
+        assert_eq!(rgba(&png, 0, 1).3, 0);
+
+        // Alpha left at zero everywhere means an opaque image.
+        let mut dib = header(1, 1, 32, 0);
+        dib.extend([0, 255, 0, 0]);
+        assert_eq!(rgba(&dib_to_png(&dib).unwrap(), 0, 0), (0, 255, 0, 255));
+
+        let mut odd = header(1, 1, 32, 3);
+        odd.extend([0u8; 12]);
+        odd.extend([0u8; 4]);
+        assert!(dib_to_png(&odd).unwrap_err().contains("unusual"));
+        assert!(dib_to_png(&header(1, 1, 8, 0)).is_err());
+        assert!(dib_to_png(&dib[..10]).is_err());
     }
 }
