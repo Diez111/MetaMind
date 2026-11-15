@@ -76,6 +76,10 @@ fn fail(msg: &str) -> Outcome {
 pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
     let a = parse_args(args);
     let Some(first) = a.pos.first().map(String::as_str) else {
+        if a.flag("--version") {
+            let _ = writeln!(out, "rustsidian {}", crate::update::CURRENT);
+            return Outcome::Exit(0);
+        }
         if !a.flag("--help") && cfg!(feature = "window") {
             return Outcome::Welcome;
         }
@@ -88,7 +92,7 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
             let _ = writeln!(out, "{USAGE}");
             Outcome::Exit(0)
         }
-        "version" | "--version" => {
+        "version" => {
             let _ = writeln!(out, "rustsidian {}", crate::update::CURRENT);
             Outcome::Exit(0)
         }

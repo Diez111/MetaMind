@@ -194,6 +194,12 @@ fn welcome_flow_and_recent_vaults() {
         rustsidian_app::cli::run(&["--help".to_string()], &mut out),
         rustsidian_app::cli::Outcome::Exit(0)
     ));
+    let mut out = Vec::new();
+    assert!(matches!(
+        rustsidian_app::cli::run(&["--version".to_string()], &mut out),
+        rustsidian_app::cli::Outcome::Exit(0)
+    ));
+    assert!(String::from_utf8(out).unwrap().starts_with("rustsidian "));
 }
 
 #[test]
