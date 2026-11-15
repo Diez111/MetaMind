@@ -4,7 +4,7 @@
 use crate::shell::{App, Key};
 use editor_core::{Change, EditKind, Editor, Sel};
 use ext_api::{
-    Discovered, Event, Extension, Extensions, Host, NoteInfo, PluginInfo, PluginKind, PluginStatus, Selection,
+    Discovered, Event, Extension, Extensions, Host, NoteInfo, PluginInfo, PluginStatus, Selection,
 };
 use md_engine::frontmatter::Value as Fm;
 use serde_json::{json, Value};
@@ -236,10 +236,10 @@ impl Host for AppHost<'_> {
 fn instantiate(d: &Discovered, root: &Path) -> Result<Box<dyn Extension>, String> {
     match d.kind {
         #[cfg(feature = "wasm-plugins")]
-        PluginKind::Wasm => plugin_host_wasm::load_file(plugin_info(d), &root.join(&d.entry))
+        ext_api::PluginKind::Wasm => plugin_host_wasm::load_file(plugin_info(d), &root.join(&d.entry))
             .map(|p| Box::new(p) as Box<dyn Extension>),
         #[cfg(feature = "scripting")]
-        PluginKind::Script => scripting::load_file(plugin_info(d), &root.join(&d.entry))
+        ext_api::PluginKind::Script => scripting::load_file(plugin_info(d), &root.join(&d.entry))
             .map(|p| Box::new(p) as Box<dyn Extension>),
         kind => {
             let _ = root;
