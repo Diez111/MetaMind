@@ -187,6 +187,12 @@ fn welcome_flow_and_recent_vaults() {
     assert_eq!(w.screen, Screen::Create);
     assert!(w.hover(&dom, n.rect.x + 30.0, n.rect.y + 10.0));
 
+    // Indexing progress shows in the top-right corner.
+    w.notice = Some("Indexing your vault... 3/10".into());
+    let dom = w.render(&mut fonts, &mut pm, 1.0);
+    let n = dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == "notice")).unwrap();
+    assert!(n.rect.w > 0.0 && n.rect.x > 640.0 && n.rect.y < 100.0, "{:?}", n.rect);
+
     // Starting with no arguments asks for the welcome screen instead of printing usage.
     let mut out = Vec::new();
     assert!(matches!(rustsidian_app::cli::run(&[], &mut out), rustsidian_app::cli::Outcome::Welcome));

@@ -7,12 +7,13 @@ use rustsidian_app::welcome::Welcome;
 use rustsidian_app::{recent, App, Frame, Key};
 use rustsidian_ui::{Dom, Fonts, Pixmap};
 use std::num::NonZeroU32;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use vault_core::fsio::now_ms;
 use vault_core::watch::VaultWatcher;
+use vault_core::{Progress, VaultStore};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event::{ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent};
@@ -24,6 +25,8 @@ enum UserEvent {
     /// Changed paths from a vault watcher, tagged with the generation of the vault it watches.
     Changed(u64, Vec<String>),
     Access(accesskit_winit::Event),
+    /// A first-time index finished on its worker thread: the vault, the note to open, the store.
+    Indexed(PathBuf, Option<String>, Result<VaultStore, String>),
 }
 
 impl From<accesskit_winit::Event> for UserEvent {
@@ -60,6 +63,8 @@ struct Win {
     /// Counts opened vaults; a watcher stops when its generation is no longer current.
     generation: Arc<AtomicU64>,
     watcher: Option<std::thread::Thread>,
+    /// A vault being indexed for the first time; the welcome screen shows its progress.
+    indexing: Option<Arc<Progress>>,
 }
 
 fn named(k: &NamedKey) -> Option<&'static str> {
@@ -201,9 +206,47 @@ impl Win {
 
     /// Open a vault in this window, replacing the welcome screen or the current vault.
     fn open_vault(&mut self, vault: &Path, note: Option<&str>) -> Result<(), String> {
+        if needs_index(vault) {
+            self.start_indexing(vault, note);
+            return Ok(());
+        }
         let app = load(vault, note, self.profile, self.started)?;
         self.install(app);
         Ok(())
+    }
+
+    /// Build a vault's first index on a worker thread, keeping the window responsive and showing
+    /// progress; `UserEvent::Indexed` installs the vault when it is done.
+    fn start_indexing(&mut self, vault: &Path, note: Option<&str>) {
+        let progress = Arc::new(Progress::default());
+        self.indexing = Some(progress.clone());
+        if self.welcome.is_none() {
+            self.show_welcome();
+        }
+        let (proxy, root, note) = (self.proxy.clone(), vault.to_path_buf(), note.map(str::to_string));
+        std::thread::spawn(move || {
+            let store = VaultStore::open_with_progress(&root, &progress)
+                .map(|(store, _)| store)
+                .map_err(|e| format!("Cannot open {}: {e}", root.display()));
+            let _ = proxy.send_event(UserEvent::Indexed(root, note, store));
+        });
+    }
+
+    fn indexed(&mut self, root: &Path, note: Option<&str>, store: Result<VaultStore, String>) {
+        self.indexing = None;
+        let app = store.and_then(|store| {
+            App::with_store(root, store).map_err(|e| format!("Cannot open {}: {e}", root.display()))
+        });
+        match app {
+            Ok(app) => self.install(prepare(app, root, note, self.profile, self.started)),
+            Err(e) => {
+                if let Some(w) = &mut self.welcome {
+                    w.notice = None;
+                    w.error = Some(e);
+                }
+            }
+        }
+        self.request_redraw();
     }
 
     /// Make a loaded vault the one this window shows, and watch its files.
@@ -258,6 +301,9 @@ impl Win {
     /// A vault was chosen on the welcome screen.
     fn chosen(&mut self, vault: Option<std::path::PathBuf>) {
         let Some(vault) = vault else { return };
+        if self.indexing.is_some() {
+            return;
+        }
         let note = self.welcome.as_mut().and_then(|w| w.open_note.take());
         if let Err(e) = self.open_vault(&vault, note.as_deref()) {
             if let Some(w) = &mut self.welcome {
@@ -384,6 +430,7 @@ impl ApplicationHandler<UserEvent> for Win {
     fn user_event(&mut self, el: &ActiveEventLoop, event: UserEvent) {
         let (generation, paths) = match event {
             UserEvent::Changed(generation, paths) => (generation, paths),
+            UserEvent::Indexed(root, note, store) => return self.indexed(&root, note.as_deref(), store),
             UserEvent::Access(e) => {
                 match e.window_event {
                     accesskit_winit::WindowEvent::InitialTreeRequested => self.update_access(),
@@ -559,7 +606,19 @@ impl ApplicationHandler<UserEvent> for Win {
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         let frame_due = self.last_anim.elapsed() >= self.frame_interval;
         let Some(app) = &mut self.app else {
-            // Welcome screen: only its own animations need frames.
+            // Welcome screen: only its own animations and indexing progress need frames.
+            if let (Some(p), Some(w)) = (&self.indexing, &mut self.welcome) {
+                let (done, total) = (p.done.load(Ordering::Relaxed), p.total.load(Ordering::Relaxed));
+                let text = if total == 0 {
+                    "Indexing your vault...".to_string()
+                } else {
+                    format!("Indexing your vault... {done}/{total}")
+                };
+                if w.notice.as_ref() != Some(&text) {
+                    w.notice = Some(text);
+                    self.request_redraw();
+                }
+            }
             let animating = self.welcome.as_ref().is_some_and(|w| w.anims.active());
             if (animating && frame_due) || (self.animating && !animating) {
                 self.last_anim = Instant::now();
@@ -568,6 +627,8 @@ impl ApplicationHandler<UserEvent> for Win {
             self.animating = animating;
             return el.set_control_flow(if animating {
                 ControlFlow::WaitUntil(self.last_anim + self.frame_interval)
+            } else if self.indexing.is_some() {
+                ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100))
             } else {
                 ControlFlow::Wait
             });
@@ -618,9 +679,18 @@ impl ApplicationHandler<UserEvent> for Win {
     }
 }
 
+/// A vault opened for the first time has no persisted index; building one can take a while.
+fn needs_index(vault: &Path) -> bool {
+    vault.is_dir() && !VaultStore::cache_path(vault).exists()
+}
+
 /// Open a vault and prepare it for a window.
 fn load(vault: &Path, note: Option<&str>, profile: bool, started: Instant) -> Result<App, String> {
-    let mut app = App::open(vault).map_err(|e| format!("Cannot open {}: {e}", vault.display()))?;
+    let app = App::open(vault).map_err(|e| format!("Cannot open {}: {e}", vault.display()))?;
+    Ok(prepare(app, vault, note, profile, started))
+}
+
+fn prepare(mut app: App, vault: &Path, note: Option<&str>, profile: bool, started: Instant) -> App {
     if profile {
         eprintln!("[profile] vault opened in {:?} ({} files)", started.elapsed(), app.store.index.len());
     }
@@ -636,7 +706,7 @@ fn load(vault: &Path, note: Option<&str>, profile: bool, started: Instant) -> Re
         None => app.restore_session(),
     }
     recent::remember(vault);
-    Ok(app)
+    app
 }
 
 /// Run the window. With no vault given, the most recent vault is reopened; when there is none,
@@ -647,15 +717,19 @@ pub fn run(vault: Option<&Path>, note: Option<&str>, profile: bool) -> i32 {
     // Fonts load on a worker thread while the vault index loads on this one.
     let fonts = std::thread::spawn(Fonts::new);
     std::thread::spawn(rustsidian_app::spell::load);
-    let initial = match vault {
-        Some(vault) => match load(vault, note, profile, started) {
-            Ok(app) => Some(app),
-            Err(e) => {
+    let start = vault.map(Path::to_path_buf).or_else(|| recent::load().into_iter().next());
+    // A vault without an index is indexed once the window is up, so its progress can be shown.
+    let (initial, pending) = match start {
+        Some(v) if needs_index(&v) => (None, Some(v)),
+        Some(v) => match load(&v, note.filter(|_| vault.is_some()), profile, started) {
+            Ok(app) => (Some(app), None),
+            Err(e) if vault.is_some() => {
                 eprintln!("rustsidian: {e}");
                 return 1;
             }
+            Err(_) => (None, None),
         },
-        None => recent::load().into_iter().next().and_then(|v| load(&v, None, profile, started).ok()),
+        None => (None, None),
     };
     let event_loop = match EventLoop::<UserEvent>::with_user_event().build() {
         Ok(l) => l,
@@ -692,10 +766,12 @@ pub fn run(vault: Option<&Path>, note: Option<&str>, profile: bool) -> i32 {
         access: None,
         generation: Arc::new(AtomicU64::new(0)),
         watcher: None,
+        indexing: None,
     };
-    match initial {
-        Some(app) => win.install(app),
-        None => win.show_welcome(),
+    match (initial, pending) {
+        (Some(app), _) => win.install(app),
+        (None, Some(v)) => win.start_indexing(&v, note),
+        (None, None) => win.show_welcome(),
     }
     match event_loop.run_app(&mut win) {
         Ok(()) => 0,

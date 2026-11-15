@@ -41,6 +41,8 @@ pub struct Welcome {
     pub high_contrast: bool,
     /// A note to show first in the vault that was just chosen (the sample vault's welcome note).
     pub open_note: Option<String>,
+    /// A vault is being indexed for the first time ("n/total" progress in the corner).
+    pub notice: Option<String>,
     theme: Theme,
 }
 
@@ -100,6 +102,7 @@ impl Welcome {
             anims: Anims::default(),
             high_contrast: false,
             open_note: None,
+            notice: None,
             theme,
         };
         w.go(recent::home_dir());
@@ -420,6 +423,9 @@ impl Welcome {
             if let Some(n) = dom.by_id(id) {
                 dom.nodes[n].scroll_y = *y;
             }
+        }
+        if let Some(n) = &self.notice {
+            dom.add(0, El::div().class("notice").text(n.clone()));
         }
         crate::view::mark_hover(&mut dom, self.hover_action.as_deref());
         dom

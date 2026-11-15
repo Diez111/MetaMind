@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -109,6 +110,13 @@ fn walk(root: &Path) -> Vec<(String, Stamp)> {
     dir(root, "")
 }
 
+/// Notes parsed so far while a vault opens, out of `total`.
+#[derive(Default, Debug)]
+pub struct Progress {
+    pub done: AtomicUsize,
+    pub total: AtomicUsize,
+}
+
 impl VaultStore {
     pub fn cache_path(root: &Path) -> PathBuf {
         root.join(".rustsidian/cache/index.bin")
@@ -117,6 +125,11 @@ impl VaultStore {
     /// Open a vault. Metadata of files whose mtime and size match the persisted index is reused;
     /// only new or changed notes are read and parsed.
     pub fn open(root: &Path) -> io::Result<(VaultStore, OpenStats)> {
+        Self::open_with_progress(root, &Progress::default())
+    }
+
+    /// `open`, counting the notes parsed in `progress` for another thread to show.
+    pub fn open_with_progress(root: &Path, progress: &Progress) -> io::Result<(VaultStore, OpenStats)> {
         let t0 = Instant::now();
         if !root.is_dir() {
             return Err(io::Error::new(
@@ -160,9 +173,14 @@ impl VaultStore {
             }
         }
         let t = Instant::now();
+        progress.total.store(todo.len(), Ordering::Relaxed);
         let parsed: Vec<(usize, Option<NoteMeta>)> = todo
             .par_iter()
-            .map(|&i| (i, fs::read_to_string(root.join(&entries[i].0)).ok().map(|text| extract(&text))))
+            .map(|&i| {
+                let meta = fs::read_to_string(root.join(&entries[i].0)).ok().map(|text| extract(&text));
+                progress.done.fetch_add(1, Ordering::Relaxed);
+                (i, meta)
+            })
             .collect();
         stats.parsed = parsed.len();
         for (i, meta) in parsed {
@@ -374,6 +392,18 @@ mod tests {
             fs::write(abs, t).unwrap();
         }
         d
+    }
+
+    #[test]
+    fn open_counts_the_notes_it_parses() {
+        let d = make(&[("A.md", "[[B]]\n"), ("B.md", ""), ("x.png", "")]);
+        let p = Progress::default();
+        let (mut s, _) = VaultStore::open_with_progress(d.path(), &p).unwrap();
+        assert_eq!((p.done.into_inner(), p.total.into_inner()), (2, 2));
+        assert!(s.save_cache().unwrap());
+        let p = Progress::default();
+        VaultStore::open_with_progress(d.path(), &p).unwrap();
+        assert_eq!((p.done.into_inner(), p.total.into_inner()), (0, 0), "indexed notes are not parsed again");
     }
 
     #[test]

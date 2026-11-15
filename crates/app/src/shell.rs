@@ -510,7 +510,12 @@ pub(crate) fn default_keymap(config: &VaultConfig) -> Vec<(Vec<Key>, String)> {
 
 impl App {
     pub fn open(root: &Path) -> io::Result<App> {
-        let (mut store, _) = VaultStore::open(root)?;
+        let (store, _) = VaultStore::open(root)?;
+        App::with_store(root, store)
+    }
+
+    /// An app on a vault whose index is already built.
+    pub fn with_store(root: &Path, mut store: VaultStore) -> io::Result<App> {
         let config = VaultConfig::load(root)?;
         store.index.link_format = config.link_format();
         store.trash_mode = config.trash_option();

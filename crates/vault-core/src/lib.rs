@@ -13,7 +13,7 @@ pub mod watch;
 pub use fsio::{Stamp, TrashMode};
 pub use meta::NoteMeta;
 pub use path::FileKind;
-pub use store::{Change, OpenStats, VaultStore, WriteError};
+pub use store::{Change, OpenStats, Progress, VaultStore, WriteError};
 pub use vault::{
     apply_edits, FileEdits, FileEntry, FileId, LinkFormat, LinkGraph, RenamePlan, TextEdit, Vault,
 };
