@@ -116,6 +116,14 @@ const ITEMS: &[Item] = &[
     Item {
         section: Editor,
         file: File::App,
+        key: "spellcheck",
+        name: "Spellcheck",
+        desc: "Underline misspelled English words. Right-click one for suggestions.",
+        control: Toggle(true),
+    },
+    Item {
+        section: Editor,
+        file: File::App,
         key: "propertiesInDocument",
         name: "Properties in document",
         desc: "Show front matter as a properties table, as raw source, or not at all.",

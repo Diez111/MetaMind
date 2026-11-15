@@ -527,6 +527,7 @@ pub fn run(vault: Option<&Path>, note: Option<&str>, profile: bool) -> i32 {
     let started = Instant::now();
     // Fonts load on a worker thread while the vault index loads on this one.
     let fonts = std::thread::spawn(Fonts::new);
+    std::thread::spawn(rustsidian_app::spell::load);
     let initial = match vault {
         Some(vault) => match load(vault, note, profile, started) {
             Ok(app) => Some(app),

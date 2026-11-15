@@ -2,7 +2,7 @@
 //! text and mouse events and asks it for a view.
 
 use editor_core::deco::Mode;
-use editor_core::{Editor, Motion, Sel};
+use editor_core::{EditKind, Editor, Motion, Sel};
 use search_core::{Corpus, Fuzzy, Query, RankWeights, Sort};
 use std::collections::{HashMap, HashSet};
 use std::io;
@@ -1081,6 +1081,26 @@ impl App {
         }
         if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
             return self.accept_suggest(i);
+        }
+        if let Some(rest) = command.strip_prefix("spell:replace:") {
+            let mut it = rest.splitn(3, ':');
+            let (Some(a), Some(b), Some(word)) = (it.next(), it.next(), it.next()) else { return };
+            let (Ok(a), Ok(b)) = (a.parse::<usize>(), b.parse::<usize>()) else { return };
+            let Some(t) = self.tabs.get_mut(self.active) else { return };
+            if a > b || b > t.editor.buf.len() {
+                return;
+            }
+            let now = fsio::now_ms();
+            t.editor.buf.set_sels(vec![Sel::new(a, b)]);
+            t.editor.replace_selections(word, EditKind::Other, now);
+            t.last_edit_ms = now;
+            return;
+        }
+        if let Some(word) = command.strip_prefix("spell:add:") {
+            if let Err(e) = crate::spell::add(word) {
+                self.notice = Some(format!("Cannot add \"{word}\" to the dictionary: {e}"));
+            }
+            return;
         }
         if let Some(p) = command.strip_prefix("open:") {
             self.close_prompt();

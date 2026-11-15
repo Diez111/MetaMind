@@ -202,6 +202,7 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
                 Ok(app) => app,
                 Err(e) => return fail(&format!("screenshot: {e}")),
             };
+            crate::spell::load();
             if a.flag("--light") {
                 app.dark = false;
             }

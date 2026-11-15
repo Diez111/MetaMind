@@ -22,6 +22,7 @@ pub mod rich;
 pub mod session;
 pub mod settings;
 pub mod shell;
+pub mod spell;
 pub mod suggest;
 pub mod templates;
 pub mod update;

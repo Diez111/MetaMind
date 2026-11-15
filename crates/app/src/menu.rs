@@ -114,8 +114,15 @@ impl App {
                             t.editor.buf.set_sels(vec![Sel::cursor(off)]);
                         }
                     }
+                    let typo = frame
+                        .info
+                        .blocks
+                        .iter()
+                        .filter(|bv| bv.src_start <= off && off <= bv.src_end)
+                        .flat_map(|bv| view::misspellings(self, &frame.dom, bv))
+                        .find(|&(a, b)| a <= off && off <= b);
                     let mut b = Builder { app: self, items: Vec::new() };
-                    editor_items(&mut b);
+                    editor_items(&mut b, typo);
                     let items = b.items;
                     return self.show_menu(x, y, items);
                 } else {
@@ -642,8 +649,16 @@ fn tab_items(b: &mut Builder<'_>, i: usize) {
     b.item("arrow-up", "Reopen closed tab", "workspace:undo-close-pane");
 }
 
-fn editor_items(b: &mut Builder<'_>) {
+fn editor_items(b: &mut Builder<'_>, typo: Option<(usize, usize)>) {
     let reading = b.app.tab().is_some_and(|t| t.mode == ViewMode::Reading);
+    if let Some((start, end)) = typo.filter(|_| !reading) {
+        let word = b.app.tab().map(|t| t.editor.buf.slice(start, end).into_owned()).unwrap_or_default();
+        for s in crate::spell::suggest(&word) {
+            b.item("blank", &s, format!("spell:replace:{start}:{end}:{s}"));
+        }
+        b.item("plus", "Add to dictionary", format!("spell:add:{word}"));
+        b.separator();
+    }
     if b.app.link_under_cursor().is_some() {
         b.item("link", "Open link", "editor:follow-link");
         b.separator();

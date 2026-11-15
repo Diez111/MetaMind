@@ -22,6 +22,7 @@ pub struct Palette {
     pub selection: Color,
     pub caret: Color,
     pub tag: Color,
+    pub error: Color,
     pub heading_scale: [f32; 6],
     /// Syntax colors indexed by `highlight_core::Class as usize`.
     pub syntax: [Color; 14],
@@ -112,6 +113,7 @@ pub fn palette(app: &App) -> Palette {
         selection: col("--text-selection", Color { r: 138, g: 92, b: 245, a: 90 }),
         caret: col("--caret-color", Color::rgb(220, 220, 220)),
         tag: col("--tag-color", Color::rgb(138, 92, 245)),
+        error: syn("--text-error", (251, 70, 76), (233, 49, 71)),
         heading_scale: [
             num("--h1-size", 1.8),
             num("--h2-size", 1.5),
@@ -1418,6 +1420,22 @@ pub fn add_carets(app: &App, dom: &mut Dom, info: &ViewInfo, fonts: &mut Fonts) 
                 over.push((Rect::new(r.x, y, r.w, 1.0), sp.color.unwrap_or(style.color).with_alpha(0.7)));
             }
         }
+        for (a, b) in misspellings(app, dom, bv) {
+            // The word being typed is left alone until the caret moves off it.
+            if tab.editor.buf.sels.iter().any(|s| s.head >= a && s.head <= b) {
+                continue;
+            }
+            for r in fonts.range_rects(
+                &bv.display,
+                &spans,
+                &style,
+                Some(width),
+                bv.to_display(a),
+                bv.to_display(b),
+            ) {
+                over.push((Rect::new(r.x, r.y + r.h - 2.5, r.w, 1.5), pal.error.with_alpha(0.8)));
+            }
+        }
         for sel in &tab.editor.buf.sels {
             if sel.end() < bv.src_start || sel.start() > bv.src_end {
                 continue;
@@ -1440,6 +1458,29 @@ pub fn add_carets(app: &App, dom: &mut Dom, info: &ViewInfo, fonts: &mut Fonts) 
         n.overlays = under;
         n.overlays_top = over;
     }
+}
+
+/// Misspelled words in an editor block as source ranges. Code, front matter, links, tags and
+/// markup are not checked: anything mono or colored is left out.
+pub fn misspellings(app: &App, dom: &Dom, bv: &BlockView) -> Vec<(usize, usize)> {
+    if !app.config.app.bool("spellcheck", true) {
+        return Vec::new();
+    }
+    let el = &dom.nodes[bv.node].el;
+    if el.classes.iter().any(|c| c == "cm-codeblock" || c == "cm-frontmatter") {
+        return Vec::new();
+    }
+    let src = |disp: usize, end: bool| {
+        bv.map
+            .iter()
+            .find(|&&(_, d, len)| if end { disp > d && disp <= d + len } else { disp >= d && disp < d + len })
+            .map(|&(s, d, _)| s + disp - d)
+    };
+    crate::spell::misspelled(&bv.display)
+        .into_iter()
+        .filter(|&(a, b)| !el.spans.iter().any(|s| s.start < b && a < s.end && (s.mono || s.color.is_some())))
+        .filter_map(|(a, b)| Some((src(a, false)?, src(b, true)?)))
+        .collect()
 }
 
 /// Source offset for a click at window coordinates, if it landed on an editor block.

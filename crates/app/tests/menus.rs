@@ -135,3 +135,37 @@ fn menu_keys_and_tab_menu() {
     assert!(app.menu.is_none());
     assert_eq!(app.tabs.len(), 1);
 }
+
+#[test]
+fn spellcheck_marks_prose_and_fixes_from_the_menu() {
+    let config = tempfile::tempdir().unwrap();
+    std::env::set_var("RUSTSIDIAN_CONFIG_DIR", config.path());
+    rustsidian_app::spell::load();
+    let d = vault();
+    fs::write(d.path().join("S.md"), "A wrod in `codde` and [[Lnik]] here.\n").unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("S");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(1100, 700).unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let src = app.tab().unwrap().editor.buf.text().to_string();
+    let bv = frame.info.blocks.iter().find(|b| b.display.contains("wrod")).unwrap();
+    let marked: Vec<&str> =
+        rustsidian_app::view::misspellings(&app, &frame.dom, bv).iter().map(|&(a, b)| &src[a..b]).collect();
+    assert_eq!(marked, ["wrod"], "code and links are not checked");
+
+    let node = &frame.dom.nodes[bv.node];
+    let cb = frame.dom.content_rect(bv.node);
+    let at = bv.display.find("wrod").unwrap() + 1;
+    let r = fonts.range_rects(&bv.display, &node.el.spans, &node.style.text, Some(cb.w), at, at + 1)[0];
+    app.context_menu(&frame, &mut fonts, cb.x + r.x + 1.0, cb.y + r.y + 5.0);
+    let shown = labels(&app);
+    assert!(shown.iter().any(|l| l == "word") && shown.iter().any(|l| l == "Add to dictionary"), "{shown:?}");
+    pick(&mut app, &mut fonts, &mut pm, "word");
+    assert!(app.tab().unwrap().editor.buf.text().starts_with("A word in `codde`"));
+
+    assert!(!rustsidian_app::spell::misspelled("Zorblax").is_empty());
+    app.run("spell:add:Zorblax");
+    assert!(rustsidian_app::spell::misspelled("Zorblax").is_empty());
+    assert_eq!(fs::read_to_string(config.path().join("dictionary.txt")).unwrap(), "Zorblax\n");
+}
