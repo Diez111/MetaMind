@@ -797,6 +797,11 @@ impl App {
                 None => Some(v.settings.search.clone()),
             };
             v.panel.edit = text.map(|t| (key.to_string(), t));
+        } else if let Some(op) = command.strip_prefix("graph:insert:") {
+            if let Some((_, buf)) = &mut v.panel.edit {
+                buf.push_str(op);
+                self.graph_apply_edit();
+            }
         } else if let Some(i) =
             command.strip_prefix("graph:group-color:").and_then(|i| i.parse::<usize>().ok())
         {

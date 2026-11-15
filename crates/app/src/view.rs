@@ -370,6 +370,9 @@ fn sidebar_search(app: &App, dom: &mut Dom, parent: NodeId) {
         format!("{}{caret}", app.search_query)
     };
     dom.add(parent, El::div().class("search-input-container").text(shown).action("focus:search"));
+    if app.focus == Focus::Search && app.search_query.is_empty() {
+        search_options(dom, parent, "search:insert:");
+    }
     let list = dom.add(parent, El::div().class("nav-files-container").id("search-results"));
     if let Some(e) = &app.search_error {
         dom.add(list, El::div().class("search-result-file-match").text(format!("Query error: {e}")));
@@ -391,6 +394,27 @@ fn sidebar_search(app: &App, dom: &mut Dom, parent: NodeId) {
                     .action(format!("open:{}", r.path)),
             );
         }
+    }
+}
+
+/// Operators offered while a search field is empty, as (inserted text, description).
+pub const SEARCH_OPTIONS: &[(&str, &str)] = &[
+    ("path:", "match path of the file"),
+    ("file:", "match file name"),
+    ("tag:", "search for tags"),
+    ("line:", "search keywords on same line"),
+    ("section:", "search keywords under same heading"),
+    ("[", "match property"),
+];
+
+fn search_options(dom: &mut Dom, parent: NodeId, action: &str) {
+    let list = dom.add(parent, El::div().class("search-options"));
+    dom.add(list, El::div().class("search-options-title").text("Search options"));
+    for (op, desc) in SEARCH_OPTIONS {
+        let row = dom.add(list, El::div().class("suggestion-item").action(format!("{action}{op}")));
+        let label = if *op == "[" { "[property]" } else { op };
+        dom.add(row, El::div().class("suggestion-title").text(label));
+        dom.add(row, El::div().class("suggestion-aux").text(*desc));
     }
 }
 
@@ -1043,6 +1067,9 @@ fn graph_panel(
         );
         dom.add(f, icons::el("search"));
         dom.add(f, El::div().class("graph-input-text").class_if(faint, "is-placeholder").text(text));
+        if editing.is_some_and(|e| e.1.is_empty()) {
+            search_options(dom, parent, "graph:insert:");
+        }
     };
     let toggle = |dom: &mut Dom, parent: NodeId, label: &str, on: bool, action: &str| {
         let row = dom.add(parent, El::div().class("graph-setting"));

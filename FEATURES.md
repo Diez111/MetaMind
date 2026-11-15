@@ -60,7 +60,7 @@ The authoritative list of what Rustsidian does today. Nothing outside it is clai
 |---|---|---|
 | File explorer | partial | Virtualised, collapsible, file icons; right-click menus for files, folders, tabs and the editor (new note/folder, rename with link updates, make a copy, delete to trash, copy path or link, show in system explorer, cut/copy/paste). Sort by name, modified or created time (`fileSortOrder`). Drag a file or folder onto a folder (or empty space for the root) to move it, with link updates |
 | Quick switcher, command palette | done | |
-| Search panel with query operators | done | All operators; no embedded `query` blocks |
+| Search panel with query operators | done | All operators; an empty search field (search pane and graph filter) lists `path:`, `file:`, `tag:`, `line:`, `section:` and `[property]`; no embedded `query` blocks |
 | Back/forward, tabs | done | Open tabs, view mode, scroll, cursor, folds and sidebar state are restored when the vault reopens. No split panes, stacked or pinned tabs, pop-out windows, linked panes, workspaces |
 | Outline, backlinks, unlinked mentions, word count | done | Unlinked mentions match the file name and aliases as whole words, with a Link button per note. Status bar shows reading time (200 words a minute) and progress against a `word-goal` property. No outgoing-links pane |
 | Unique note creator | done | Format, folder and template from `zk-prefixer.json`; a name already taken gets a counter |
@@ -119,7 +119,8 @@ Synthetic vaults from `perf_budget`.
 Caveats, stated plainly:
 
 - "Cold start" means a fresh process with the persisted index present. The very first open of a
-  vault has to parse every note: 47 ms at 5,000 notes, 433 ms at 50,000.
+  vault has to parse every note: 47 ms at 5,000 notes, 433 ms at 50,000. It runs in the background
+  while the start screen shows its progress.
 - Start-up and typing figures are for the software renderer and include everything up to the
   frame being handed to the compositor, not the compositor's own latency.
 - Idle RAM counts resident pages after the mapped index has been released (`madvise`). Note

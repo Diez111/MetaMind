@@ -96,7 +96,7 @@ impl App {
             if !action.starts_with("prop:") && !action.starts_with("settings:") {
                 self.commit_prop_edit();
             }
-            if !action.starts_with("graph:edit:") {
+            if !action.starts_with("graph:edit:") && !action.starts_with("graph:insert:") {
                 self.graph_end_edit();
             }
             if action == "file-explorer:sort-menu" {

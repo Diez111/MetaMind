@@ -1181,6 +1181,11 @@ impl App {
             self.focus = Focus::Search;
             return;
         }
+        if let Some(op) = command.strip_prefix("search:insert:") {
+            self.search_query.push_str(op);
+            self.focus = Focus::Search;
+            return;
+        }
         // Pasting into an open prompt types into its query rather than closing it.
         if command == "editor:paste" && self.prompt.is_some() {
             self.run_file_action(command);
