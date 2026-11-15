@@ -316,7 +316,10 @@ fn sidebar_files(app: &App, dom: &mut Dom, parent: NodeId, viewport_h: f32) {
         ("sort", "file-explorer:sort-menu"),
         ("collapse", "file-explorer:collapse-all"),
     ] {
-        icon_button(dom, header, icon, cmd, false);
+        let b = icon_button(dom, header, icon, cmd, false);
+        if cmd == "file-explorer:sort-menu" {
+            dom.nodes[b].el.attrs.push(("aria-label".into(), "Change sort order".into()));
+        }
     }
     let target = app.explorer_drag.as_ref().and_then(|d| d.target.as_deref());
     let list = dom.add(
@@ -626,6 +629,9 @@ pub(crate) fn note_blocks(
         }
         let mut el =
             El::div().class(class).attr("data-block", &(first + i).to_string()).text(display.clone());
+        if let NodeKind::Heading { level: level @ 1.., .. } = root.kind {
+            el = el.attr("aria-level", &level.to_string());
+        }
         let mut bv = BlockView { block: first + i, node: 0, src_start: s, src_end: e, display, map };
         if let Some((color, ts, te)) = callout {
             let (d0, d1) = (bv.to_display(ts), bv.to_display(te));
@@ -656,6 +662,7 @@ pub(crate) fn note_blocks(
                     .class("cm-fold-indicator")
                     .class_if(folded, "is-collapsed")
                     .text(if folded { "▸" } else { "▾" })
+                    .attr("aria-label", if folded { "Unfold heading" } else { "Fold heading" })
                     .action(format!("fold:{}", b.start)),
             );
         }
@@ -872,6 +879,7 @@ fn embeds(app: &App, dom: &mut Dom, view: NodeId, source: &str, tree: &md_engine
                 view,
                 El::div()
                     .class("image-embed")
+                    .attr("aria-label", path::file_name(rel))
                     .style(&format!("width: {:.0}px; height: {:.0}px", w * k, h * k))
                     .image(img),
             );
@@ -901,9 +909,10 @@ pub fn mark_hover(dom: &mut Dom, action: Option<&str>) {
 }
 
 /// A small square button that shows one icon.
-fn icon_button(dom: &mut Dom, parent: NodeId, icon: &str, cmd: &str, active: bool) {
+fn icon_button(dom: &mut Dom, parent: NodeId, icon: &str, cmd: &str, active: bool) -> NodeId {
     let b = dom.add(parent, El::div().class("clickable-icon").class_if(active, "is-active").action(cmd));
     dom.add(b, icons::el(icon));
+    b
 }
 
 fn section_header(dom: &mut Dom, parent: NodeId, icon: &str, title: &str) {

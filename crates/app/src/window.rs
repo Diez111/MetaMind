@@ -19,8 +19,17 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy}
 use winit::keyboard::{Key as WKey, ModifiersState, NamedKey};
 use winit::window::{CursorIcon, Icon, Theme, Window, WindowId};
 
-/// Changed paths from a vault watcher, tagged with the generation of the vault it watches.
-type Changed = (u64, Vec<String>);
+enum UserEvent {
+    /// Changed paths from a vault watcher, tagged with the generation of the vault it watches.
+    Changed(u64, Vec<String>),
+    Access(accesskit_winit::Event),
+}
+
+impl From<accesskit_winit::Event> for UserEvent {
+    fn from(e: accesskit_winit::Event) -> UserEvent {
+        UserEvent::Access(e)
+    }
+}
 
 struct Win {
     /// The open vault. `None` while the welcome screen is showing.
@@ -41,7 +50,8 @@ struct Win {
     started: Instant,
     profile: bool,
     first_frame_done: bool,
-    proxy: EventLoopProxy<Changed>,
+    proxy: EventLoopProxy<UserEvent>,
+    access: Option<accesskit_winit::Adapter>,
     /// Counts opened vaults; a watcher stops when its generation is no longer current.
     generation: Arc<AtomicU64>,
     watcher: Option<std::thread::Thread>,
@@ -93,12 +103,15 @@ impl Win {
             *dst = (u32::from(px[0]) << 16) | (u32::from(px[1]) << 8) | u32::from(px[2]);
         }
         let _ = buffer.present();
+        self.update_access();
         let Some(app) = &mut self.app else { return };
         if !self.first_frame_done {
             self.first_frame_done = true;
             // The link graph (backlinks) is computed after the first frame is on screen.
             app.defer_graph = false;
-            window.request_redraw();
+            if let Some(w) = &self.window {
+                w.request_redraw();
+            }
             if self.profile {
                 eprintln!(
                     "[profile] first frame presented {:?} after process start (frame {:.2} ms)",
@@ -107,6 +120,40 @@ impl Win {
                 );
             }
         }
+    }
+
+    /// Send the screen-reader tree for the frame just drawn, if a screen reader is listening.
+    fn update_access(&mut self) {
+        let scale = self.window.as_ref().map_or(1.0, |w| w.scale_factor());
+        let title = self.title();
+        let Some(adapter) = &mut self.access else { return };
+        let dom = match (&self.welcome_dom, &self.frame) {
+            (Some(d), _) if self.welcome.is_some() => d,
+            (_, Some(f)) => &f.dom,
+            _ => return,
+        };
+        adapter.update_if_active(|| crate::a11y::tree(dom, scale, &title));
+    }
+
+    /// A screen reader pressed a button: click the middle of it.
+    fn activate(&mut self, el: &ActiveEventLoop, target: accesskit::NodeId) {
+        let Some(i) = crate::a11y::dom_node(target) else { return };
+        let dom = match (&self.welcome_dom, &self.frame) {
+            (Some(d), _) if self.welcome.is_some() => d,
+            (_, Some(f)) => &f.dom,
+            _ => return,
+        };
+        let Some(r) = dom.nodes.get(i).map(|n| n.rect) else { return };
+        let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
+        if let Some(welcome) = &mut self.welcome {
+            let vault = welcome.click(dom, x, y);
+            self.chosen(vault);
+        } else if let (Some(app), Some(frame)) = (&mut self.app, &self.frame) {
+            app.click(frame, &mut self.fonts, x, y, false);
+            app.release();
+            self.after_input(el);
+        }
+        self.request_redraw();
     }
 
     fn request_redraw(&self) {
@@ -149,7 +196,7 @@ impl Win {
         let mine = current.load(Ordering::SeqCst);
         let handle = std::thread::spawn(move || {
             let watcher = VaultWatcher::start(&root, Duration::from_millis(150), move |paths| {
-                let _ = proxy.send_event((mine, paths));
+                let _ = proxy.send_event(UserEvent::Changed(mine, paths));
             });
             // Keep the watcher alive while this vault is open; the thread sleeps, it does not poll.
             while watcher.is_ok() && current.load(Ordering::SeqCst) == mine {
@@ -271,7 +318,7 @@ impl Win {
     }
 }
 
-impl ApplicationHandler<Changed> for Win {
+impl ApplicationHandler<UserEvent> for Win {
     fn resumed(&mut self, el: &ActiveEventLoop) {
         if self.window.is_some() {
             return;
@@ -280,7 +327,9 @@ impl ApplicationHandler<Changed> for Win {
         let attrs = Window::default_attributes()
             .with_title(self.title())
             .with_window_icon(icon)
-            .with_inner_size(LogicalSize::new(1280.0, 800.0));
+            .with_inner_size(LogicalSize::new(1280.0, 800.0))
+            // The accessibility adapter must exist before the window is first shown.
+            .with_visible(false);
         let window = match el.create_window(attrs) {
             Ok(w) => Arc::new(w),
             Err(e) => {
@@ -303,10 +352,27 @@ impl ApplicationHandler<Changed> for Win {
         if let Some(app) = &mut self.app {
             app.set_system_dark(window.theme().map(|t| t == Theme::Dark));
         }
+        self.access = Some(accesskit_winit::Adapter::with_event_loop_proxy(el, &window, self.proxy.clone()));
+        window.set_visible(true);
         self.window = Some(window);
     }
 
-    fn user_event(&mut self, _: &ActiveEventLoop, (generation, paths): Changed) {
+    fn user_event(&mut self, el: &ActiveEventLoop, event: UserEvent) {
+        let (generation, paths) = match event {
+            UserEvent::Changed(generation, paths) => (generation, paths),
+            UserEvent::Access(e) => {
+                match e.window_event {
+                    accesskit_winit::WindowEvent::InitialTreeRequested => self.update_access(),
+                    accesskit_winit::WindowEvent::ActionRequested(r)
+                        if r.action == accesskit::Action::Click =>
+                    {
+                        self.activate(el, r.target_node)
+                    }
+                    _ => {}
+                }
+                return;
+            }
+        };
         if generation != self.generation.load(Ordering::SeqCst) {
             return;
         }
@@ -317,6 +383,9 @@ impl ApplicationHandler<Changed> for Win {
     }
 
     fn window_event(&mut self, el: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        if let (Some(access), Some(window)) = (&mut self.access, &self.window) {
+            access.process_event(window, &event);
+        }
         match event {
             WindowEvent::RedrawRequested => return self.redraw(),
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => return self.request_redraw(),
@@ -538,7 +607,7 @@ pub fn run(vault: Option<&Path>, note: Option<&str>, profile: bool) -> i32 {
         },
         None => recent::load().into_iter().next().and_then(|v| load(&v, None, profile, started).ok()),
     };
-    let event_loop = match EventLoop::<Changed>::with_user_event().build() {
+    let event_loop = match EventLoop::<UserEvent>::with_user_event().build() {
         Ok(l) => l,
         Err(e) => {
             eprintln!("rustsidian: no display available: {e}");
@@ -568,6 +637,7 @@ pub fn run(vault: Option<&Path>, note: Option<&str>, profile: bool) -> i32 {
         profile,
         first_frame_done: false,
         proxy: event_loop.create_proxy(),
+        access: None,
         generation: Arc::new(AtomicU64::new(0)),
         watcher: None,
     };

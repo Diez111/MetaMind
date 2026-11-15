@@ -5,6 +5,8 @@
 use rustsidian_app::cli::{self, Outcome};
 
 #[cfg(feature = "window")]
+mod a11y;
+#[cfg(feature = "window")]
 mod window;
 
 #[cfg(windows)]
