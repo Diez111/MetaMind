@@ -14,6 +14,7 @@ pub mod mentions;
 pub mod menu;
 pub mod panes;
 pub mod plugins;
+pub mod popover;
 pub mod properties;
 pub mod recent;
 pub mod rich;
@@ -78,6 +79,7 @@ impl App {
             return self.run(&a);
         }
         self.suggest = None;
+        self.hover_preview = None;
         if let Some((node, action)) = frame.dom.action_at(x, y) {
             let action = action.to_string();
             if !action.starts_with("prop:") && !action.starts_with("settings:") {
@@ -150,6 +152,7 @@ impl App {
     /// Mouse wheel. `lines` is positive when scrolling down.
     pub fn wheel(&mut self, frame: &Frame, x: f32, y: f32, lines: f32) {
         self.menu = None;
+        self.hover_preview = None;
         if let (Some(rect), Some(g)) = (graph_rect(frame), &mut self.graph_view) {
             if rect.contains(x, y) && !in_graph_panel(frame, x, y) {
                 return g.wheel(&rect, x, y, lines / 3.0);

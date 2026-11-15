@@ -1314,6 +1314,7 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
             dom.add(row, El::div().class("suggestion-aux").text(item.aux.clone()));
         }
     }
+    hover_popover(app, &mut dom, viewport_h);
     crate::settings::modal(app, &mut dom);
     if let Some(m) = &app.menu {
         // Open toward the inside of the window when there is no room at the pointer.
@@ -1493,5 +1494,27 @@ pub fn add_suggest(app: &App, dom: &mut Dom, caret: Rect, viewport_h: f32) {
         for line in s.preview.lines() {
             dom.add(pane, El::div().class("editor-suggest-preview-line").text(line.to_string()));
         }
+    }
+}
+
+const POPOVER_W: f32 = 380.0;
+const POPOVER_H: f32 = 260.0;
+
+/// The note preview opened by Ctrl+hover on a link, below and right of the pointer when it fits.
+fn hover_popover(app: &App, dom: &mut Dom, viewport_h: f32) {
+    let Some(h) = &app.hover_preview else { return };
+    let (px, py) = h.at;
+    let x = if px + 12.0 + POPOVER_W > app.window_w { (px - 12.0 - POPOVER_W).max(0.0) } else { px + 12.0 };
+    let y = if py + 16.0 + POPOVER_H > viewport_h { (py - 8.0 - POPOVER_H).max(0.0) } else { py + 16.0 };
+    let pop = dom.add(
+        0,
+        El::div().class("popover hover-popover").style(&format!(
+            "left: {x:.1}px; top: {y:.1}px; width: {POPOVER_W}px; max-height: {POPOVER_H}px"
+        )),
+    );
+    dom.add(pop, El::div().class("hover-popover-title").text(path::stem(&h.path).to_string()));
+    let body = if h.text.is_empty() { "No preview for this file" } else { h.text.as_str() };
+    for line in body.lines() {
+        dom.add(pop, El::div().class("hover-popover-line").text(line.to_string()));
     }
 }

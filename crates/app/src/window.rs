@@ -320,7 +320,18 @@ impl ApplicationHandler<Changed> for Win {
         match event {
             WindowEvent::RedrawRequested => return self.redraw(),
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => return self.request_redraw(),
-            WindowEvent::ModifiersChanged(m) => return self.mods = m.state(),
+            WindowEvent::ModifiersChanged(m) => {
+                self.mods = m.state();
+                let (x, y, ctrl) = (self.mouse.0, self.mouse.1, self.mods.control_key());
+                let changed = match (&mut self.app, &self.frame) {
+                    (Some(app), Some(frame)) => app.hover_link(frame, &mut self.fonts, x, y, ctrl),
+                    _ => false,
+                };
+                if changed {
+                    self.request_redraw();
+                }
+                return;
+            }
             WindowEvent::ThemeChanged(t) => {
                 if let Some(app) = &mut self.app {
                     app.set_system_dark(Some(t == Theme::Dark));
@@ -378,7 +389,8 @@ impl ApplicationHandler<Changed> for Win {
                     app.drag(frame, &mut self.fonts, self.mouse.0, self.mouse.1);
                     self.request_redraw();
                 } else {
-                    let changed = app.hover(frame, self.mouse.0, self.mouse.1);
+                    let (x, y, ctrl) = (self.mouse.0, self.mouse.1, self.mods.control_key());
+                    let changed = app.hover(frame, x, y) | app.hover_link(frame, &mut self.fonts, x, y, ctrl);
                     let pointer = app.hover_action.is_some();
                     self.set_pointer(pointer);
                     if changed {

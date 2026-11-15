@@ -6,7 +6,6 @@ use editor_core::{EditKind, Sel};
 use vault_core::{fsio, path};
 
 const LIMIT: usize = 10;
-const PREVIEW_LINES: usize = 12;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SuggestKind {
@@ -112,17 +111,12 @@ impl App {
 
     fn load_preview(&mut self) {
         let Some(s) = &self.suggest else { return };
-        let item = &s.items[s.selected];
-        let text = match s.kind {
-            SuggestKind::Link if path::extension(&item.action).eq_ignore_ascii_case("md") => {
-                self.store.read(&item.action).map(|(t, _)| t).unwrap_or_default()
-            }
-            _ => String::new(),
+        let preview = match s.kind {
+            SuggestKind::Link => self.preview_of(&s.items[s.selected].action),
+            SuggestKind::Slash => String::new(),
         };
-        let body = strip_front_matter(&text);
-        let preview: Vec<&str> = body.lines().filter(|l| !l.trim().is_empty()).take(PREVIEW_LINES).collect();
         if let Some(s) = &mut self.suggest {
-            s.preview = preview.join("\n");
+            s.preview = preview;
         }
     }
 
@@ -188,14 +182,6 @@ impl App {
     }
 }
 
-fn strip_front_matter(text: &str) -> &str {
-    let Some(rest) = text.strip_prefix("---\n").or_else(|| text.strip_prefix("---\r\n")) else { return text };
-    rest.find("\n---").map_or(text, |i| {
-        let after = &rest[i + 4..];
-        after.split_once('\n').map_or("", |(_, b)| b)
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,11 +194,5 @@ mod tests {
         assert_eq!(context("a /bo", 0), Some((SuggestKind::Slash, 2, "bo")));
         assert_eq!(context("a/b", 0), None);
         assert_eq!(context("/a b", 0), None);
-    }
-
-    #[test]
-    fn front_matter_is_skipped() {
-        assert_eq!(strip_front_matter("---\ntags: [a]\n---\nbody\n"), "body\n");
-        assert_eq!(strip_front_matter("plain"), "plain");
     }
 }

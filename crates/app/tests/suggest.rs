@@ -88,3 +88,27 @@ fn nothing_is_suggested_in_code_blocks() {
     typed(&mut app, "/tog");
     assert!(app.suggest.is_none());
 }
+
+#[test]
+fn ctrl_hover_on_a_link_previews_its_note() {
+    let d = vault();
+    fs::write(d.path().join("Home.md"), "intro\n\nsee [[Second note]] here\n").unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("open:Home.md");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(1000, 700).unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let block = frame.info.blocks.iter().find(|b| b.display.contains("here")).unwrap();
+    let r = frame.dom.nodes[block.node].rect;
+    let y = r.y + r.h / 2.0;
+    let xs: Vec<f32> = (0..r.w as usize).step_by(4).map(|dx| r.x + dx as f32).collect();
+    assert!(!xs.iter().any(|&x| app.hover_link(&frame, &mut fonts, x, y, false)));
+    assert!(xs.iter().any(|&x| app.hover_link(&frame, &mut fonts, x, y, true)));
+    let h = app.hover_preview.as_ref().unwrap();
+    assert_eq!((h.path.as_str(), h.text.as_str()), ("dir/Second note.md", "# Second\nfirst line"));
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    assert!(frame.dom.nodes.iter().any(|n| n.el.text.as_deref() == Some("first line")));
+    // Over plain text the preview closes.
+    assert!(app.hover_link(&frame, &mut fonts, r.x + 2.0, y, true));
+    assert!(app.hover_preview.is_none());
+}

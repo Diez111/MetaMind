@@ -45,7 +45,9 @@ The authoritative list of what Rustsidian does today. Nothing outside it is clai
 | Vim mode | partial | On when `vimMode` is set in `.obsidian/app.json`, or with `Toggle Vim key bindings`. Subset documented in `editor-core/src/vim.rs`; the mode is shown in the status bar; the caret does not change shape |
 | IME | partial | Committed text is accepted; no pre-edit display. fcitx/ibus untested |
 | RTL, ligatures | partial | Whatever `cosmic-text` shaping provides; not tested |
-| Spellcheck, drag and drop, paste of files/images, hover preview, slash commands | none | |
+| Link and command suggestions | partial | Typing `[[` lists notes and files (fuzzy) with a preview of the selected note; Enter or Tab inserts the link in the vault's link format. `/` at the start of a word lists commands and runs the chosen one. Arrows move, Escape dismisses. Not offered inside code blocks. No heading or block (`#`, `^`) completion |
+| Hover preview | partial | Ctrl+hover over a link in the editor shows the target note's opening lines as plain text. No rendered Markdown, scrolling or nested previews |
+| Spellcheck, paste of files/images, drop from outside the app | none | |
 | Properties editor | partial | Front matter shown as a table in live preview and reading view: text, number, checkbox, date, list pills (tags, aliases, cssclasses). Edit, add (`properties:add`), rename, remove; edits are buffer edits (undo works) and only the changed entry is rewritten. `properties:toggle-source` or the `propertiesInDocument` setting shows raw source. No type picker or `types.json`; flow lists become block lists when edited; nested values are read-only |
 | Embeds of notes and images | partial | `![[Note]]`, `![[Note#Heading]]`, `![[Note#^block]]` show the note or section below the paragraph (first 30 blocks; tables and nested embeds inside it as source). `![[image.png\|100x80]]` and `![](image.png)` show PNG images only, decoded on the UI thread at first display; JPEG, GIF, WebP, SVG and remote images are not shown |
 | Embeds of audio, video, PDF | none | |
@@ -54,7 +56,7 @@ The authoritative list of what Rustsidian does today. Nothing outside it is clai
 
 | Feature | Status | Notes |
 |---|---|---|
-| File explorer | partial | Virtualised, collapsible, file icons; right-click menus for files, folders, tabs and the editor (new note/folder, rename with link updates, make a copy, delete to trash, copy path or link, show in system explorer, cut/copy/paste). Sort by name, modified or created time (`fileSortOrder`). No drag-rearrange |
+| File explorer | partial | Virtualised, collapsible, file icons; right-click menus for files, folders, tabs and the editor (new note/folder, rename with link updates, make a copy, delete to trash, copy path or link, show in system explorer, cut/copy/paste). Sort by name, modified or created time (`fileSortOrder`). Drag a file or folder onto a folder (or empty space for the root) to move it, with link updates |
 | Quick switcher, command palette | done | |
 | Search panel with query operators | done | All operators; no embedded `query` blocks |
 | Back/forward, tabs | done | Open tabs, view mode, scroll, cursor, folds and sidebar state are restored when the vault reopens. No split panes, stacked or pinned tabs, pop-out windows, linked panes, workspaces |

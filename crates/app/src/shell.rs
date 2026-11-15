@@ -371,6 +371,7 @@ pub struct App {
     /// An explorer row being pressed or dragged.
     pub explorer_drag: Option<ExplorerDrag>,
     pub suggest: Option<crate::suggest::Suggest>,
+    pub hover_preview: Option<crate::popover::HoverPreview>,
     /// Where the suggestion closed with Escape stays closed until the cursor leaves it.
     pub(crate) suggest_dismissed: Option<usize>,
     pub anims: crate::anim::Anims,
@@ -516,6 +517,7 @@ impl App {
             hover_action: None,
             explorer_drag: None,
             suggest: None,
+            hover_preview: None,
             suggest_dismissed: None,
             anims: Default::default(),
             seen: None,
@@ -1364,6 +1366,7 @@ impl App {
 
     fn key_inner(&mut self, key: Key) -> bool {
         self.notice = None;
+        self.hover_preview = None;
         if let Some(r) = self.menu_key(&key) {
             return r;
         }
