@@ -63,7 +63,7 @@ fn write(app: &App, fonts: &mut Fonts, dest: &Path) -> Result<usize, String> {
     let content = dom.add(0, El::div().class("view-content markdown-reading-view"));
     let blocks = tab.editor.buf.doc().blocks.len();
     view::note_blocks(app, &mut dom, content, &pal, &mut info, tab, ViewMode::Reading, 0..blocks, true);
-    dom.style(&app.theme, Env { dark: false, reduced_motion: false });
+    dom.style(&app.theme, Env::default());
     dom.layout(fonts, LAYOUT_W, LAYOUT_H);
     view::add_decorations(&mut dom, &info, fonts);
     crate::rich::paint(&mut dom, &info.rich, fonts);

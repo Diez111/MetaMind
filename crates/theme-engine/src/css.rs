@@ -16,6 +16,7 @@ pub enum Media {
     Dark,
     Light,
     ReducedMotion,
+    MoreContrast,
     /// A media query this engine does not evaluate (print, width queries). Never applies.
     Unsupported,
 }
@@ -279,6 +280,7 @@ impl P<'_> {
                 "(prefers-color-scheme:dark)" => Media::Dark,
                 "(prefers-color-scheme:light)" => Media::Light,
                 "(prefers-reduced-motion:reduce)" => Media::ReducedMotion,
+                "(prefers-contrast:more)" => Media::MoreContrast,
                 "all" | "screen" => Media::Always,
                 _ => Media::Unsupported,
             };

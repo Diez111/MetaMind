@@ -7,7 +7,7 @@ use editor_core::deco::{decorate, Deco, Style as Deco_};
 use editor_core::Sel;
 use md_engine::NodeKind;
 use rustsidian_ui::{Dom, El, Fonts, NodeId, Rect, Span};
-use theme_engine::{parse_color, Color, Element, Env};
+use theme_engine::{parse_color, Color, Element};
 use vault_core::path;
 
 /// Colors the editor needs for syntax styling, read from the theme's CSS variables.
@@ -55,13 +55,7 @@ impl Element for Body {
 
 pub fn palette(app: &App) -> Palette {
     let class = if app.dark { "theme-dark" } else { "theme-light" };
-    let c = app.theme.compute(
-        &Body(app.dark),
-        &[class],
-        Env { dark: app.dark, reduced_motion: app.reduced_motion },
-        None,
-        None,
-    );
+    let c = app.theme.compute(&Body(app.dark), &[class], app.env(), None, None);
     let col = |name: &str, default: Color| c.var(name).and_then(|v| parse_color(&v)).unwrap_or(default);
     let num = |name: &str, default: f32| {
         c.var(name).and_then(|v| v.trim().trim_end_matches("em").parse().ok()).unwrap_or(default)

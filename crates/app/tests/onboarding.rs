@@ -255,3 +255,18 @@ fn ime_preedit_shows_at_caret_until_committed() {
     let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
     assert!(!frame.dom.nodes.iter().any(|n| n.el.classes.iter().any(|c| c == "ime-preedit")));
 }
+
+#[test]
+fn high_contrast_overrides_theme_colors() {
+    let d = vault();
+    fs::create_dir_all(d.path().join(".obsidian/snippets")).unwrap();
+    fs::write(d.path().join(".obsidian/snippets/s.css"), ".theme-dark { --text-accent: #345678 }").unwrap();
+    fs::write(d.path().join(".obsidian/appearance.json"), r#"{"enabledCssSnippets":["s"]}"#).unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.dark = true;
+    let themed = rustsidian_app::view::palette(&app).accent;
+    assert_eq!((themed.r, themed.g, themed.b), (0x34, 0x56, 0x78));
+    app.high_contrast = true;
+    let strong = rustsidian_app::view::palette(&app).accent;
+    assert_eq!((strong.r, strong.g, strong.b), (0xff, 0xe6, 0x00));
+}

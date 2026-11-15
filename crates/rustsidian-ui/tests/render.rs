@@ -41,7 +41,7 @@ fn layout_geometry() {
     theme.add_sheet("test", CSS);
     let mut fonts = Fonts::new();
     let mut d = build();
-    d.style(&theme, Env { dark: true, reduced_motion: false });
+    d.style(&theme, Env { dark: true, ..Env::default() });
     d.layout(&mut fonts, 640.0, 400.0);
     let rect = |id: &str| d.nodes[d.by_id(id).unwrap()].rect;
     let side = d.nodes[2].rect;
@@ -77,7 +77,7 @@ fn renders_and_follows_color_scheme() {
         let pm = rustsidian_ui::render_to_pixmap(
             &mut d,
             &theme,
-            Env { dark, reduced_motion: false },
+            Env { dark, ..Env::default() },
             &mut fonts,
             640,
             400,

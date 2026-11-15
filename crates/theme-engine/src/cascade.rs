@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub struct Env {
     pub dark: bool,
     pub reduced_motion: bool,
+    pub high_contrast: bool,
 }
 
 struct Entry {
@@ -281,6 +282,7 @@ impl Theme {
                     Media::Dark => env.dark,
                     Media::Light => !env.dark,
                     Media::ReducedMotion => env.reduced_motion,
+                    Media::MoreContrast => env.high_contrast,
                     Media::Unsupported => false,
                 };
                 let sel = &rule.selectors[en.selector as usize];
@@ -540,7 +542,7 @@ mod tests {
         let (d, body, pane, link) = setup();
         let mut t = Theme::new();
         t.add_sheet("s", "body { color: black; font-weight: bold } @media (prefers-color-scheme: dark) { body { color: white } } .pane { color: initial; font-weight: inherit } a { transition: color 100ms } @media (prefers-reduced-motion: reduce) { a { transition: none } }");
-        let dark = Env { dark: true, reduced_motion: false };
+        let dark = Env { dark: true, ..Env::default() };
         assert_eq!(compute_chain(&t, &d, dark, &[body]).get("color"), Some("white"));
         assert_eq!(compute_chain(&t, &d, Env::default(), &[body]).get("color"), Some("black"));
         let p = compute_chain(&t, &d, dark, &[body, pane]);
@@ -552,7 +554,8 @@ mod tests {
             (inline.get("color"), inline.get("margin-bottom"), inline.get("margin-left")),
             (Some("#abc"), Some("1px"), Some("2px"))
         );
-        let motion = compute_chain(&t, &d, Env { dark: false, reduced_motion: true }, &[body, pane, link]);
+        let motion =
+            compute_chain(&t, &d, Env { reduced_motion: true, ..Env::default() }, &[body, pane, link]);
         assert_eq!(motion.get("transition"), Some("none"));
     }
 

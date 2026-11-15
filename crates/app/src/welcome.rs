@@ -37,6 +37,8 @@ pub struct Welcome {
     pub hover_action: Option<String>,
     pub scrolls: HashMap<String, f32>,
     pub anims: Anims,
+    /// The OS asks for more contrast; the window sets it.
+    pub high_contrast: bool,
     /// A note to show first in the vault that was just chosen (the sample vault's welcome note).
     pub open_note: Option<String>,
     theme: Theme,
@@ -85,6 +87,7 @@ impl Welcome {
     pub fn new() -> Welcome {
         let mut theme = Theme::new();
         theme.add_sheet("base", crate::shell::BASE_CSS);
+        theme.add_sheet("contrast", crate::shell::CONTRAST_CSS);
         let mut w = Welcome {
             screen: Screen::Home,
             recents: recent::load(),
@@ -95,6 +98,7 @@ impl Welcome {
             hover_action: None,
             scrolls: HashMap::new(),
             anims: Anims::default(),
+            high_contrast: false,
             open_note: None,
             theme,
         };
@@ -425,7 +429,7 @@ impl Welcome {
     pub fn render(&mut self, fonts: &mut Fonts, pixmap: &mut Pixmap, scale: f32) -> Dom {
         self.anims.tick();
         let mut dom = self.build();
-        dom.style(&self.theme, Env { dark: true, reduced_motion: false });
+        dom.style(&self.theme, Env { dark: true, high_contrast: self.high_contrast, ..Env::default() });
         dom.layout(fonts, pixmap.width() as f32 / scale, pixmap.height() as f32 / scale);
         icons::paint(&mut dom);
         let scene = dom.paint();

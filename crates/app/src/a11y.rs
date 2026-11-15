@@ -128,7 +128,7 @@ mod tests {
 
     fn lay_out(dom: &mut Dom) {
         let theme = rustsidian_ui::Theme::default();
-        dom.style(&theme, rustsidian_ui::Env { dark: false, reduced_motion: false });
+        dom.style(&theme, rustsidian_ui::Env::default());
         dom.layout(&mut rustsidian_ui::Fonts::new(), 400.0, 300.0);
     }
 

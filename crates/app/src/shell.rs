@@ -13,6 +13,7 @@ use vault_core::fsio::{self, Recovery, Stamp};
 use vault_core::{path, FileKind, VaultStore, WriteError};
 
 pub const BASE_CSS: &str = include_str!("base.css");
+pub const CONTRAST_CSS: &str = include_str!("contrast.css");
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub struct Key {
@@ -337,6 +338,8 @@ pub struct App {
     pub system_dark: Option<bool>,
     /// The OS asks for minimal motion: themes see `prefers-reduced-motion`, panels stop animating.
     pub reduced_motion: bool,
+    /// The OS asks for more contrast: themes see `prefers-contrast: more`, which `contrast.css` uses.
+    pub high_contrast: bool,
     /// Text the input method is composing, not yet part of the note.
     pub preedit: String,
     /// The input method's cursor as a byte offset into `preedit`.
@@ -444,6 +447,8 @@ pub(crate) fn load_theme(config: &VaultConfig) -> Theme {
     if !vars.is_empty() {
         theme.add_sheet("settings", &format!("body {{ {vars}}}"));
     }
+    // Last, so it wins over the theme and snippets while it applies.
+    theme.add_sheet("contrast", CONTRAST_CSS);
     theme
 }
 
@@ -528,6 +533,7 @@ impl App {
             dark,
             system_dark: None,
             reduced_motion: false,
+            high_contrast: false,
             preedit: String::new(),
             preedit_cursor: None,
             keymap,
@@ -1010,6 +1016,14 @@ impl App {
         self.system_dark = dark;
         if self.config.color_scheme().is_none() {
             self.dark = dark.unwrap_or(true);
+        }
+    }
+
+    pub fn env(&self) -> theme_engine::Env {
+        theme_engine::Env {
+            dark: self.dark,
+            reduced_motion: self.reduced_motion,
+            high_contrast: self.high_contrast,
         }
     }
 

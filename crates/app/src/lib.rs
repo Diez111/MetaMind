@@ -13,7 +13,7 @@ pub mod icons;
 pub mod media;
 pub mod mentions;
 pub mod menu;
-pub mod motion;
+pub mod ospref;
 pub mod panes;
 pub mod pdf;
 pub mod plugins;
@@ -35,7 +35,6 @@ pub use shell::{App, Key};
 
 use rustsidian_ui::{Dom, Fonts, Pixmap};
 use std::time::Instant;
-use theme_engine::Env;
 
 /// One rendered frame and the information needed to map input back onto it.
 pub struct Frame {
@@ -53,7 +52,7 @@ pub fn render(app: &mut App, fonts: &mut Fonts, pixmap: &mut Pixmap, scale: f32)
     app.animate_changes();
     app.window_w = pixmap.width() as f32 / scale;
     let (mut dom, info) = view::build(app, pixmap.height() as f32 / scale);
-    let env = Env { dark: app.dark, reduced_motion: app.reduced_motion };
+    let env = app.env();
     dom.style(&app.theme, env);
     dom.layout(fonts, pixmap.width() as f32 / scale, pixmap.height() as f32 / scale);
     // The suggestion and the composing text sit at the caret, which is only known after layout.

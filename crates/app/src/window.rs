@@ -2,6 +2,7 @@
 //! Fully event-driven: the loop sleeps until input, a file change or a deadline (autosave,
 //! a notice timing out), and redraws at display rate only while something is animating.
 
+use rustsidian_app::ospref;
 use rustsidian_app::welcome::Welcome;
 use rustsidian_app::{recent, App, Frame, Key};
 use rustsidian_ui::{Dom, Fonts, Pixmap};
@@ -234,7 +235,8 @@ impl Win {
         self.app = None;
         self.frame = None;
         let mut welcome = Welcome::new();
-        if !rustsidian_app::motion::os_reduced_motion() {
+        welcome.high_contrast = ospref::high_contrast();
+        if !ospref::reduced_motion() {
             welcome.intro();
         }
         self.welcome = Some(welcome);
@@ -432,11 +434,12 @@ impl ApplicationHandler<UserEvent> for Win {
                 el.exit();
             }
             WindowEvent::Focused(false) => app.save_all(),
-            // The preference has no change event on every OS, so it is re-read on focus.
+            // These preferences have no change event on every OS, so they are re-read on focus.
             WindowEvent::Focused(true) => {
-                let reduced = rustsidian_app::motion::os_reduced_motion();
-                if reduced != app.reduced_motion {
+                let (reduced, contrast) = (ospref::reduced_motion(), ospref::high_contrast());
+                if (reduced, contrast) != (app.reduced_motion, app.high_contrast) {
                     app.set_reduced_motion(reduced);
+                    app.high_contrast = contrast;
                     self.request_redraw();
                 }
             }
@@ -605,7 +608,8 @@ fn load(vault: &Path, note: Option<&str>, profile: bool, started: Instant) -> Re
         eprintln!("[profile] vault opened in {:?} ({} files)", started.elapsed(), app.store.index.len());
     }
     app.defer_graph = true;
-    app.set_reduced_motion(rustsidian_app::motion::os_reduced_motion());
+    app.set_reduced_motion(ospref::reduced_motion());
+    app.high_contrast = ospref::high_contrast();
     app.system_clipboard = true;
     if rustsidian_app::update::auto_check_due(now_ms()) {
         app.update.start_check(false);

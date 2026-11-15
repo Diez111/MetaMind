@@ -1,0 +1,47 @@
+/* Loaded after every theme and snippet; applies only while the OS asks for more contrast. */
+@media (prefers-contrast: more) {
+  .theme-dark {
+    --background-primary: #000000 !important;
+    --background-primary-alt: #000000 !important;
+    --background-secondary: #000000 !important;
+    --background-secondary-alt: #1f1f1f !important;
+    --background-modifier-border: #ffffff !important;
+    --background-modifier-hover: rgba(255, 255, 255, 0.22) !important;
+    --background-modifier-active-hover: rgba(255, 230, 0, 0.35) !important;
+    --text-normal: #ffffff !important;
+    --text-muted: #ffffff !important;
+    --text-faint: #cfcfcf !important;
+    --text-accent: #ffe600 !important;
+    --interactive-accent: #ffe600 !important;
+    --text-on-accent: #000000 !important;
+    --text-error: #ff6b6b !important;
+    --text-highlight-bg: rgba(255, 230, 0, 0.5) !important;
+    --text-selection: rgba(255, 230, 0, 0.45) !important;
+    --code-background: #000000 !important;
+    --code-normal: #ffffff !important;
+    --tag-color: #ffe600 !important;
+    --caret-color: #ffffff !important;
+  }
+  .theme-light {
+    --background-primary: #ffffff !important;
+    --background-primary-alt: #ffffff !important;
+    --background-secondary: #ffffff !important;
+    --background-secondary-alt: #e6e6e6 !important;
+    --background-modifier-border: #000000 !important;
+    --background-modifier-hover: rgba(0, 0, 0, 0.16) !important;
+    --background-modifier-active-hover: rgba(0, 0, 192, 0.25) !important;
+    --text-normal: #000000 !important;
+    --text-muted: #000000 !important;
+    --text-faint: #3d3d3d !important;
+    --text-accent: #0000c0 !important;
+    --interactive-accent: #0000c0 !important;
+    --text-on-accent: #ffffff !important;
+    --text-error: #b00000 !important;
+    --text-highlight-bg: rgba(255, 220, 0, 0.6) !important;
+    --text-selection: rgba(0, 0, 192, 0.3) !important;
+    --code-background: #ffffff !important;
+    --code-normal: #000000 !important;
+    --tag-color: #0000c0 !important;
+    --caret-color: #000000 !important;
+  }
+}

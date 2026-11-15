@@ -3,7 +3,7 @@
 //! Supported: type/class/id/attribute selectors, `:hover :focus :active :disabled :checked
 //! :first-child :last-child :root :not() :is() :where()`, all four combinators, specificity,
 //! `!important`, custom properties with `var()` fallbacks, `calc()/min()/max()/clamp()`,
-//! `@media (prefers-color-scheme)` and `(prefers-reduced-motion)`, and the `margin`, `padding`,
+//! `@media (prefers-color-scheme)`, `(prefers-reduced-motion)` and `(prefers-contrast: more)`, and the `margin`, `padding`,
 //! `border*`, `background`, `gap`, `overflow` shorthands.
 //! Not supported: pseudo-elements, `:nth-child()`, `:has()`, `@supports`, `@layer`, `@container`,
 //! width media queries, `@font-face`, `@keyframes`, gradients and background images.
