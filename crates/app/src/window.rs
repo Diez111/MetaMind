@@ -17,7 +17,7 @@ use winit::dpi::LogicalSize;
 use winit::event::{ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key as WKey, ModifiersState, NamedKey};
-use winit::window::{CursorIcon, Icon, Window, WindowId};
+use winit::window::{CursorIcon, Icon, Theme, Window, WindowId};
 
 /// Changed paths from a vault watcher, tagged with the generation of the vault it watches.
 type Changed = (u64, Vec<String>);
@@ -157,6 +157,8 @@ impl Win {
             }
         });
         self.watcher = Some(handle.thread().clone());
+        let mut app = app;
+        app.set_system_dark(self.window.as_ref().and_then(|w| w.theme()).map(|t| t == Theme::Dark));
         self.app = Some(app);
         self.welcome = None;
         self.welcome_dom = None;
@@ -298,6 +300,9 @@ impl ApplicationHandler<Changed> for Win {
                 return;
             }
         }
+        if let Some(app) = &mut self.app {
+            app.set_system_dark(window.theme().map(|t| t == Theme::Dark));
+        }
         self.window = Some(window);
     }
 
@@ -316,6 +321,13 @@ impl ApplicationHandler<Changed> for Win {
             WindowEvent::RedrawRequested => return self.redraw(),
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => return self.request_redraw(),
             WindowEvent::ModifiersChanged(m) => return self.mods = m.state(),
+            WindowEvent::ThemeChanged(t) => {
+                if let Some(app) = &mut self.app {
+                    app.set_system_dark(Some(t == Theme::Dark));
+                    self.request_redraw();
+                }
+                return;
+            }
             _ => {}
         }
         if self.welcome.is_some() {

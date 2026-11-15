@@ -102,6 +102,9 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("bookmarks:bookmark-current-view", "Bookmarks: Bookmark or unbookmark current note", ""),
     ("bookmarks:bookmark-current-search", "Bookmarks: Bookmark current search", ""),
     ("tag-pane:open", "Tags: Show tags", ""),
+    ("templates:insert-template", "Templates: Insert template", ""),
+    ("templates:insert-current-date", "Templates: Insert current date", ""),
+    ("templates:insert-current-time", "Templates: Insert current time", ""),
     ("file-explorer:new-file", "Create new note", "Ctrl+N"),
     ("file-explorer:new-folder", "Create new folder", ""),
     ("workspace:edit-file-title", "Rename file", "F2"),
@@ -231,6 +234,7 @@ pub enum PromptKind {
     Rename,
     /// The name of a new folder inside `Prompt::target`.
     NewFolder,
+    Template,
 }
 
 #[derive(Clone, Debug)]
@@ -315,6 +319,8 @@ pub struct App {
     pub config: VaultConfig,
     pub theme: Theme,
     pub dark: bool,
+    /// The OS light/dark preference, when the window system reports one.
+    pub system_dark: Option<bool>,
     pub tabs: Vec<Tab>,
     pub active: usize,
     pub left_open: bool,
@@ -456,6 +462,7 @@ impl App {
             store,
             theme,
             dark,
+            system_dark: None,
             keymap,
             config,
             tabs: Vec::new(),
@@ -842,6 +849,7 @@ impl App {
                 }
                 items
             }
+            PromptKind::Template => self.template_items(&query),
             PromptKind::Rename | PromptKind::NewFolder => {
                 let target = self.prompt.as_ref().map(|p| p.target.clone()).unwrap_or_default();
                 let name = query.trim();
@@ -872,7 +880,20 @@ impl App {
         }
     }
 
-    fn open_prompt(&mut self, kind: PromptKind) {
+    /// Record the OS color scheme; it applies when the vault's scheme is "Adapt to system".
+    pub fn set_system_dark(&mut self, dark: Option<bool>) {
+        self.system_dark = dark;
+        if self.config.color_scheme().is_none() {
+            self.dark = dark.unwrap_or(true);
+        }
+    }
+
+    /// Indices of the best fuzzy matches of `query` among `names`.
+    pub(crate) fn fuzzy_top(&mut self, query: &str, names: &[&str], limit: usize) -> Vec<usize> {
+        self.fuzzy.top(query, names, limit).iter().map(|h| h.index).collect()
+    }
+
+    pub(crate) fn open_prompt(&mut self, kind: PromptKind) {
         self.prompt = Some(Prompt {
             kind,
             target: String::new(),
@@ -999,7 +1020,7 @@ impl App {
         if command == "prompt:dismiss" {
             return;
         }
-        if self.run_plugin_command(command) || self.run_panes(command) {
+        if self.run_plugin_command(command) || self.run_panes(command) || self.run_templates(command) {
             return;
         }
         if self.run_file_action(command) {
@@ -1134,22 +1155,7 @@ impl App {
             "editor:toggle-code" => wrap(self, "`"),
             "editor:toggle-strikethrough" => wrap(self, "~~"),
             "editor:follow-link" => self.follow_link(),
-            "daily-notes" => {
-                let (y, m, d, ..) = fsio::civil(now / 1000);
-                let folder = std::fs::read_to_string(self.config.dir.join("daily-notes.json"))
-                    .ok()
-                    .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-                    .and_then(|v| v.get("folder").and_then(|f| f.as_str()).map(str::to_string))
-                    .unwrap_or_default();
-                let rel = path::join(&folder, &format!("{y:04}-{m:02}-{d:02}.md"));
-                if self.store.index.id(&rel).is_none() {
-                    if let Err(e) = self.store.create(&rel, "") {
-                        self.notice = Some(format!("Cannot create daily note: {e}"));
-                        return;
-                    }
-                }
-                self.open_note(&rel);
-            }
+            "daily-notes" => self.open_daily_note(),
             "random-note" => {
                 let notes: Vec<String> = self.store.index.notes().map(|(_, f)| f.path.to_string()).collect();
                 if !notes.is_empty() {

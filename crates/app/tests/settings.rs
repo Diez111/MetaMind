@@ -121,3 +121,19 @@ fn new_note_location_setting() {
     app.run("file-explorer:new-file");
     assert_eq!(app.tab().unwrap().path, "Inbox/Untitled.md");
 }
+
+#[test]
+fn color_scheme_follows_system_unless_set() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join("A.md"), "a").unwrap();
+    let mut app = rustsidian_app::App::open(d.path()).unwrap();
+    app.set_system_dark(Some(false));
+    assert!(!app.dark);
+    app.set_system_dark(Some(true));
+    assert!(app.dark);
+    std::fs::create_dir_all(d.path().join(".obsidian")).unwrap();
+    std::fs::write(d.path().join(".obsidian/appearance.json"), r#"{"theme":"moonstone"}"#).unwrap();
+    let mut app = rustsidian_app::App::open(d.path()).unwrap();
+    app.set_system_dark(Some(true));
+    assert!(!app.dark);
+}

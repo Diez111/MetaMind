@@ -71,7 +71,7 @@ The authoritative list of what Rustsidian does today. Nothing outside it is clai
 |---|---|---|
 | CSS subset engine | done | See `THEME_COMPAT.md` for the exact subset |
 | Themes from `.obsidian/themes/`, snippets from `.obsidian/snippets/`, live reload | partial | Loaded and reloaded on change. **No community theme has been tested**; themes that rely on unsupported CSS will apply only in part |
-| Light/dark | partial | Follows `appearance.json` and a toggle command; does not follow the OS setting |
+| Light/dark | done | Follows `appearance.json`; "Adapt to system" follows the OS setting on Windows, macOS and Wayland (X11 reports no preference, so dark is used) |
 | Commands with stable ids, rebindable through `hotkeys.json`, key sequences | done | Settings window (`Ctrl+,`, ribbon gear): Editor, Files & links, Appearance (scheme, theme, snippets, font size), Hotkeys (rebind, reset; first binding only), About. Saved to `app.json`, `appearance.json`, `hotkeys.json` with unknown keys kept. Dropdowns cycle on click |
 | Everything else in the customisation section (TOML config, JSON Schema, data-driven layout, theme inspector UI, feature flags, profiles, portable mode, `--config-dir`) | none | The theme engine has an `inspect` API; no UI uses it |
 

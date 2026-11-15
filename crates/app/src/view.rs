@@ -1244,6 +1244,7 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
             PromptKind::Switcher => "Find or create a note…",
             PromptKind::Rename => "New name…",
             PromptKind::NewFolder => "Folder name…",
+            PromptKind::Template => "Find a template…",
         };
         let shown = if p.query.is_empty() { placeholder.to_string() } else { format!("{}▏", p.query) };
         let input = dom.add(modal, El::div().class("prompt-input-container"));
@@ -1254,6 +1255,7 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
                 PromptKind::Switcher => "search",
                 PromptKind::Rename => "edit",
                 PromptKind::NewFolder => "folder-plus",
+                PromptKind::Template => "note",
             }),
         );
         dom.add(input, El::div().class("prompt-input").text(shown));

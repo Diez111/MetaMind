@@ -312,7 +312,7 @@ impl App {
             }
             "newLinkFormat" => self.store.index.link_format = self.config.link_format(),
             "trashOption" => self.store.trash_mode = self.config.trash_option(),
-            "theme" => self.dark = self.config.color_scheme().unwrap_or(true),
+            "theme" => self.dark = self.config.color_scheme().or(self.system_dark).unwrap_or(true),
             "cssTheme" | "baseFontSize" | "enabledCssSnippets" => self.theme = load_theme(&self.config),
             "propertiesInDocument" => self.prop_edit = None,
             _ => {}
