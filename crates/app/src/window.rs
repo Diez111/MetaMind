@@ -352,6 +352,10 @@ impl ApplicationHandler<Changed> for Win {
                 el.exit();
             }
             WindowEvent::Focused(false) => app.save_all(),
+            WindowEvent::DroppedFile(file) => {
+                app.import_files(&[&file]);
+                self.request_redraw();
+            }
             WindowEvent::Ime(Ime::Commit(text)) => {
                 app.text_input(&text);
                 self.request_redraw();

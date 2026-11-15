@@ -47,7 +47,8 @@ The authoritative list of what Rustsidian does today. Nothing outside it is clai
 | RTL, ligatures | partial | Whatever `cosmic-text` shaping provides; not tested |
 | Link and command suggestions | partial | Typing `[[` lists notes and files (fuzzy) with a preview of the selected note; Enter or Tab inserts the link in the vault's link format. `/` at the start of a word lists commands and runs the chosen one. Arrows move, Escape dismisses. Not offered inside code blocks. No heading or block (`#`, `^`) completion |
 | Hover preview | partial | Ctrl+hover over a link in the editor shows the target note's opening lines as plain text. No rendered Markdown, scrolling or nested previews |
-| Spellcheck, paste of files/images, drop from outside the app | none | |
+| Drop files from outside the app | done | Copied into `attachmentFolderPath` (`/`, `./`, `./sub` or a vault folder) with a counter on name clashes, then linked at the cursor as `![[file]]` (or a Markdown link) in the vault's link format; files already in the vault are linked in place |
+| Spellcheck, paste of files/images | none | The clipboard is read as text only |
 | Properties editor | partial | Front matter shown as a table in live preview and reading view: text, number, checkbox, date, list pills (tags, aliases, cssclasses). Edit, add (`properties:add`), rename, remove; edits are buffer edits (undo works) and only the changed entry is rewritten. `properties:toggle-source` or the `propertiesInDocument` setting shows raw source. No type picker or `types.json`; flow lists become block lists when edited; nested values are read-only |
 | Embeds of notes and images | partial | `![[Note]]`, `![[Note#Heading]]`, `![[Note#^block]]` show the note or section below the paragraph (first 30 blocks; tables and nested embeds inside it as source). `![[image.png\|100x80]]` and `![](image.png)` show PNG images only, decoded on the UI thread at first display; JPEG, GIF, WebP, SVG and remote images are not shown |
 | Embeds of audio, video, PDF | none | |
@@ -65,7 +66,8 @@ The authoritative list of what Rustsidian does today. Nothing outside it is clai
 | Daily notes, random note | partial | Daily note uses the UTC date and `YYYY-MM-DD`; custom formats and templates are not supported |
 | Graph view | partial | Global and local graph (depth 1-3) in the main pane: pan, zoom about the pointer, drag nodes, hover highlight, click to open (unresolved creates the note, tags search). Settings panel with search filter, filter toggles, color groups, arrows, text fade, node size, link thickness, the four forces and Animate, all saved to `graph.json`. No layout cache on disk; dense graphs draw a sample of links |
 | Canvas view | done | Text/file/link/group nodes, colors, curved edges with arrows and labels; pan, wheel zoom, move, resize, double-click to edit text, add/delete node, lossless save. No edge editing; file nodes show a text preview |
-| Bookmarks, tags pane, properties view, periodic notes, templates, slides, format converter, audio recorder, footnotes view | none | |
+| Bookmarks, tags pane, templates | done | Bookmarks for notes and searches in `bookmarks.json`; tags pane; insert template, date and time with `templates.json` folder and formats |
+| Properties view, periodic notes beyond daily, slides, format converter, audio recorder, footnotes view | none | |
 | Bases | none | |
 
 ### Theming and customisation

@@ -1,6 +1,7 @@
 //! Rustsidian application library: state, commands, view construction and headless rendering.
 
 pub mod anim;
+pub mod attach;
 pub mod canvasview;
 pub mod cli;
 pub mod clipboard;
