@@ -13,3 +13,6 @@ theme-engine = { path = "../theme-engine" }
 rayon = "1"
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
 cosmic-text = { version = "0.19", default-features = false, features = ["std", "swash", "fontconfig"] }
+zune-jpeg = "0.5.15"
+gif = "0.14.2"
+image-webp = "0.2.4"

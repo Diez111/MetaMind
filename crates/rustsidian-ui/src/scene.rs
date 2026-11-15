@@ -11,21 +11,6 @@ use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Transform};
 pub struct Image(pub Arc<Pixmap>);
 
 impl Image {
-    /// Decode a PNG, scaled down if needed so that neither side exceeds `max_side` pixels.
-    pub fn decode_png(bytes: &[u8], max_side: u32) -> Option<Image> {
-        let p = Pixmap::decode_png(bytes).ok()?;
-        let side = p.width().max(p.height());
-        if side <= max_side.max(1) {
-            return Some(Image(Arc::new(p)));
-        }
-        let k = max_side.max(1) as f32 / side as f32;
-        let (w, h) = (((p.width() as f32 * k) as u32).max(1), ((p.height() as f32 * k) as u32).max(1));
-        let mut out = Pixmap::new(w, h)?;
-        let paint =
-            tiny_skia::PixmapPaint { quality: tiny_skia::FilterQuality::Bilinear, ..Default::default() };
-        out.draw_pixmap(0, 0, p.as_ref(), &paint, Transform::from_scale(k, k), None);
-        Some(Image(Arc::new(out)))
-    }
     pub fn size(&self) -> (u32, u32) {
         (self.0.width(), self.0.height())
     }

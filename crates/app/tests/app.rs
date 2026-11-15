@@ -626,3 +626,27 @@ fn status_bar_shows_word_goal_and_reading_time() {
     let s = status(&mut app);
     assert!(s.contains(&"3 words".to_string()) && s.contains(&"1 min read".to_string()), "{s:?}");
 }
+
+#[test]
+fn jpeg_embeds_are_shown() {
+    // The same hand-built 8x8 baseline JPEG as the decoder test in rustsidian-ui.
+    let mut j = vec![0xFF, 0xD8, 0xFF, 0xDB, 0x00, 0x43, 0x00];
+    j.extend([1u8; 64]);
+    j.extend([0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x08, 0x00, 0x08, 0x01, 0x01, 0x11, 0x00]);
+    for class in [0x00, 0x10] {
+        j.extend([0xFF, 0xC4, 0x00, 0x14, class, 1]);
+        j.extend([0u8; 15]);
+        j.push(0);
+    }
+    j.extend([0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00, 0x3F, 0xFF, 0xD9]);
+    let d = tempfile::tempdir().unwrap();
+    fs::write(d.path().join("photo.JPG"), &j).unwrap();
+    fs::write(d.path().join("N.md"), "text\n\n![[photo.JPG]]\n").unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("open:N.md");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(1000, 600).unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let img = frame.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == "image-embed")).unwrap();
+    assert_eq!((img.rect.w, img.rect.h), (8.0, 8.0));
+}

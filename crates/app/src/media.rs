@@ -19,7 +19,7 @@ pub struct Media {
 }
 
 impl Media {
-    /// The decoded image at a vault path. Only PNG is supported. Decoding happens on the calling
+    /// The decoded image at a vault path (PNG, JPEG, GIF or WebP). Decoding happens on the calling
     /// thread the first time the image is shown.
     pub fn image(&mut self, store: &VaultStore, rel: &str) -> Option<Image> {
         let f = store.index.get(rel)?;
@@ -31,7 +31,7 @@ impl Media {
         let img = (f.size <= MAX_IMAGE_BYTES)
             .then(|| std::fs::read(store.abs(&f.path)).ok())
             .flatten()
-            .and_then(|bytes| Image::decode_png(&bytes, MAX_IMAGE_SIDE));
+            .and_then(|bytes| Image::decode(&bytes, MAX_IMAGE_SIDE));
         self.images.insert(rel.to_string(), (f.mtime, img.clone()));
         img
     }

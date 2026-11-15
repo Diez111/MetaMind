@@ -3,6 +3,7 @@
 //! render to a pixel buffer for tests.
 
 pub mod dom;
+pub mod image;
 pub mod scene;
 pub mod text;
 

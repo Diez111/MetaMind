@@ -827,7 +827,10 @@ fn embeds(app: &App, dom: &mut Dom, view: NodeId, source: &str, tree: &md_engine
                 El::div().class("markdown-embed-title").text(path::stem(rel)).action(action.clone()),
             );
             embedded_blocks(dom, embed, section, &action, &palette(app));
-        } else if path::extension(rel).eq_ignore_ascii_case("png") {
+        } else if ["png", "jpg", "jpeg", "gif", "webp"]
+            .iter()
+            .any(|e| path::extension(rel).eq_ignore_ascii_case(e))
+        {
             let Some(img) = app.media.borrow_mut().image(&app.store, rel) else { continue };
             let (iw, ih) = img.size();
             let (iw, ih) = (iw.max(1) as f32, ih.max(1) as f32);
