@@ -309,7 +309,11 @@ fn sidebar_files(app: &App, dom: &mut Dom, parent: NodeId, viewport_h: f32) {
             .class("nav-header-title")
             .text(app.store.root.file_name().and_then(|n| n.to_str()).unwrap_or("Vault").to_string()),
     );
-    for (icon, cmd) in [("note-plus", "file-explorer:new-file"), ("collapse", "file-explorer:collapse-all")] {
+    for (icon, cmd) in [
+        ("note-plus", "file-explorer:new-file"),
+        ("sort", "file-explorer:sort-menu"),
+        ("collapse", "file-explorer:collapse-all"),
+    ] {
         icon_button(dom, header, icon, cmd, false);
     }
     let list = dom.add(parent, El::div().class("nav-files-container").id("files"));

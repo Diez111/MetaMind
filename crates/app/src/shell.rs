@@ -555,11 +555,54 @@ impl App {
         self.tree.as_deref().unwrap_or(&[])
     }
 
+    /// The explorer order, as `fileSortOrder` in `app.json` names it.
+    pub fn sort_order(&self) -> &str {
+        match self.config.app.str("fileSortOrder") {
+            Some(
+                o @ ("alphabeticalReverse"
+                | "byModifiedTime"
+                | "byModifiedTimeReverse"
+                | "byCreatedTime"
+                | "byCreatedTimeReverse"),
+            ) => o,
+            _ => "alphabetical",
+        }
+    }
+
     fn build_tree(&self) -> Vec<TreeRow> {
-        let mut paths: Vec<(&str, FileKind)> =
-            self.store.index.iter().map(|(_, f)| (&*f.path, f.kind)).collect();
-        // Folders before files within a directory, then case-insensitive by name.
-        paths.sort_by_cached_key(|(p, _)| tree_key(p));
+        let order = self.sort_order();
+        let created = |p: &str| -> i64 {
+            std::fs::metadata(self.store.abs(p))
+                .and_then(|m| m.created())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_nanos() as i64)
+        };
+        // Within a directory folders come first, in name order; the setting orders the files.
+        // The key's directory part keeps every directory's rows together.
+        let mut keyed: Vec<(String, i64, String, &str, FileKind)> = self
+            .store
+            .index
+            .iter()
+            .map(|(_, f)| {
+                let key = tree_key(&f.path);
+                let name_at = key.rfind('\u{2}').map_or(0, |i| i + 1);
+                let time = match order {
+                    "byModifiedTime" => -f.mtime,
+                    "byModifiedTimeReverse" => f.mtime,
+                    "byCreatedTime" => -created(&f.path),
+                    "byCreatedTimeReverse" => created(&f.path),
+                    _ => 0,
+                };
+                (key[..name_at].to_string(), time, key[name_at..].to_string(), &*f.path, f.kind)
+            })
+            .collect();
+        if order == "alphabeticalReverse" {
+            keyed.sort_unstable_by(|a, b| a.0.cmp(&b.0).then_with(|| b.2.cmp(&a.2)));
+        } else {
+            keyed.sort_unstable_by(|a, b| (&a.0, a.1, &a.2).cmp(&(&b.0, b.1, &b.2)));
+        }
+        let paths: Vec<(&str, FileKind)> = keyed.into_iter().map(|k| (k.3, k.4)).collect();
         let mut rows = Vec::with_capacity(paths.len() + 64);
         let mut open_dirs: Vec<String> = Vec::new();
         for (p, kind) in paths {
@@ -1155,6 +1198,13 @@ impl App {
             }
             "app:toggle-left-sidebar" => self.left_open = !self.left_open,
             "app:toggle-right-sidebar" => self.right_open = !self.right_open,
+            c if c.starts_with("file-explorer:sort:") => {
+                self.config.app.set("fileSortOrder", c["file-explorer:sort:".len()..].into());
+                if let Err(e) = self.config.app.save() {
+                    self.notice = Some(format!("Cannot save the sort order: {e}"));
+                }
+                self.tree = None;
+            }
             "backlinks:toggle-unlinked" => self.show_unlinked = !self.show_unlinked,
             "markdown:toggle-preview" => {
                 if let Some(t) = self.tab_mut() {

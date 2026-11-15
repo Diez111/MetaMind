@@ -127,6 +127,31 @@ impl App {
         self.show_menu(x, y, items);
     }
 
+    /// The explorer's sort order picker, opened below its header button.
+    pub(crate) fn sort_menu(&mut self, x: f32, y: f32) {
+        let current = self.sort_order().to_string();
+        let mut b = Builder { app: self, items: Vec::new() };
+        for (i, (order, label)) in [
+            ("alphabetical", "File name (A to Z)"),
+            ("alphabeticalReverse", "File name (Z to A)"),
+            ("byModifiedTime", "Modified time (new to old)"),
+            ("byModifiedTimeReverse", "Modified time (old to new)"),
+            ("byCreatedTime", "Created time (new to old)"),
+            ("byCreatedTimeReverse", "Created time (old to new)"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if i % 2 == 0 {
+                b.separator();
+            }
+            let icon = if order == current { "check" } else { "blank" };
+            b.item(icon, label, format!("file-explorer:sort:{order}"));
+        }
+        let items = b.items;
+        self.show_menu(x, y, items);
+    }
+
     fn show_menu(&mut self, x: f32, y: f32, mut items: Vec<MenuItem>) {
         while items.last().is_some_and(|i| i.action.is_empty()) {
             items.pop();

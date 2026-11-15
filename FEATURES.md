@@ -54,7 +54,7 @@ The authoritative list of what Rustsidian does today. Nothing outside it is clai
 
 | Feature | Status | Notes |
 |---|---|---|
-| File explorer | partial | Virtualised, collapsible, file icons; right-click menus for files, folders, tabs and the editor (new note/folder, rename with link updates, make a copy, delete to trash, copy path or link, show in system explorer, cut/copy/paste). No sorting options or drag-rearrange |
+| File explorer | partial | Virtualised, collapsible, file icons; right-click menus for files, folders, tabs and the editor (new note/folder, rename with link updates, make a copy, delete to trash, copy path or link, show in system explorer, cut/copy/paste). Sort by name, modified or created time (`fileSortOrder`). No drag-rearrange |
 | Quick switcher, command palette | done | |
 | Search panel with query operators | done | All operators; no embedded `query` blocks |
 | Back/forward, tabs | done | Open tabs, view mode, scroll, cursor, folds and sidebar state are restored when the vault reopens. No split panes, stacked or pinned tabs, pop-out windows, linked panes, workspaces |

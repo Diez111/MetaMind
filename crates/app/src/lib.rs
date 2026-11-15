@@ -74,6 +74,10 @@ impl App {
             if !action.starts_with("graph:edit:") {
                 self.graph_end_edit();
             }
+            if action == "file-explorer:sort-menu" {
+                let r = frame.dom.nodes[node].rect;
+                return self.sort_menu(r.x, r.y + r.h);
+            }
             if let Some(key) = action.strip_prefix("graph:slider:") {
                 return self.graph_slider_press(key, frame.dom.nodes[node].rect, x);
             }

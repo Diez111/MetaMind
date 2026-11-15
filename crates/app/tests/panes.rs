@@ -69,3 +69,19 @@ fn tags_pane_counts_notes_per_tag() {
     assert_eq!(app.search_query, "tag:#topic");
     assert_eq!(app.search_results.len(), 2);
 }
+
+#[test]
+fn explorer_sort_orders() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    let files = |app: &mut App| -> Vec<String> {
+        app.refresh_derived();
+        app.tree_rows().iter().map(|r| r.path.clone()).collect()
+    };
+    assert_eq!(files(&mut app), ["dir", "dir/C.md", "A.md", "B.md"]);
+    app.run("file-explorer:sort:alphabeticalReverse");
+    // Folders stay first and in name order.
+    assert_eq!(files(&mut app), ["dir", "dir/C.md", "B.md", "A.md"]);
+    let saved = fs::read_to_string(d.path().join(".obsidian/app.json")).unwrap();
+    assert!(saved.contains("\"fileSortOrder\": \"alphabeticalReverse\""), "{saved}");
+}
