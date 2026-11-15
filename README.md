@@ -62,7 +62,7 @@ Synthetic vaults from `perf_budget`.
 | Idle CPU | 0% | 0 CPU ticks over 5 s | met |
 | Keystroke to pixels, 1 MB note | < 8 ms | 4.9 ms median, 6.2 ms p95, 8.7 ms worst seen | met at p95 |
 | Scroll frame, 5 MB note | display rate | 7.4 ms mean (60 Hz needs 16.7 ms; 144 Hz would need 6.9 ms) | met for 60 Hz |
-| Full-text search, 50,000 notes | first results < 30 ms | 14–42 ms depending on query; `line:` queries take 40–44 ms and regex queries 36–37 ms (last run; an earlier session measured 8–31 ms with the same search code) | **missed** for `line:` and regex queries |
+| Full-text search, 50,000 notes | first results < 30 ms | 14–29 ms for plain terms, tags, tasks, properties and regex (regex 15–16 ms); `line:(paragraph 3 alias)` takes 43–51 ms | **missed** for `line:` queries with several terms |
 | Quick switcher, 50,000 paths | < 5 ms per keystroke | 1.8–2.0 ms | met |
 | Graph, 50,000 nodes at 60 fps | pan/zoom | 21 ms per frame at 50,000 nodes / 600,000 links, 15.5 ms at 10,000 / 120,000 (single runs), 1.7 ms for a small vault; CPU rasterizer, links sampled past 3M line pixels; layout tick 26 ms on a worker thread | **missed** |
 | Mermaid render | < 50 ms | flowchart/sequence layout + paint inside the 5-7 ms frame | met |

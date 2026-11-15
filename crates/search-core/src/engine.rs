@@ -44,8 +44,18 @@ enum C {
     And(Vec<C>),
     Or(Vec<C>),
     Not(Box<C>),
-    Term { raw: String, lower: String, finders: Box<(memmem::Finder<'static>, memmem::Finder<'static>)> },
-    Regex { exact: Regex, fold: Regex },
+    Term {
+        raw: String,
+        lower: String,
+        finders: Box<(memmem::Finder<'static>, memmem::Finder<'static>)>,
+    },
+    /// `lower_ok`: the pattern has no uppercase letters, so on lowercased text the plain regex
+    /// finds what the much slower case-insensitive one would.
+    Regex {
+        exact: Regex,
+        fold: Regex,
+        lower_ok: bool,
+    },
     Op(Op, Box<C>),
     Property(String, CProp),
 }
@@ -136,6 +146,7 @@ impl Query {
                     };
                     let p = &p.replace("\\/", "/");
                     C::Regex {
+                        lower_ok: !p.chars().any(char::is_uppercase),
                         exact: Regex::new(p).map_err(err)?,
                         fold: Regex::new(&format!("(?i){p}")).map_err(err)?,
                     }
@@ -238,6 +249,15 @@ fn required_literal(c: &C) -> Option<(&str, &str)> {
     }
 }
 
+/// Every literal that must appear for `c` to match.
+fn required_literals<'a>(c: &'a C, out: &mut Vec<(&'a str, &'a str)>) {
+    match c {
+        C::Term { raw, lower, .. } if !raw.is_empty() => out.push((raw, lower)),
+        C::And(parts) => parts.iter().for_each(|p| required_literals(p, out)),
+        _ => {}
+    }
+}
+
 fn value_strings(v: &Value, out: &mut Vec<String>) {
     match v {
         Value::Null => {}
@@ -272,11 +292,15 @@ fn eval(c: &C, note: &NoteView<'_>, hay: &Hay<'_>, case: bool, out: &mut Vec<Mat
                 lower_same_len(name).contains(lower.as_str())
             }
         }
-        C::Regex { exact, fold } => {
-            let re = if case { exact } else { fold };
-            let Some(base) = hay.base else { return re.is_match(hay.text) };
+        C::Regex { exact, fold, lower_ok } => {
+            let (re, h) = match (case, lower_ok) {
+                (true, _) => (exact, hay.text),
+                (false, true) => (exact, hay.lower),
+                (false, false) => (fold, hay.text),
+            };
+            let Some(base) = hay.base else { return re.is_match(h) };
             let mut any = false;
-            for m in re.find_iter(hay.text) {
+            for m in re.find_iter(h) {
                 any = true;
                 if out.len() >= MAX_SPANS {
                     break;
@@ -311,6 +335,15 @@ fn eval(c: &C, note: &NoteView<'_>, hay: &Hay<'_>, case: bool, out: &mut Vec<Mat
                 // If the inner query requires a literal, only lines containing it can match.
                 if let Some((raw, lower)) = required_literal(inner) {
                     let (h, n) = if case { (hay.text, raw) } else { (hay.lower, lower) };
+                    // A line can only match if the note has every required term somewhere.
+                    let mut all = Vec::new();
+                    required_literals(inner, &mut all);
+                    if all.iter().any(|(r, l)| {
+                        let n = if case { r } else { l };
+                        memmem::find(h.as_bytes(), n.as_bytes()).is_none()
+                    }) {
+                        return false;
+                    }
                     let mut last_end = 0;
                     let mut ranges = Vec::new();
                     for p in memmem::find_iter(h.as_bytes(), n.as_bytes()) {
@@ -646,6 +679,10 @@ mod tests {
         no("match-case:/MIX the/");
         no("/^nothing$/");
         yes("line:(/^- \\[x\\]/ eggs)");
+        // Lowercase patterns run on the lowercased text and must agree with case-insensitive matching.
+        yes("/happy\\w+ likes/");
+        yes("match-case:(HappyCat ignore-case:/happycat/)");
+        no("/[^a-z]appycat/");
     }
 
     #[test]
