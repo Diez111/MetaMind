@@ -81,6 +81,14 @@ impl App {
             if let Some(key) = action.strip_prefix("graph:slider:") {
                 return self.graph_slider_press(key, frame.dom.nodes[node].rect, x);
             }
+            let el = &frame.dom.nodes[node].el;
+            if el.classes.iter().any(|c| c == "nav-file-title" || c == "nav-folder-title") {
+                let source = action.split_once(':').map_or("", |(_, p)| p).to_string();
+                let start = (x, y);
+                self.explorer_drag =
+                    Some(shell::ExplorerDrag { source, action, start, moving: false, target: None });
+                return;
+            }
             return self.run(&action);
         }
         self.graph_end_edit();
@@ -107,6 +115,9 @@ impl App {
 
     /// Extend the selection while dragging with the button held.
     pub fn drag(&mut self, frame: &Frame, fonts: &mut Fonts, x: f32, y: f32) {
+        if self.explorer_drag.is_some() {
+            return self.explorer_drag_to(frame, x, y);
+        }
         if self.graph_slider_drag(x) {
             return;
         }
@@ -163,6 +174,14 @@ impl App {
 
     /// The left button was released.
     pub fn release(&mut self) {
+        if let Some(d) = self.explorer_drag.take() {
+            match (d.moving, d.target) {
+                (false, _) => self.run(&d.action),
+                (true, Some(folder)) => self.move_into(&d.source, &folder),
+                (true, None) => {}
+            }
+            return;
+        }
         if self.graph_slider_release() {
             return;
         }
@@ -186,6 +205,29 @@ impl App {
             _ => false,
         };
         graph || changed
+    }
+}
+
+impl App {
+    /// Track an explorer drag: past a few pixels it becomes a move, aimed at the folder
+    /// under the pointer, the folder of the file under it, or the root on empty space.
+    fn explorer_drag_to(&mut self, frame: &Frame, x: f32, y: f32) {
+        let Some(d) = &mut self.explorer_drag else { return };
+        if !d.moving && (x - d.start.0).abs().max((y - d.start.1).abs()) < 4.0 {
+            return;
+        }
+        d.moving = true;
+        let inside = frame.dom.by_id("files").is_some_and(|n| frame.dom.nodes[n].rect.contains(x, y));
+        let folder = inside.then(|| match frame.dom.action_at(x, y) {
+            Some((_, a)) if a.starts_with("toggle-folder:") => a["toggle-folder:".len()..].to_string(),
+            Some((_, a)) if a.starts_with("open:") => {
+                vault_core::path::parent(&a["open:".len()..]).to_string()
+            }
+            _ => String::new(),
+        });
+        let src = d.source.as_str();
+        let nested = |f: &str| f == src || f.starts_with(&format!("{src}/"));
+        d.target = folder.filter(|f| !nested(f) && f != vault_core::path::parent(src));
     }
 }
 

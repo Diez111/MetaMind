@@ -316,7 +316,14 @@ fn sidebar_files(app: &App, dom: &mut Dom, parent: NodeId, viewport_h: f32) {
     ] {
         icon_button(dom, header, icon, cmd, false);
     }
-    let list = dom.add(parent, El::div().class("nav-files-container").id("files"));
+    let target = app.explorer_drag.as_ref().and_then(|d| d.target.as_deref());
+    let list = dom.add(
+        parent,
+        El::div()
+            .class("nav-files-container")
+            .class_if(target == Some(""), "is-being-dragged-over")
+            .id("files"),
+    );
     // Virtualised: fixed-height rows, only those in view are built; spacers keep the scroll range.
     let rows = app.tree_rows();
     let h = crate::shell::TREE_ROW_HEIGHT;
@@ -330,7 +337,10 @@ fn sidebar_files(app: &App, dom: &mut Dom, parent: NodeId, viewport_h: f32) {
     for r in &rows[first..last] {
         let pad = 6 + r.depth * 14 + if r.folder { 0 } else { 18 };
         let el = if r.folder {
-            El::div().class("nav-folder-title").action(format!("toggle-folder:{}", r.path))
+            El::div()
+                .class("nav-folder-title")
+                .class_if(target == Some(r.path.as_str()), "is-being-dragged-over")
+                .action(format!("toggle-folder:{}", r.path))
         } else {
             El::div()
                 .class("nav-file-title")

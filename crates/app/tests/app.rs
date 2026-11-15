@@ -157,6 +157,7 @@ fn rendering_and_mouse() {
     // Click the "Home" row in the file explorer.
     let row = frame.dom.nodes.iter().find(|n| n.el.action.as_deref() == Some("open:Home.md")).unwrap().rect;
     app.click(&frame, &mut fonts, row.x + 20.0, row.y + 5.0, false);
+    app.release();
     assert_eq!(app.tab().unwrap().path, "Home.md");
 
     let frame = render(&mut app, &mut fonts, &mut pm, 1.0);

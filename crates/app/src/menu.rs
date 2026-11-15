@@ -298,9 +298,27 @@ impl App {
         if to == from {
             return;
         }
+        if let Some(links) = self.move_path(from, &to, "rename") {
+            self.notice = Some(format!("Renamed to {file}{links}"));
+        }
+    }
+
+    /// Move a file or folder into `folder` ("" is the vault root), as an explorer drag does.
+    pub(crate) fn move_into(&mut self, from: &str, folder: &str) {
+        let to = path::join(folder, path::file_name(from));
+        if let Some(links) = self.move_path(from, &to, "move") {
+            self.collapsed.remove(folder);
+            let place = if folder.is_empty() { "the vault root" } else { folder };
+            self.notice = Some(format!("Moved {} to {place}{links}", path::file_name(from)));
+        }
+    }
+
+    /// Rename on disk and follow the move in tabs, bookmarks and plugins. Returns the notice
+    /// suffix about rewritten links, or `None` after reporting a failure.
+    fn move_path(&mut self, from: &str, to: &str, verb: &str) -> Option<String> {
         // Unsaved edits would be lost when the files move, so everything is saved first.
         self.save_all();
-        match self.store.rename(from, &to) {
+        match self.store.rename(from, to) {
             Ok(plan) => {
                 self.bookmarks_moved(&plan.moves);
                 for (old, new) in &plan.moves {
@@ -312,13 +330,16 @@ impl App {
                 let edited: Vec<String> = plan.edits.iter().map(|e| e.path.clone()).collect();
                 self.reload_tabs(&edited);
                 self.files_changed(&[]);
-                self.notice = Some(match edited.len() {
-                    0 => format!("Renamed to {file}"),
-                    1 => format!("Renamed to {file}; updated links in 1 file"),
-                    n => format!("Renamed to {file}; updated links in {n} files"),
-                });
+                Some(match edited.len() {
+                    0 => String::new(),
+                    1 => "; updated links in 1 file".into(),
+                    n => format!("; updated links in {n} files"),
+                })
             }
-            Err(e) => self.notice = Some(format!("Cannot rename {from}: {e}")),
+            Err(e) => {
+                self.notice = Some(format!("Cannot {verb} {from}: {e}"));
+                None
+            }
         }
     }
 

@@ -264,6 +264,18 @@ pub struct TreeRow {
     pub collapsed: bool,
 }
 
+/// A press on an explorer row. Its click action waits for the release, because pressing
+/// may start a drag that moves the file instead.
+#[derive(Clone, Debug)]
+pub struct ExplorerDrag {
+    pub source: String,
+    pub action: String,
+    pub start: (f32, f32),
+    pub moving: bool,
+    /// Folder the source would move into ("" is the vault root).
+    pub target: Option<String>,
+}
+
 pub const TREE_ROW_HEIGHT: f32 = 26.0;
 const META_DEBOUNCE_MS: u64 = 400;
 
@@ -356,6 +368,8 @@ pub struct App {
     pub plugins: crate::plugins::PluginState,
     /// The action of the element under the pointer, for `:hover` styling and the status hint.
     pub hover_action: Option<String>,
+    /// An explorer row being pressed or dragged.
+    pub explorer_drag: Option<ExplorerDrag>,
     pub anims: crate::anim::Anims,
     pub(crate) seen: Option<crate::anim::Seen>,
     pub(crate) notice_since: Option<std::time::Instant>,
@@ -497,6 +511,7 @@ impl App {
             fuzzy: Fuzzy::new(),
             plugins: Default::default(),
             hover_action: None,
+            explorer_drag: None,
             anims: Default::default(),
             seen: None,
             notice_since: None,
