@@ -1428,6 +1428,7 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
 
 /// After layout: add selection highlights and carets to the editor blocks.
 pub fn add_carets(app: &App, dom: &mut Dom, info: &ViewInfo, fonts: &mut Fonts) {
+    add_decorations(dom, info, fonts);
     let Some(tab) = app.tab().filter(|t| t.mode != ViewMode::Reading) else { return };
     let pal = palette(app);
     let show_caret = app.focus == Focus::Editor;
@@ -1438,21 +1439,6 @@ pub fn add_carets(app: &App, dom: &mut Dom, info: &ViewInfo, fonts: &mut Fonts) 
         let spans = node.el.spans.clone();
         let mut under = Vec::new();
         let mut over = Vec::new();
-        // Inline backgrounds (highlight, inline code).
-        for sp in spans.iter().filter(|s| s.background.is_some()) {
-            for r in fonts.range_rects(&bv.display, &spans, &style, Some(width), sp.start, sp.end) {
-                under.push((
-                    Rect::new(r.x - 1.0, r.y + 1.0, r.w + 2.0, r.h - 2.0),
-                    sp.background.unwrap_or(pal.code_bg),
-                ));
-            }
-        }
-        for sp in spans.iter().filter(|s| s.underline || s.strike) {
-            for r in fonts.range_rects(&bv.display, &spans, &style, Some(width), sp.start, sp.end) {
-                let y = if sp.strike { r.y + r.h * 0.55 } else { r.y + r.h - 3.0 };
-                over.push((Rect::new(r.x, y, r.w, 1.0), sp.color.unwrap_or(style.color).with_alpha(0.7)));
-            }
-        }
         for (a, b) in misspellings(app, dom, bv) {
             // The word being typed is left alone until the caret moves off it.
             if tab.editor.buf.sels.iter().any(|s| s.head >= a && s.head <= b) {
@@ -1485,6 +1471,34 @@ pub fn add_carets(app: &App, dom: &mut Dom, info: &ViewInfo, fonts: &mut Fonts) 
                 if let Some(r) = fonts.range_rects(&bv.display, &spans, &style, Some(width), d, d).first() {
                     over.push((Rect::new(r.x, r.y + 2.0, 1.5, r.h - 4.0), pal.caret));
                 }
+            }
+        }
+        let n = &mut dom.nodes[bv.node];
+        n.overlays.extend(under);
+        n.overlays_top.extend(over);
+    }
+}
+
+/// After layout: inline backgrounds (highlight, inline code), underlines and strikethrough, which
+/// text layout does not draw. Every view mode and the PDF export need them.
+pub fn add_decorations(dom: &mut Dom, info: &ViewInfo, fonts: &mut Fonts) {
+    for bv in &info.blocks {
+        let node = &dom.nodes[bv.node];
+        let width = dom.content_rect(bv.node).w;
+        let style = &node.style.text;
+        let spans = &node.el.spans;
+        let mut under = Vec::new();
+        let mut over = Vec::new();
+        for sp in spans.iter() {
+            let Some(bg) = sp.background else { continue };
+            for r in fonts.range_rects(&bv.display, spans, style, Some(width), sp.start, sp.end) {
+                under.push((Rect::new(r.x - 1.0, r.y + 1.0, r.w + 2.0, r.h - 2.0), bg));
+            }
+        }
+        for sp in spans.iter().filter(|s| s.underline || s.strike) {
+            for r in fonts.range_rects(&bv.display, spans, style, Some(width), sp.start, sp.end) {
+                let y = if sp.strike { r.y + r.h * 0.55 } else { r.y + r.h - 3.0 };
+                over.push((Rect::new(r.x, y, r.w, 1.0), sp.color.unwrap_or(style.color).with_alpha(0.7)));
             }
         }
         let n = &mut dom.nodes[bv.node];

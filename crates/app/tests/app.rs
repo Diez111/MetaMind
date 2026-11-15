@@ -649,3 +649,16 @@ fn jpeg_embeds_are_shown() {
     let img = frame.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == "image-embed")).unwrap();
     assert_eq!((img.rect.w, img.rect.h), (8.0, 8.0));
 }
+
+#[test]
+fn reading_view_draws_inline_backgrounds_and_strikes() {
+    let (_d, mut app) = note("a ==marked== b `code` c ~~gone~~ d\n", "{}");
+    app.tabs[0].mode = ViewMode::Reading;
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(900, 700).unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let bv = frame.info.blocks.iter().find(|b| b.display.contains("marked")).unwrap();
+    let node = &frame.dom.nodes[bv.node];
+    assert_eq!(node.overlays.len(), 2, "highlight and inline code backgrounds");
+    assert_eq!(node.overlays_top.len(), 1, "strikethrough line");
+}
