@@ -655,7 +655,10 @@ fn folder_items(b: &mut Builder<'_>, dir: &str) {
 fn tab_items(b: &mut Builder<'_>, i: usize) {
     let count = b.app.tabs.len();
     let p = b.app.tabs.get(i).map(|t| t.path.clone()).unwrap_or_default();
-    b.item("x", "Close", format!("close-tab:{i}"));
+    let pinned = b.app.tabs.get(i).is_some_and(|t| t.pinned);
+    if !pinned {
+        b.item("x", "Close", format!("close-tab:{i}"));
+    }
     if count > 1 {
         b.item("x", "Close others", format!("close-others:{i}"));
     }
@@ -663,6 +666,12 @@ fn tab_items(b: &mut Builder<'_>, i: usize) {
         b.item("arrow-right", "Close tabs to the right", format!("close-right:{i}"));
     }
     b.item("x", "Close all", "workspace:close-all");
+    b.separator();
+    b.item("pin", if pinned { "Unpin" } else { "Pin" }, format!("toggle-pin:{i}"));
+    if !p.is_empty() {
+        let mark = if b.app.is_bookmarked(&p) { "Remove bookmark" } else { "Bookmark" };
+        b.item("bookmark", mark, format!("bookmark:{p}"));
+    }
     b.separator();
     if !p.is_empty() {
         b.item("edit", "Rename…", format!("rename-file:{p}"));

@@ -1,4 +1,5 @@
-//! Settings window: Editor, Files & links, Appearance, Hotkeys and About. Every control writes
+//! Settings window: General, Editor, Files & links, Appearance, Interface, Hotkeys and Core
+//! plugins, with a search across all of them. Every control writes
 //! the same `.obsidian/*.json` key the vault format uses (other keys are left as they are) and takes
 //! effect at once.
 
@@ -10,19 +11,46 @@ use vault_core::fsio::TrashMode;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Section {
+    General,
     Editor,
     Files,
     Appearance,
+    Interface,
     Hotkeys,
-    About,
+    CorePlugins,
 }
 
-const SECTIONS: [(Section, &str, &str); 5] = [
+const SECTIONS: [(Section, &str, &str); 7] = [
+    (Section::General, "general", "General"),
     (Section::Editor, "editor", "Editor"),
     (Section::Files, "files", "Files & links"),
     (Section::Appearance, "appearance", "Appearance"),
+    (Section::Interface, "interface", "Interface"),
     (Section::Hotkeys, "hotkeys", "Hotkeys"),
-    (Section::About, "about", "About"),
+    (Section::CorePlugins, "core-plugins", "Core plugins"),
+];
+
+/// Core plugins this app honors: (id in `core-plugins.json`, name, description, the commands
+/// that are blocked and hidden while it is off).
+pub(crate) const CORE_PLUGINS: &[(&str, &str, &str, &[&str])] = &[
+    ("backlink", "Backlinks", "Show links to the active note in the right sidebar.", &["backlinks:open"]),
+    ("bookmarks", "Bookmarks", "Keep notes and searches at hand.", &["bookmarks:open"]),
+    ("canvas", "Canvas", "Lay out notes and cards on a board.", &["canvas:new"]),
+    ("command-palette", "Command palette", "Run any command by name.", &["command-palette:open"]),
+    ("daily-notes", "Daily notes", "Open a note for today.", &["daily-notes"]),
+    ("file-explorer", "Files", "List the files of the vault in the left sidebar.", &["file-explorer:open"]),
+    ("graph", "Graph view", "Show the links between notes as a graph.", &["graph:open", "graph:open-local"]),
+    ("outgoing-link", "Outgoing links", "Show the links of the active note.", &["outgoing-links:open"]),
+    ("outline", "Outline", "Show the headings of the active note.", &["outline:open"]),
+    ("switcher", "Quick switcher", "Jump to a note by name.", &["switcher:open"]),
+    ("global-search", "Search", "Search the vault with query operators.", &["global-search:open"]),
+    ("tag-pane", "Tags view", "List the tags of the vault with their counts.", &["tag-pane:open"]),
+    (
+        "templates",
+        "Templates",
+        "Insert a template, the date or the time.",
+        &["templates:insert-template", "templates:insert-current-date", "templates:insert-current-time"],
+    ),
 ];
 
 pub struct SettingsUi {
@@ -32,6 +60,8 @@ pub struct SettingsUi {
     /// The command whose hotkey is waiting for a key press.
     pub capture: Option<String>,
     pub filter: String,
+    /// The settings search; while it has text, matching settings from every section are shown.
+    pub search: String,
     pub themes: Vec<String>,
     pub snippets: Vec<String>,
 }
@@ -39,10 +69,11 @@ pub struct SettingsUi {
 impl SettingsUi {
     fn new(app: &App) -> SettingsUi {
         let mut s = SettingsUi {
-            section: Section::Editor,
+            section: Section::General,
             edit: None,
             capture: None,
             filter: String::new(),
+            search: String::new(),
             themes: Vec::new(),
             snippets: Vec::new(),
         };
@@ -94,9 +125,25 @@ struct Item {
 }
 
 use Control::{Choice, Number, Text, Toggle};
-use Section::{Appearance, Editor, Files};
+use Section::{Appearance, Editor, Files, Interface};
 
 const ITEMS: &[Item] = &[
+    Item {
+        section: Interface,
+        file: File::Appearance,
+        key: "showRibbon",
+        name: "Show ribbon",
+        desc: "Show the column of buttons along the left edge of the window.",
+        control: Toggle(true),
+    },
+    Item {
+        section: Interface,
+        file: File::Appearance,
+        key: "showViewHeader",
+        name: "Show tab title bar",
+        desc: "Show the bar with the note title and view buttons above each note.",
+        control: Toggle(true),
+    },
     Item {
         section: Editor,
         file: File::App,
@@ -307,6 +354,16 @@ fn hotkey_json(k: &Key) -> Value {
 }
 
 impl App {
+    /// Whether a core plugin is on. Plugins that `core-plugins.json` does not mention are on.
+    pub(crate) fn core_on(&self, id: &str) -> bool {
+        self.config.core_plugin_enabled(id).unwrap_or(true)
+    }
+
+    /// The core plugin that owns `command`, when that plugin is off.
+    pub(crate) fn disabled_by(&self, command: &str) -> Option<&'static str> {
+        CORE_PLUGINS.iter().find(|c| c.3.contains(&command) && !self.core_on(c.0)).map(|c| c.1)
+    }
+
     fn setting_file(&self, f: File) -> &JsonFile {
         match f {
             File::App => &self.config.app,
@@ -404,9 +461,13 @@ impl App {
 
     fn commit_setting_edit(&mut self) {
         let Some((key, text)) = self.settings.as_mut().and_then(|s| s.edit.take()) else { return };
-        if key == "hk-filter" {
+        if key == "hk-filter" || key == "search" {
             if let Some(s) = &mut self.settings {
-                s.filter = text;
+                if key == "search" {
+                    s.search = text;
+                } else {
+                    s.filter = text;
+                }
             }
             return;
         }
@@ -485,6 +546,8 @@ impl App {
             "edit" => {
                 let text = if arg == "hk-filter" {
                     self.settings.as_ref().map(|s| s.filter.clone()).unwrap_or_default()
+                } else if arg == "search" {
+                    self.settings.as_ref().map(|s| s.search.clone()).unwrap_or_default()
                 } else {
                     match item(arg) {
                         Some(it) => match self.setting_file(it.file).get(it.key) {
@@ -538,6 +601,15 @@ impl App {
                 }
             }
             "perf" => self.perf = !self.perf,
+            "core" => {
+                if CORE_PLUGINS.iter().any(|c| c.0 == arg) {
+                    let on = self.core_on(arg);
+                    self.config.set_core_plugin(arg, !on);
+                    if let Err(e) = self.config.core_plugins.save() {
+                        self.notice = Some(format!("Cannot save core-plugins.json: {e}"));
+                    }
+                }
+            }
             "auto-update" => {
                 if let Err(e) = crate::update::set_auto_check(!crate::update::auto_check()) {
                     self.notice = Some(format!("Cannot save the update setting: {e}"));
@@ -662,8 +734,11 @@ fn heading(dom: &mut Dom, parent: NodeId, text: &str) {
     dom.add(parent, El::div().class("setting-item-heading").text(text));
 }
 
-fn items_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, section: Section) {
-    for it in ITEMS.iter().filter(|i| i.section == section) {
+fn items_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, section: Section, needle: &str) {
+    for it in ITEMS
+        .iter()
+        .filter(|i| i.section == section && (needle.is_empty() || matches(needle, i.name, i.desc)))
+    {
         let ctl = row(dom, parent, it.name, it.desc);
         let file = app.setting_file(it.file);
         match &it.control {
@@ -689,7 +764,7 @@ fn items_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, section
 }
 
 fn appearance_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
-    items_view(app, dom, parent, ui, Section::Appearance);
+    items_view(app, dom, parent, ui, Section::Appearance, "");
     let theme = app.config.css_theme().unwrap_or("");
     let ctl = row(dom, parent, "Theme", "Community theme from .obsidian/themes. Click to cycle.");
     let label = if theme.is_empty() { "Default" } else { theme };
@@ -745,11 +820,47 @@ fn hotkeys_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     }
 }
 
-fn about_view(app: &App, dom: &mut Dom, parent: NodeId) {
+fn core_plugins_view(app: &App, dom: &mut Dom, parent: NodeId, needle: &str) {
+    for (id, name, desc, _) in CORE_PLUGINS {
+        if !needle.is_empty() && !matches(needle, name, desc) {
+            continue;
+        }
+        let ctl = row(dom, parent, name, desc);
+        toggle(dom, ctl, app.core_on(id), format!("settings:core:{id}"));
+    }
+}
+
+fn matches(needle: &str, name: &str, desc: &str) -> bool {
+    name.to_lowercase().contains(needle) || desc.to_lowercase().contains(needle)
+}
+
+/// Settings from every section whose name or description contains the search text.
+fn search_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, needle: &str) {
+    let mut found = false;
+    for (sec, _, title) in SECTIONS {
+        let hits = ITEMS.iter().any(|i| i.section == sec && matches(needle, i.name, i.desc));
+        let core = sec == Section::CorePlugins && CORE_PLUGINS.iter().any(|c| matches(needle, c.1, c.2));
+        if !hits && !core {
+            continue;
+        }
+        found = true;
+        heading(dom, parent, title);
+        if core {
+            core_plugins_view(app, dom, parent, needle);
+        } else {
+            items_view(app, dom, parent, ui, sec, needle);
+        }
+    }
+    if !found {
+        dom.add(parent, El::div().class("setting-item-description").text("No settings match."));
+    }
+}
+
+fn general_view(app: &App, dom: &mut Dom, parent: NodeId) {
     let ctl = row(dom, parent, "Rustsidian", "Fast native Markdown knowledge base.");
     dom.add(ctl, El::div().class("setting-value").text(format!("v{}", env!("CARGO_PKG_VERSION"))));
-    let ctl = row(dom, parent, "Vault", "");
-    dom.add(ctl, El::div().class("setting-value").text(app.store.root.display().to_string()));
+    // The path goes in the description, which wraps; a long one does not fit beside the name.
+    row(dom, parent, "Vault", &app.store.root.display().to_string());
     let ctl = row(dom, parent, "Notes", "");
     dom.add(ctl, El::div().class("setting-value").text(app.store.index.notes().count().to_string()));
     let ctl = row(dom, parent, "Performance overlay", "Show the frame time and node count in the corner.");
@@ -779,6 +890,9 @@ pub fn modal(app: &App, dom: &mut Dom) {
     let backdrop = dom.add(0, backdrop);
     let modal = dom.add(backdrop, modal);
     let tabs = dom.add(modal, El::div().class("vertical-tab-header"));
+    let search = ui.edit.as_ref().filter(|e| e.0 == "search").map_or(ui.search.as_str(), |e| e.1.as_str());
+    let shown = if ui.search.is_empty() { "Search settings…" } else { &ui.search };
+    input(dom, tabs, "search", shown, ui.edit.as_ref());
     dom.add(tabs, El::div().class("vertical-tab-header-group-title").text("Options"));
     for (sec, slug, name) in SECTIONS {
         dom.add(
@@ -792,13 +906,19 @@ pub fn modal(app: &App, dom: &mut Dom) {
     }
     let container = dom.add(modal, El::div().class("vertical-tab-content-container"));
     let content = dom.add(container, El::div().class("vertical-tab-content").id("settings-content"));
-    let title = SECTIONS.iter().find(|s| s.0 == ui.section).map_or("", |s| s.2);
-    heading(dom, content, title);
-    match ui.section {
-        Section::Appearance => appearance_view(app, dom, content, ui),
-        Section::Hotkeys => hotkeys_view(app, dom, content, ui),
-        Section::About => about_view(app, dom, content),
-        s => items_view(app, dom, content, ui, s),
+    let needle = search.trim().to_lowercase();
+    if !needle.is_empty() {
+        search_view(app, dom, content, ui, &needle);
+    } else {
+        let title = SECTIONS.iter().find(|s| s.0 == ui.section).map_or("", |s| s.2);
+        heading(dom, content, title);
+        match ui.section {
+            Section::General => general_view(app, dom, content),
+            Section::Appearance => appearance_view(app, dom, content, ui),
+            Section::Hotkeys => hotkeys_view(app, dom, content, ui),
+            Section::CorePlugins => core_plugins_view(app, dom, content, ""),
+            s => items_view(app, dom, content, ui, s, ""),
+        }
     }
     dom.add(
         container,

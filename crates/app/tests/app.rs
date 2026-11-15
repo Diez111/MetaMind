@@ -553,6 +553,17 @@ fn graph_view() {
 }
 
 #[test]
+fn new_canvas_gets_a_free_name_and_opens() {
+    let d = vault();
+    fs::write(d.path().join("Untitled.canvas"), "{}").unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("canvas:new");
+    assert!(app.canvas_active());
+    let text = fs::read_to_string(d.path().join("Untitled 1.canvas")).unwrap();
+    assert_eq!(serde_json::from_str::<serde_json::Value>(&text).unwrap()["nodes"], serde_json::json!([]));
+}
+
+#[test]
 fn canvas_view() {
     let d = vault();
     let w = |p: &str, t: &str| fs::write(d.path().join(p), t).unwrap();

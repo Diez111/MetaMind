@@ -9,7 +9,7 @@ The authoritative list of what Rustsidian does today. Nothing outside it is clai
 | Feature | Status | Notes |
 |---|---|---|
 | Open an existing vault with zero migration | done | Dot-folders are skipped |
-| Read/write `.obsidian/*.json`, unknown keys preserved | done | `app`, `appearance`, `core-plugins`, `community-plugins`, `hotkeys`, `bookmarks`, `workspace`, `graph`. Only `app`, `appearance`, `hotkeys` and `graph` are *acted on*; the rest are loaded and preserved but unused |
+| Read/write `.obsidian/*.json`, unknown keys preserved | done | `app`, `appearance`, `core-plugins`, `community-plugins`, `hotkeys`, `bookmarks`, `workspace`, `graph`. Only `app`, `appearance`, `hotkeys`, `graph` and `core-plugins` are *acted on*; the rest are loaded and preserved but unused |
 | Atomic writes | done | temp file + fsync + rename |
 | Conflict detection with external edits | done | A changed file is never overwritten |
 | File watcher with debounce | done | Linux inotify verified; other platforms untested |
@@ -61,8 +61,8 @@ The authoritative list of what Rustsidian does today. Nothing outside it is clai
 | File explorer | partial | Virtualised, collapsible, file icons; right-click menus for files, folders, tabs and the editor (new note/folder, rename with link updates, make a copy, delete to trash, copy path or link, show in system explorer, cut/copy/paste). Sort by name, modified or created time (`fileSortOrder`). Drag a file or folder onto a folder (or empty space for the root) to move it, with link updates |
 | Quick switcher, command palette | done | |
 | Search panel with query operators | done | All operators; an empty search field (search pane and graph filter) lists `path:`, `file:`, `tag:`, `line:`, `section:` and `[property]`; no embedded `query` blocks |
-| Back/forward, tabs | done | Open tabs, view mode, scroll, cursor, folds and sidebar state are restored when the vault reopens. No split panes, stacked or pinned tabs, pop-out windows, linked panes, workspaces |
-| Outline, backlinks, unlinked mentions, word count | done | Unlinked mentions match the file name and aliases as whole words, with a Link button per note. Status bar shows reading time (200 words a minute) and progress against a `word-goal` property. No outgoing-links pane |
+| Back/forward, tabs | done | Open tabs, view mode, scroll, cursor, folds, pinned state and sidebar state are restored when the vault reopens. Pinned tabs show a pin and are skipped by every close command until unpinned; the tab menu also bookmarks the note. No split panes, stacked tabs, pop-out windows, linked panes, workspaces, tab screenshots |
+| Outline, backlinks, unlinked mentions, word count | done | Right sidebar tabs for Backlinks, Outgoing links and Outline. Linked mentions show up to three snippets around each link, with Collapse results and sort order buttons; outgoing links list resolved and unresolved targets. Unlinked mentions match the file name and aliases as whole words, with a Link button per note. Status bar shows reading time (200 words a minute) and progress against a `word-goal` property. No backlinks search filter or "show more context" |
 | Unique note creator | done | Format, folder and template from `zk-prefixer.json`; a name already taken gets a counter |
 | Daily notes, random note | partial | Daily note uses the UTC date and `YYYY-MM-DD`; custom formats and templates are not supported |
 | Graph view | partial | Global and local graph (depth 1-3) in the main pane: pan, zoom about the pointer, drag nodes, hover highlight, click to open (unresolved creates the note, tags search). Settings panel with search filter, filter toggles, color groups, arrows, text fade, node size, link thickness, the four forces and Animate, all saved to `graph.json`. No layout cache on disk; dense graphs draw a sample of links |
@@ -78,7 +78,7 @@ The authoritative list of what Rustsidian does today. Nothing outside it is clai
 | CSS subset engine | done | See `THEME_COMPAT.md` for the exact subset |
 | Themes from `.obsidian/themes/`, snippets from `.obsidian/snippets/`, live reload | partial | Loaded and reloaded on change. **No community theme has been tested**; themes that rely on unsupported CSS will apply only in part |
 | Light/dark | done | Follows `appearance.json`; "Adapt to system" follows the OS setting on Windows, macOS and Wayland (X11 reports no preference, so dark is used) |
-| Commands with stable ids, rebindable through `hotkeys.json`, key sequences | done | Settings window (`Ctrl+,`, ribbon gear): Editor, Files & links, Appearance (scheme, theme, snippets, font size, text font, accent color, readable line width), Hotkeys (rebind, reset; first binding only), About. Saved to `app.json`, `appearance.json`, `hotkeys.json` with unknown keys kept. Dropdowns cycle on click |
+| Commands with stable ids, rebindable through `hotkeys.json`, key sequences | done | Settings window (`Ctrl+,`, ribbon gear) with a search across all sections: General (version, vault, updates), Editor, Files & links, Appearance (scheme, theme, snippets, font size, text font, accent color, readable line width), Interface (show ribbon, show tab title bar), Hotkeys (rebind, reset; first binding only), Core plugins (turning one off hides its ribbon, sidebar and palette entries and blocks its commands). Saved to `app.json`, `appearance.json`, `hotkeys.json` with unknown keys kept. Dropdowns cycle on click |
 | Everything else in the customisation section (TOML config, JSON Schema, data-driven layout, theme inspector UI, feature flags, profiles, portable mode, `--config-dir`) | none | The theme engine has an `inspect` API; no UI uses it |
 
 ### Export, plugins, platform

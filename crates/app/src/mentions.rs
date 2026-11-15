@@ -107,6 +107,39 @@ impl App {
         self.mentions = Some(Mentions { graph, path: rel, files });
     }
 
+    /// Recompute the notes linking to the active note, with a snippet around each link.
+    pub(crate) fn refresh_linked(&mut self) {
+        let Some(graph) = self.graph.clone() else { return };
+        let Some(rel) = self.tabs.get(self.active).map(|t| t.path.clone()) else { return };
+        if self.linked.as_ref().is_some_and(|m| Arc::ptr_eq(&m.graph, &graph) && m.path == rel) {
+            return;
+        }
+        let Some(me) = self.store.index.id(&rel) else { return };
+        let mut files = Vec::new();
+        for &src in graph.back.get(me as usize).map(Vec::as_slice).unwrap_or(&[]) {
+            let Some(f) = self.store.index.entry(src) else { continue };
+            let p = f.path.to_string();
+            let links = f.meta().map(|m| m.links.clone()).unwrap_or_default();
+            let text = match std::fs::read_to_string(self.store.root.join(&p)) {
+                Ok(t) => t,
+                Err(e) => {
+                    files.push((p, vec![format!("Cannot read: {e}")]));
+                    continue;
+                }
+            };
+            let snippets = links
+                .iter()
+                .filter(|l| self.store.index.resolve(&l.target, &p) == Some(me))
+                .filter(|l| text.is_char_boundary(l.start as usize) && text.is_char_boundary(l.end as usize))
+                .take(3)
+                .map(|l| snippet(&text, Match { start: l.start, end: l.end }, 40).0.trim().to_string())
+                .collect();
+            files.push((p, snippets));
+        }
+        files.sort_unstable_by_key(|f| f.0.to_lowercase());
+        self.linked = Some(Mentions { graph, path: rel, files });
+    }
+
     /// Turn every unlinked mention of the active note in `rel` into a link.
     pub(crate) fn link_mentions(&mut self, rel: &str) {
         let Some(target) = self.tab().map(|t| t.path.clone()) else { return };

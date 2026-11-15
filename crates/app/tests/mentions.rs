@@ -1,4 +1,5 @@
-use rustsidian_app::App;
+use rustsidian_app::{render, App};
+use rustsidian_ui::{Fonts, Pixmap};
 use std::fs;
 
 #[test]
@@ -28,4 +29,43 @@ fn unlinked_mentions_are_listed_and_linked() {
     );
     app.refresh_derived();
     assert!(app.mentions.as_ref().unwrap().files.is_empty());
+}
+
+#[test]
+fn linked_mentions_show_context_and_panels_switch() {
+    let d = tempfile::tempdir().unwrap();
+    for (p, t) in [
+        ("Plan.md", "Goes to [[Missing]] and [[Other]].\n"),
+        ("Alpha.md", "first line\nSee [[Plan|the plan]] today.\n"),
+        ("Zed.md", "[[Plan]]\n"),
+        ("Other.md", "nothing here\n"),
+    ] {
+        fs::write(d.path().join(p), t).unwrap();
+    }
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("Plan.md");
+    app.right_open = true;
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(1200, 800).unwrap();
+    let texts = |frame: &rustsidian_app::Frame| -> Vec<String> {
+        frame.dom.nodes.iter().filter_map(|n| n.el.text.clone()).collect()
+    };
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let t = texts(&frame);
+    assert!(t.iter().any(|s| s == "See [[Plan|the plan]] today."), "{t:?}");
+    let order = |t: &[String]| (t.iter().rposition(|s| s == "Alpha"), t.iter().rposition(|s| s == "Zed"));
+    let (a, z) = order(&t);
+    assert!(a < z);
+
+    app.run("backlinks:toggle-sort");
+    app.run("backlinks:toggle-collapse");
+    let t = texts(&render(&mut app, &mut fonts, &mut pm, 1.0));
+    let (a, z) = order(&t);
+    assert!(z < a);
+    assert!(!t.iter().any(|s| s.contains("today")), "collapsed results hide context");
+
+    app.run("outgoing-links:open");
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    assert!(frame.dom.nodes.iter().any(|n| n.el.action.as_deref() == Some("open:Other.md")));
+    assert!(frame.dom.nodes.iter().any(|n| n.el.action.as_deref() == Some("create:Missing")));
 }

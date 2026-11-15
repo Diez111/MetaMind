@@ -3,7 +3,7 @@
 //! Kept in its own file so the layout tree in `workspace.json`, which other apps own, is never
 //! rewritten.
 
-use crate::shell::{App, Panel, ViewMode};
+use crate::shell::{App, Panel, RightPanel, ViewMode};
 use editor_core::Sel;
 use serde_json::{json, Value};
 
@@ -40,6 +40,7 @@ impl App {
                     "top": t.top_block,
                     "cursor": [s.anchor, s.head],
                     "folds": t.folds.headers(),
+                    "pinned": t.pinned,
                 })
             })
             .collect();
@@ -51,6 +52,11 @@ impl App {
             "left": self.left_open,
             "right": self.right_open,
             "panel": panel_name(self.panel),
+            "rightPanel": match self.right_panel {
+                RightPanel::Backlinks => "backlinks",
+                RightPanel::Outgoing => "outgoing",
+                RightPanel::Outline => "outline",
+            },
             "collapsed": collapsed,
         })
     }
@@ -104,6 +110,7 @@ impl App {
                 _ => ViewMode::LivePreview,
             };
             tab.top_block = t.get("top").and_then(num).unwrap_or(0);
+            tab.pinned = t.get("pinned").and_then(Value::as_bool).unwrap_or(false);
             if let Some([a, h]) = t.get("cursor").and_then(Value::as_array).map(Vec::as_slice) {
                 if let (Some(a), Some(h)) = (num(a), num(h)) {
                     tab.editor.buf.set_sels(vec![Sel::new(a, h)]);
@@ -131,6 +138,11 @@ impl App {
             Some("bookmarks") => Panel::Bookmarks,
             Some("tags") => Panel::Tags,
             _ => Panel::Files,
+        };
+        self.right_panel = match v.get("rightPanel").and_then(Value::as_str) {
+            Some("outgoing") => RightPanel::Outgoing,
+            Some("outline") => RightPanel::Outline,
+            _ => RightPanel::Backlinks,
         };
         if let Some(c) = v.get("collapsed").and_then(Value::as_array) {
             self.collapsed = c.iter().filter_map(Value::as_str).map(str::to_string).collect();

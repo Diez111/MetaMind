@@ -70,6 +70,10 @@ body {
 .workspace-ribbon { width: 44px; background-color: var(--background-secondary); border-right: 1px solid var(--background-modifier-border); padding: 8px 0; align-items: center; display: flex; flex-direction: column; gap: 4px }
 .side-dock-ribbon-action { width: 30px; height: 28px; border-radius: var(--radius-s); color: var(--text-muted); text-align: center; display: flex; align-items: center; justify-content: center }
 .side-dock-ribbon-spacer { flex-grow: 1 }
+.nav-buttons-container { display: flex; justify-content: center; gap: 4px; padding: 6px 8px }
+.tree-item-self.is-unresolved { color: var(--text-faint) }
+.workspace-ribbon.is-hidden, .view-header.is-hidden { display: none }
+.sidebar-tab-header { display: flex; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--background-modifier-border) }
 .svg-icon { width: 16px; height: 16px; flex-shrink: 0 }
 .clickable-icon { width: 24px; height: 22px; border-radius: var(--radius-s); color: var(--text-muted); display: flex; align-items: center; justify-content: center; flex-shrink: 0 }
 .clickable-icon:hover, .clickable-icon.is-active { background-color: var(--background-modifier-hover); color: var(--text-normal) }
@@ -252,6 +256,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .modal-container { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center; background-color: rgba(0, 0, 0, 0.5) }
 .modal.mod-settings { width: 860px; height: 580px; display: flex; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow: hidden }
 .vertical-tab-header { width: 190px; background-color: var(--background-secondary); border-right: 1px solid var(--background-modifier-border); padding: 12px 8px }
+.vertical-tab-header .setting-input { margin-bottom: 8px }
 .vertical-tab-header-group-title { color: var(--text-faint); font-size: var(--font-ui-smaller); padding: 4px 10px; font-weight: 600 }
 .vertical-tab-nav-item { padding: 5px 10px; border-radius: var(--radius-s); color: var(--text-muted); font-size: 14px }
 .vertical-tab-nav-item:hover { background-color: var(--background-modifier-hover) }

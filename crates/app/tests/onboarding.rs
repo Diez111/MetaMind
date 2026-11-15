@@ -40,6 +40,29 @@ fn tabs_close_and_reopen() {
 }
 
 #[test]
+fn pinned_tabs_survive_close_commands_and_reopen() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    for n in ["A", "B", "dir/C"] {
+        app.open_note(n);
+    }
+    app.run("toggle-pin:0");
+    app.run("workspace:close-all");
+    assert_eq!(app.tabs.iter().map(|t| t.path.as_str()).collect::<Vec<_>>(), ["A.md"]);
+    app.run("workspace:close");
+    assert_eq!(app.tabs.len(), 1);
+    app.save_all();
+    drop(app);
+
+    let mut app = App::open(d.path()).unwrap();
+    app.restore_session();
+    assert!(app.tabs[0].pinned);
+    app.run("toggle-pin:0");
+    app.run("close-tab:0");
+    assert!(app.tabs.is_empty());
+}
+
+#[test]
 fn close_button_middle_click_and_hover() {
     let d = vault();
     let mut app = App::open(d.path()).unwrap();

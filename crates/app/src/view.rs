@@ -2,7 +2,7 @@
 //! (carets, selections, clicks) between source offsets and what is displayed.
 
 use crate::icons;
-use crate::shell::{App, Focus, Panel, PromptKind, ViewMode};
+use crate::shell::{App, Focus, Panel, PromptKind, RightPanel, ViewMode};
 use editor_core::deco::{decorate, Deco, Style as Deco_};
 use editor_core::Sel;
 use md_engine::NodeKind;
@@ -419,7 +419,38 @@ fn search_options(dom: &mut Dom, parent: NodeId, action: &str) {
 }
 
 fn right_sidebar(app: &App, dom: &mut Dom, parent: NodeId) {
-    let Some(tab) = app.tab() else { return };
+    let head = dom.add(parent, El::div().class("sidebar-tab-header"));
+    for (icon, cmd, panel) in [
+        ("link", "backlinks:open", RightPanel::Backlinks),
+        ("arrow-up-right", "outgoing-links:open", RightPanel::Outgoing),
+        ("list", "outline:open", RightPanel::Outline),
+    ] {
+        if app.disabled_by(cmd).is_some() {
+            continue;
+        }
+        icon_button(dom, head, icon, cmd, app.right_panel == panel);
+    }
+    let Some(tab) = app.tab() else {
+        dom.add(parent, El::div().class("pane-empty").text("No file is open."));
+        return;
+    };
+    let cmd = match app.right_panel {
+        RightPanel::Backlinks => "backlinks:open",
+        RightPanel::Outgoing => "outgoing-links:open",
+        RightPanel::Outline => "outline:open",
+    };
+    if let Some(name) = app.disabled_by(cmd) {
+        dom.add(parent, El::div().class("pane-empty").text(format!("{name} is turned off.")));
+        return;
+    }
+    match app.right_panel {
+        RightPanel::Outline => outline(tab, dom, parent),
+        RightPanel::Outgoing => outgoing(app, tab, dom, parent),
+        RightPanel::Backlinks => backlinks(app, dom, parent),
+    }
+}
+
+fn outline(tab: &crate::shell::Tab, dom: &mut Dom, parent: NodeId) {
     section_header(dom, parent, "list", "Outline");
     let outline = dom.add(parent, El::div().class("pane-section"));
     for h in tab.meta.iter().flat_map(|(_, m)| &m.headings) {
@@ -431,22 +462,64 @@ fn right_sidebar(app: &App, dom: &mut Dom, parent: NodeId) {
                 .text(h.text.to_string()),
         );
     }
-    section_header(dom, parent, "link", "Backlinks");
+}
+
+fn outgoing(app: &App, tab: &crate::shell::Tab, dom: &mut Dom, parent: NodeId) {
+    section_header(dom, parent, "arrow-up-right", "Outgoing links");
+    let list = dom.add(parent, El::div().class("pane-section"));
+    let mut seen = std::collections::HashSet::new();
+    for l in tab.meta.iter().flat_map(|(_, m)| &m.links) {
+        let target = app.store.index.resolve(&l.target, &tab.path).and_then(|id| app.store.index.entry(id));
+        let key = target.map_or_else(|| l.target.to_lowercase(), |f| f.path.to_lowercase());
+        if l.target.is_empty() || !seen.insert(key) {
+            continue;
+        }
+        let (label, action) = match target {
+            Some(f) => (path::strip_md(&f.path).to_string(), format!("open:{}", f.path)),
+            None => (l.target.to_string(), format!("create:{}", l.target)),
+        };
+        dom.add(
+            list,
+            El::div()
+                .class("tree-item-self")
+                .class_if(target.is_none(), "is-unresolved")
+                .text(label)
+                .action(action),
+        );
+    }
+    if seen.is_empty() {
+        dom.add(list, El::div().class("pane-empty").text("No outgoing links."));
+    }
+}
+
+fn backlinks(app: &App, dom: &mut Dom, parent: NodeId) {
+    let bar = dom.add(parent, El::div().class("nav-buttons-container"));
+    let b = icon_button(dom, bar, "collapse", "backlinks:toggle-collapse", app.backlinks_collapsed);
+    dom.nodes[b].el.attrs.push(("aria-label".into(), "Collapse results".into()));
+    let b = icon_button(dom, bar, "sort", "backlinks:toggle-sort", app.backlinks_desc);
+    dom.nodes[b].el.attrs.push(("aria-label".into(), "Change sort order".into()));
+    let files = app.linked.as_ref().map(|m| m.files.as_slice()).unwrap_or(&[]);
+    let header = dom.add(parent, El::div().class("nav-header"));
+    dom.add(header, El::div().class("nav-header-title").text("Linked mentions"));
+    dom.add(header, El::div().class("tree-item-flair").text(files.len().to_string()));
     let back = dom.add(parent, El::div().class("pane-section"));
-    if let Some(id) = app.store.index.id(&tab.path) {
-        // The link graph is cached by the index; cloning the Arc is cheap.
-        if let Some(g) = app.cached_graph() {
-            for &src in g.back.get(id as usize).map(Vec::as_slice).unwrap_or(&[]) {
-                if let Some(f) = app.store.index.entry(src) {
-                    dom.add(
-                        back,
-                        El::div()
-                            .class("tree-item-self")
-                            .text(path::strip_md(&f.path).to_string())
-                            .action(format!("open:{}", f.path)),
-                    );
-                }
-            }
+    if files.is_empty() {
+        dom.add(back, El::div().class("pane-empty").text("No backlinks found."));
+    }
+    let ordered: Box<dyn Iterator<Item = _>> =
+        if app.backlinks_desc { Box::new(files.iter().rev()) } else { Box::new(files.iter()) };
+    for (p, snippets) in ordered {
+        let row = dom.add(back, El::div().class("tree-item-self").action(format!("open:{p}")));
+        dom.add(row, El::div().class("tree-item-inner").text(path::strip_md(p).to_string()));
+        dom.add(row, El::div().class("tree-item-flair").text(snippets.len().to_string()));
+        if app.backlinks_collapsed {
+            continue;
+        }
+        for s in snippets {
+            dom.add(
+                back,
+                El::div().class("search-result-file-match").text(s.clone()).action(format!("open:{p}")),
+            );
         }
     }
     let header = dom.add(parent, El::div().class("nav-header").action("backlinks:toggle-unlinked"));
@@ -489,7 +562,12 @@ fn editor(app: &App, dom: &mut Dom, parent: NodeId, pal: &Palette, info: &mut Vi
         ViewMode::LivePreview => "live preview",
         ViewMode::Reading => "reading",
     };
-    let header = dom.add(parent, El::div().class("view-header"));
+    let header = dom.add(
+        parent,
+        El::div()
+            .class("view-header")
+            .class_if(!app.config.appearance.bool("showViewHeader", true), "is-hidden"),
+    );
     icon_button(dom, header, "arrow-left", "app:go-back", false);
     icon_button(dom, header, "arrow-right", "app:go-forward", false);
     dom.add(
@@ -1195,7 +1273,8 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
     let mut dom = Dom::new();
     dom.nodes[0].el.classes.push(if app.dark { "theme-dark" } else { "theme-light" }.to_string());
     let ws = dom.add(0, El::div().class("workspace"));
-    let ribbon = dom.add(ws, El::div().class("workspace-ribbon"));
+    let show_ribbon = app.config.appearance.bool("showRibbon", true);
+    let ribbon = dom.add(ws, El::div().class("workspace-ribbon").class_if(!show_ribbon, "is-hidden"));
     let ribbon_action = |dom: &mut Dom, icon: &str, cmd: &str, active: bool| {
         let b = dom.add(
             ribbon,
@@ -1204,16 +1283,17 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
         dom.add(b, icons::el(icon));
     };
     for (icon, cmd, active) in [
-        ("folder", "file-explorer:open", app.left_open && app.panel == Panel::Files),
-        ("search", "global-search:open", app.left_open && app.panel == Panel::Search),
-        ("bookmark", "bookmarks:open", app.left_open && app.panel == Panel::Bookmarks),
-        ("tag", "tag-pane:open", app.left_open && app.panel == Panel::Tags),
+        ("sidebar-left", "app:toggle-left-sidebar", app.left_open),
         ("switcher", "switcher:open", false),
-        ("command", "command-palette:open", false),
         ("graph", "graph:open", app.show_graph),
-        ("note-plus", "file-explorer:new-file", false),
+        ("canvas", "canvas:new", false),
         ("calendar", "daily-notes", false),
+        ("template", "templates:insert-template", false),
+        ("command", "command-palette:open", false),
     ] {
+        if app.disabled_by(cmd).is_some() {
+            continue;
+        }
         ribbon_action(&mut dom, icon, cmd, active);
     }
     for r in &app.plugins.ext.reg.ribbon {
@@ -1237,26 +1317,52 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
             el = el.style(&format!("width: {:.1}px", 250.0 * left_w));
         }
         let left = dom.add(ws, el);
-        match app.panel {
-            Panel::Files => sidebar_files(app, &mut dom, left, viewport_h),
-            Panel::Search => sidebar_search(app, &mut dom, left),
-            Panel::Bookmarks => crate::panes::bookmarks(app, &mut dom, left),
-            Panel::Tags => crate::panes::tags(app, &mut dom, left),
+        let head = dom.add(left, El::div().class("sidebar-tab-header"));
+        for (icon, cmd, panel) in [
+            ("folder", "file-explorer:open", Panel::Files),
+            ("search", "global-search:open", Panel::Search),
+            ("bookmark", "bookmarks:open", Panel::Bookmarks),
+            ("tag", "tag-pane:open", Panel::Tags),
+        ] {
+            if app.disabled_by(cmd).is_some() {
+                continue;
+            }
+            icon_button(&mut dom, head, icon, cmd, app.panel == panel);
+        }
+        let cmd = match app.panel {
+            Panel::Files => "file-explorer:open",
+            Panel::Search => "global-search:open",
+            Panel::Bookmarks => "bookmarks:open",
+            Panel::Tags => "tag-pane:open",
+        };
+        if let Some(name) = app.disabled_by(cmd) {
+            dom.add(left, El::div().class("pane-empty").text(format!("{name} is turned off.")));
+        } else {
+            match app.panel {
+                Panel::Files => sidebar_files(app, &mut dom, left, viewport_h),
+                Panel::Search => sidebar_search(app, &mut dom, left),
+                Panel::Bookmarks => crate::panes::bookmarks(app, &mut dom, left),
+                Panel::Tags => crate::panes::tags(app, &mut dom, left),
+            }
         }
     }
     let root = dom.add(ws, El::div().class("workspace-split mod-root"));
     let tabs = dom.add(root, El::div().class("workspace-tab-header-container"));
-    let tab_header = |dom: &mut Dom, icon: &str, title: &str, dirty, active, focus: String, close: String| {
-        let tab = dom
-            .add(tabs, El::div().class("workspace-tab-header").class_if(active, "is-active").action(focus));
-        dom.add(tab, icons::el(icon).class("workspace-tab-header-inner-icon"));
-        dom.add(tab, El::div().class("workspace-tab-header-inner-title").text(title.to_string()));
-        if dirty {
-            dom.add(tab, icons::el("dot").class("workspace-tab-header-status"));
-        }
-        let x = dom.add(tab, El::div().class("workspace-tab-header-inner-close-button").action(close));
-        dom.add(x, icons::el("x"));
-    };
+    let tab_header =
+        |dom: &mut Dom, icon: &str, title: &str, dirty, active, focus: String, close: (String, &str)| {
+            let tab = dom.add(
+                tabs,
+                El::div().class("workspace-tab-header").class_if(active, "is-active").action(focus),
+            );
+            dom.add(tab, icons::el(icon).class("workspace-tab-header-inner-icon"));
+            dom.add(tab, El::div().class("workspace-tab-header-inner-title").text(title.to_string()));
+            if dirty {
+                dom.add(tab, icons::el("dot").class("workspace-tab-header-status"));
+            }
+            // A pinned tab shows a pin in place of the close button; clicking it unpins.
+            let x = dom.add(tab, El::div().class("workspace-tab-header-inner-close-button").action(close.0));
+            dom.add(x, icons::el(close.1));
+        };
     for (i, t) in app.tabs.iter().enumerate() {
         tab_header(
             &mut dom,
@@ -1265,15 +1371,15 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
             t.editor.buf.is_modified(),
             i == app.active && !app.show_graph && !app.canvas_active(),
             format!("tab:{i}"),
-            format!("close-tab:{i}"),
+            if t.pinned { (format!("toggle-pin:{i}"), "pin") } else { (format!("close-tab:{i}"), "x") },
         );
     }
     if let Some(g) = &app.graph_view {
-        let (focus, close) = ("graph:focus".to_string(), "graph:close".to_string());
+        let (focus, close) = ("graph:focus".to_string(), ("graph:close".to_string(), "x"));
         tab_header(&mut dom, "graph", &g.title(), false, app.show_graph, focus, close);
     }
     if let Some(c) = &app.canvas_view {
-        let (focus, close) = ("canvas:focus".to_string(), "canvas:close".to_string());
+        let (focus, close) = ("canvas:focus".to_string(), ("canvas:close".to_string(), "x"));
         tab_header(&mut dom, "canvas", &c.title(), false, app.canvas_active(), focus, close);
     }
     let new_tab =
@@ -1298,10 +1404,14 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
     let status = dom.add(0, El::div().class("status-bar"));
     // What the element under the pointer does, with its hotkey.
     let hint = app.hover_action.as_deref().and_then(|a| {
-        let name =
-            crate::shell::COMMANDS.iter().find(|c| c.0 == a).map(|c| c.1.to_string()).or_else(|| {
+        let name = crate::shell::COMMANDS
+            .iter()
+            .find(|c| c.0 == a)
+            .map(|c| c.1.to_string())
+            .or_else(|| {
                 a.strip_prefix("close-tab:").map(|_| "Close tab (middle click also closes)".to_string())
-            })?;
+            })
+            .or_else(|| a.strip_prefix("toggle-pin:").map(|_| "Unpin tab".to_string()))?;
         let key = app.hotkey_for(a);
         Some(if key.is_empty() { name } else { format!("{name}  ({key})") })
     });

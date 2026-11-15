@@ -124,6 +124,9 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("app:go-forward", "Navigate forward", "Ctrl+Alt+ArrowRight"),
     ("app:toggle-left-sidebar", "Toggle left sidebar", "Ctrl+\\"),
     ("app:toggle-right-sidebar", "Toggle right sidebar", "Ctrl+Shift+\\"),
+    ("backlinks:open", "Backlinks: Show backlinks", ""),
+    ("outgoing-links:open", "Outgoing links: Show outgoing links", ""),
+    ("outline:open", "Outline: Show outline", ""),
     ("markdown:toggle-preview", "Toggle reading view", "Ctrl+E"),
     ("editor:toggle-source", "Toggle Live Preview/Source mode", ""),
     ("editor:toggle-bold", "Toggle bold", "Ctrl+B"),
@@ -172,6 +175,7 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("editor:add-cursor-below", "Add cursor below", "Ctrl+Alt+ArrowDown"),
     ("editor:select-next-occurrence", "Select next occurrence", "Ctrl+D"),
     ("editor:follow-link", "Follow link under cursor", "Alt+Enter"),
+    ("canvas:new", "Canvas: Create new canvas", ""),
     ("canvas:add-text", "Canvas: Add text node", ""),
     ("canvas:delete-selected", "Canvas: Delete selected node", ""),
     ("canvas:edit-selected", "Canvas: Edit selected text node", ""),
@@ -220,6 +224,13 @@ pub enum Panel {
     Search,
     Bookmarks,
     Tags,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum RightPanel {
+    Backlinks,
+    Outgoing,
+    Outline,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -298,6 +309,8 @@ pub struct Tab {
     pub hidden_dirty: bool,
     /// Vim state when vim keys are on.
     pub vim: Option<editor_core::vim::Vim>,
+    /// Pinned tabs survive "close" commands until unpinned.
+    pub pinned: bool,
 }
 
 impl Tab {
@@ -361,6 +374,11 @@ pub struct App {
     /// Unlinked mentions of the active note, computed while their section is expanded.
     pub mentions: Option<crate::mentions::Mentions>,
     pub show_unlinked: bool,
+    /// Notes linking to the active note, with the text around each link.
+    pub linked: Option<crate::mentions::Mentions>,
+    pub right_panel: RightPanel,
+    pub backlinks_collapsed: bool,
+    pub backlinks_desc: bool,
     pub(crate) tree: Option<Vec<TreeRow>>,
     /// While set, the link graph is not computed (the first frame is presented without it).
     pub defer_graph: bool,
@@ -559,6 +577,10 @@ impl App {
             tags: None,
             mentions: None,
             show_unlinked: false,
+            linked: None,
+            right_panel: RightPanel::Backlinks,
+            backlinks_collapsed: false,
+            backlinks_desc: false,
             tree: None,
             defer_graph: false,
             pending: Vec::new(),
@@ -604,8 +626,11 @@ impl App {
         if self.left_open && self.panel == Panel::Tags {
             self.tag_counts();
         }
-        if self.right_open && self.show_unlinked && self.tab().is_some() {
-            self.refresh_mentions();
+        if self.right_open && self.right_panel == RightPanel::Backlinks && self.tab().is_some() {
+            self.refresh_linked();
+            if self.show_unlinked {
+                self.refresh_mentions();
+            }
         }
         if self.tree.is_none() {
             self.tree = Some(self.build_tree());
@@ -782,6 +807,7 @@ impl App {
                         hidden: (0, Vec::new()),
                         hidden_dirty: false,
                         vim: self.vim.then(Default::default),
+                        pinned: false,
                     });
                     self.active = self.tabs.len() - 1;
                     self.init_new_tab();
@@ -841,7 +867,7 @@ impl App {
 
     /// Close one tab, saving it first. The tab stays open when the save fails.
     pub fn close_tab(&mut self, i: usize) {
-        if i >= self.tabs.len() {
+        if self.tabs.get(i).is_none_or(|t| t.pinned) {
             return;
         }
         let prev = self.active;
@@ -946,6 +972,7 @@ impl App {
                         };
                         PromptItem { label: name, aux: self.hotkey_for(id), action: id.to_string() }
                     })
+                    .filter(|item| self.disabled_by(&item.action).is_none())
                     .collect()
             }
             PromptKind::Switcher => {
@@ -1109,6 +1136,10 @@ impl App {
     /// Run a command by id. Some take an argument after a colon (`open:path`).
     pub fn run(&mut self, command: &str) {
         let now = fsio::now_ms();
+        if let Some(name) = self.disabled_by(command) {
+            self.notice = Some(format!("{name} is turned off in Settings → Core plugins"));
+            return;
+        }
         if matches!(command.split(':').next(), Some("create" | "file-explorer" | "daily-notes" | "app")) {
             // These can add or remove files; the explorer rows are rebuilt on the next frame.
             self.tree = None;
@@ -1158,6 +1189,12 @@ impl App {
                 self.show_graph = false;
                 self.show_canvas = false;
                 self.focus = Focus::Editor;
+            }
+            return;
+        }
+        if let Some(i) = command.strip_prefix("toggle-pin:").and_then(|i| i.parse::<usize>().ok()) {
+            if let Some(t) = self.tabs.get_mut(i) {
+                t.pinned ^= true;
             }
             return;
         }
@@ -1230,6 +1267,25 @@ impl App {
                 match self.store.create(&rel, "") {
                     Ok(_) => self.open_note(&rel),
                     Err(e) => self.notice = Some(format!("Cannot create note: {e}")),
+                }
+            }
+            "canvas:new" => {
+                let name =
+                    (0..)
+                        .map(|n| {
+                            if n == 0 {
+                                "Untitled.canvas".to_string()
+                            } else {
+                                format!("Untitled {n}.canvas")
+                            }
+                        })
+                        .map(|f| path::join(&self.new_note_dir(), &f))
+                        .find(|p| self.store.index.id(p).is_none() && !self.store.root.join(p).exists())
+                        .unwrap_or_default();
+                self.tree = None;
+                match self.store.create(&name, "{\"nodes\":[],\"edges\":[]}\n") {
+                    Ok(_) => self.open_canvas(&name),
+                    Err(e) => self.notice = Some(format!("Cannot create canvas: {e}")),
                 }
             }
             "editor:save-file" => {
@@ -1326,6 +1382,16 @@ impl App {
                 self.tree = None;
             }
             "backlinks:toggle-unlinked" => self.show_unlinked = !self.show_unlinked,
+            "backlinks:toggle-collapse" => self.backlinks_collapsed ^= true,
+            "backlinks:toggle-sort" => self.backlinks_desc ^= true,
+            "backlinks:open" | "outgoing-links:open" | "outline:open" => {
+                self.right_open = true;
+                self.right_panel = match command {
+                    "backlinks:open" => RightPanel::Backlinks,
+                    "outgoing-links:open" => RightPanel::Outgoing,
+                    _ => RightPanel::Outline,
+                };
+            }
             "markdown:toggle-preview" => {
                 if let Some(t) = self.tab_mut() {
                     t.mode =

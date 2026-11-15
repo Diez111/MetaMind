@@ -178,3 +178,45 @@ fn font_accent_and_line_width_settings_style_notes() {
     let c = icon.style.text.color;
     assert!(c.r > 200 && c.g < 60 && c.b < 60, "{c:?}");
 }
+
+#[test]
+fn core_plugins_off_hide_and_block_their_commands() {
+    let d = vault();
+    fs::write(d.path().join(".obsidian/core-plugins.json"), r#"["graph","file-explorer"]"#).unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("canvas:new");
+    assert!(!app.canvas_active(), "canvas is not in the enabled list");
+    assert!(app.notice.as_deref().unwrap().contains("Canvas is turned off"));
+    app.run("app:open-settings");
+    app.run("settings:core:canvas");
+    app.run("settings:core:graph");
+    assert_eq!(read_json(&d, ".obsidian/core-plugins.json"), json!(["file-explorer", "canvas"]));
+    app.run("settings:close");
+    app.run("canvas:new");
+    assert!(app.canvas_active());
+    app.run("graph:open");
+    assert!(!app.show_graph);
+    app.run("command-palette:open");
+}
+
+#[test]
+fn settings_search_spans_sections_and_interface_toggles_apply() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    let mut fonts = rustsidian_ui::Fonts::new();
+    let mut pm = rustsidian_ui::Pixmap::new(1200, 900).unwrap();
+    app.run("app:open-settings");
+    app.run("settings:edit:search");
+    typed(&mut app, "ribbon");
+    let frame = rustsidian_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+    let has = |a: &str| frame.dom.nodes.iter().any(|n| n.el.action.as_deref() == Some(a));
+    assert!(has("settings:toggle:showRibbon"));
+    assert!(!has("settings:toggle:vimMode"));
+    app.run("settings:toggle:showRibbon");
+    assert_eq!(read_json(&d, ".obsidian/appearance.json")["showRibbon"], false);
+    app.run("settings:close");
+    let frame = rustsidian_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+    let ribbon =
+        frame.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == "workspace-ribbon")).unwrap();
+    assert!(ribbon.style.display_none);
+}
