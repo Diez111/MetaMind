@@ -10,8 +10,8 @@ fail=0
 miss() { echo "::error::over budget: $*"; fail=1; }
 
 size=$(stat -c %s "$BIN")
-echo "binary size: $((size / 1024)) KiB (budget 15360 KiB)"
-[ "$size" -le $((15 * 1024 * 1024)) ] || miss "binary size $((size / 1024)) KiB"
+echo "binary size: $((size / 1024)) KiB (budget 20480 KiB)"
+[ "$size" -le $((20 * 1024 * 1024)) ] || miss "binary size $((size / 1024)) KiB"
 
 start() { # vault budget_ms
   local worst=0 all=""

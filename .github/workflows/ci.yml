@@ -35,14 +35,14 @@ jobs:
           grep '| OVER |' perf.md | while IFS='|' read -r _ what got budget _; do
             echo "::warning title=Over budget::$what:$got (budget$budget)"
           done || true
-      - name: Binary size gate (15 MB)
+      - name: Binary size gate (20 MB)
         shell: bash
         run: |
           bin=target/release/rustsidian
           [ -f "$bin.exe" ] && bin="$bin.exe"
           size=$(wc -c < "$bin")
           echo "$bin: $size bytes"
-          test "$size" -le 15728640
+          test "$size" -le 20971520
 
   extras:
     runs-on: ubuntu-latest

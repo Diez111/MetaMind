@@ -25,7 +25,7 @@
 - **Your notes stay yours.** A vault is a folder of Markdown files. Open an existing vault as it
   is; Rustsidian keeps its own data in `.rustsidian/` and never rewrites what it does not
   understand.
-- **Fast.** A 12 MB native binary with no browser engine inside. It opens 5,000 notes in under
+- **Fast.** A 17 MB native binary with no browser engine inside. It opens 5,000 notes in under
   100 ms, uses about 34 MB of RAM idle at 10,000 notes, and uses no CPU while you're not typing.
 - **Linked thinking.** Wikilinks, backlinks, embeds, block references, tags, properties and a
   live graph of how your notes connect.
