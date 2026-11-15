@@ -1444,3 +1444,54 @@ pub fn offset_at(dom: &Dom, info: &ViewInfo, fonts: &mut Fonts, x: f32, y: f32) 
     let d = fonts.hit(&bv.display, &node.el.spans, &node.style.text, Some(cb.w), x - cb.x, y - cb.y);
     Some(bv.to_source(d))
 }
+
+/// Window rect of the primary caret, after layout.
+pub fn caret_rect(app: &App, dom: &Dom, info: &ViewInfo, fonts: &mut Fonts) -> Option<Rect> {
+    let head = app.tab()?.editor.buf.sels[0].head;
+    let bv = info.blocks.iter().find(|b| head >= b.src_start && head <= b.src_end)?;
+    let node = &dom.nodes[bv.node];
+    let cb = dom.content_rect(bv.node);
+    let d = bv.to_display(head);
+    let r = *fonts.range_rects(&bv.display, &node.el.spans, &node.style.text, Some(cb.w), d, d).first()?;
+    Some(Rect::new(cb.x + r.x, cb.y + r.y, r.w, r.h))
+}
+
+const SUGGEST_W: f32 = 300.0;
+const SUGGEST_ROW_H: f32 = 30.0;
+const PREVIEW_W: f32 = 320.0;
+
+/// The editor suggestion list under the caret (above it when there is no room below),
+/// with a preview of the selected note beside it.
+pub fn add_suggest(app: &App, dom: &mut Dom, caret: Rect, viewport_h: f32) {
+    let Some(s) = &app.suggest else { return };
+    let h = s.items.len() as f32 * SUGGEST_ROW_H + 14.0;
+    let below = caret.y + caret.h + 4.0;
+    let y = if below + h > viewport_h { (caret.y - h - 4.0).max(0.0) } else { below };
+    let preview = !s.preview.is_empty();
+    let w = SUGGEST_W + if preview { PREVIEW_W } else { 0.0 };
+    let x = caret.x.min(app.window_w - w).max(0.0);
+    let pop = dom.add(0, El::div().class("editor-suggest").style(&format!("left: {x:.1}px; top: {y:.1}px")));
+    let list = dom.add(pop, El::div().class("editor-suggest-list").style(&format!("width: {SUGGEST_W}px")));
+    for (i, item) in s.items.iter().enumerate() {
+        let row = dom.add(
+            list,
+            El::div()
+                .class("suggestion-item")
+                .class_if(i == s.selected, "is-selected")
+                .action(format!("suggest:{i}")),
+        );
+        dom.add(row, El::div().class("suggestion-title").text(item.label.clone()));
+        dom.add(row, El::div().class("suggestion-aux").text(item.aux.clone()));
+    }
+    if preview {
+        let pane = dom.add(
+            pop,
+            El::div()
+                .class("editor-suggest-preview")
+                .style(&format!("width: {PREVIEW_W}px; max-height: {h}px")),
+        );
+        for line in s.preview.lines() {
+            dom.add(pane, El::div().class("editor-suggest-preview-line").text(line.to_string()));
+        }
+    }
+}

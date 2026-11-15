@@ -20,6 +20,7 @@ pub mod rich;
 pub mod session;
 pub mod settings;
 pub mod shell;
+pub mod suggest;
 pub mod templates;
 pub mod update;
 pub mod view;
@@ -48,6 +49,12 @@ pub fn render(app: &mut App, fonts: &mut Fonts, pixmap: &mut Pixmap, scale: f32)
     let env = Env { dark: app.dark, reduced_motion: false };
     dom.style(&app.theme, env);
     dom.layout(fonts, pixmap.width() as f32 / scale, pixmap.height() as f32 / scale);
+    // The suggestion sits at the caret, which is only known after layout.
+    if let Some(caret) = app.suggest.as_ref().and_then(|_| view::caret_rect(app, &dom, &info, fonts)) {
+        view::add_suggest(app, &mut dom, caret, pixmap.height() as f32 / scale);
+        dom.style(&app.theme, env);
+        dom.layout(fonts, pixmap.width() as f32 / scale, pixmap.height() as f32 / scale);
+    }
     icons::paint(&mut dom);
     view::add_carets(app, &mut dom, &info, fonts);
     view::add_graph(app, &mut dom, &info);
@@ -66,6 +73,11 @@ impl App {
         if self.menu_click(frame, x, y) {
             return;
         }
+        if let Some((_, a)) = frame.dom.action_at(x, y).filter(|(_, a)| a.starts_with("suggest:")) {
+            let a = a.to_string();
+            return self.run(&a);
+        }
+        self.suggest = None;
         if let Some((node, action)) = frame.dom.action_at(x, y) {
             let action = action.to_string();
             if !action.starts_with("prop:") && !action.starts_with("settings:") {

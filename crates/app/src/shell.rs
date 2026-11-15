@@ -363,13 +363,16 @@ pub struct App {
     pub quit: bool,
     /// Scroll offsets of scrollable panes, by element id.
     pub scrolls: HashMap<String, f32>,
-    fuzzy: Fuzzy,
+    pub(crate) fuzzy: Fuzzy,
     recovery: Recovery,
     pub plugins: crate::plugins::PluginState,
     /// The action of the element under the pointer, for `:hover` styling and the status hint.
     pub hover_action: Option<String>,
     /// An explorer row being pressed or dragged.
     pub explorer_drag: Option<ExplorerDrag>,
+    pub suggest: Option<crate::suggest::Suggest>,
+    /// Where the suggestion closed with Escape stays closed until the cursor leaves it.
+    pub(crate) suggest_dismissed: Option<usize>,
     pub anims: crate::anim::Anims,
     pub(crate) seen: Option<crate::anim::Seen>,
     pub(crate) notice_since: Option<std::time::Instant>,
@@ -512,6 +515,8 @@ impl App {
             plugins: Default::default(),
             hover_action: None,
             explorer_drag: None,
+            suggest: None,
+            suggest_dismissed: None,
             anims: Default::default(),
             seen: None,
             notice_since: None,
@@ -1036,6 +1041,9 @@ impl App {
             // These can add or remove files; the explorer rows are rebuilt on the next frame.
             self.tree = None;
         }
+        if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
+            return self.accept_suggest(i);
+        }
         if let Some(p) = command.strip_prefix("open:") {
             self.close_prompt();
             return self.open_note(p);
@@ -1340,11 +1348,30 @@ impl App {
 
     /// Handle a key press. Returns true if it was consumed.
     pub fn key(&mut self, key: Key) -> bool {
+        let handled = self.key_inner(key);
+        self.after_editor_input();
+        handled
+    }
+
+    /// Suggestions follow the text before the cursor, and only while the editor has focus.
+    fn after_editor_input(&mut self) {
+        if self.focus == Focus::Editor && !self.canvas_active() {
+            self.update_suggest();
+        } else {
+            self.suggest = None;
+        }
+    }
+
+    fn key_inner(&mut self, key: Key) -> bool {
         self.notice = None;
         if let Some(r) = self.menu_key(&key) {
             return r;
         }
         if let Some(r) = self.modal_key(&key) {
+            return r;
+        }
+        // Only set while the editor has focus; see `after_editor_input`.
+        if let Some(r) = self.suggest_key(&key) {
             return r;
         }
         // Key sequences: collect keys while they are a prefix of some binding.
@@ -1493,6 +1520,11 @@ impl App {
 
     /// Committed text from the keyboard or an input method.
     pub fn text_input(&mut self, text: &str) {
+        self.text_input_inner(text);
+        self.after_editor_input();
+    }
+
+    fn text_input_inner(&mut self, text: &str) {
         if text.is_empty() || text.chars().any(char::is_control) {
             return;
         }

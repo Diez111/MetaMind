@@ -162,6 +162,11 @@ body {
 .search-result-file-title { padding: 4px 8px; color: var(--text-normal); font-weight: 600; white-space: nowrap; overflow: hidden }
 .search-result-file-match { padding: 2px 8px 2px 18px; color: var(--text-muted); font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden }
 .pane-section { padding: 0 8px 8px 8px; overflow: hidden }
+.editor-suggest { position: absolute; display: flex; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow: hidden }
+.editor-suggest-list { padding: 6px; display: flex; flex-direction: column; overflow: hidden }
+.editor-suggest .suggestion-item { height: 30px; gap: 12px; overflow: hidden }
+.editor-suggest-preview { padding: 10px 12px; border-left: 1px solid var(--background-modifier-border); background-color: var(--background-secondary); overflow: hidden }
+.editor-suggest-preview-line { color: var(--text-muted); font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden }
 .menu { position: absolute; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); padding: 4px; display: flex; flex-direction: column; overflow: hidden }
 .menu-item { height: 28px; padding: 0 10px; border-radius: var(--radius-s); display: flex; align-items: center; gap: 10px; white-space: nowrap; color: var(--text-normal) }
 .menu-item.is-selected, .menu-item:hover { background-color: var(--background-modifier-hover) }
