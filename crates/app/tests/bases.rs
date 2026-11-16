@@ -139,3 +139,47 @@ fn clicking_a_property_cell_edits_the_note() {
     frame(&mut app, &mut fonts);
     assert!(rows(&app).iter().any(|(p, c)| p == "A.md" && c[1] == Val::Str("paused".into())));
 }
+
+#[test]
+fn a_kanban_view_has_a_column_per_group_and_moves_cards() {
+    let d = vault();
+    fs::write(
+        d.path().join("Board.base"),
+        "filters: file.hasTag(\"book\")\nviews:\n  - type: kanban\n    name: Board\n    groupBy: status\n    order: [file.name, price]\n",
+    )
+    .unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("Board.base");
+    let mut fonts = Fonts::new();
+    let f = frame(&mut app, &mut fonts);
+    let has = |f: &Frame, class: &str| -> Vec<String> {
+        f.dom
+            .nodes
+            .iter()
+            .filter(|n| n.el.classes.iter().any(|c| c == class))
+            .map(|n| n.el.text.clone().unwrap_or_default())
+            .collect()
+    };
+    assert_eq!(has(&f, "bases-kanban-heading"), ["done (1)", "reading (1)"]);
+    let card = f.dom.nodes.iter().find(|n| n.el.action.as_deref() == Some("open:A.md")).unwrap();
+    let column = &f.dom.nodes[card.parent.unwrap()];
+    let board = &f.dom.nodes[column.parent.unwrap()];
+    assert!(card.rect.w > column.rect.w * 0.8, "cards fill their column");
+    assert!(column.rect.w > board.rect.w * 0.4, "two columns share the board");
+
+    let (x, y) = find_action(&f, "base:move:A.md|status").expect("a move control on A");
+    app.click(&f, &mut fonts, x, y, false);
+    let labels: Vec<String> = app.prompt.as_ref().unwrap().items.iter().map(|i| i.label.clone()).collect();
+    assert_eq!(
+        labels,
+        [
+            "Set \u{201c}status\u{201d} to \u{201c}done\u{201d}",
+            "Set \u{201c}status\u{201d} to \u{201c}reading\u{201d}",
+            "Remove \u{201c}status\u{201d} from A",
+        ]
+    );
+    app.key(rustsidian_app::Key::new("Enter"));
+    let f = frame(&mut app, &mut fonts);
+    assert_eq!(has(&f, "bases-kanban-heading"), ["done (2)"]);
+    assert!(fs::read_to_string(d.path().join("A.md")).unwrap().contains("status: done\n"));
+}

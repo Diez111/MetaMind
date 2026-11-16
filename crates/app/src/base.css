@@ -341,7 +341,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .workspace-split-cell { display: flex; flex-direction: column; overflow: hidden }
 .workspace-leaf { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden }
 .workspace-stack { flex-grow: 1; display: flex; overflow: hidden }
-.workspace-stack-item { flex-grow: 1; flex-basis: 0; display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--background-modifier-border) }
+.workspace-stack-item { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--background-modifier-border) }
 .workspace-stack-header { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; flex-shrink: 0; background-color: var(--background-secondary); color: var(--text-muted); font-size: 13px; cursor: pointer }
 .workspace-stack-item.is-active .workspace-stack-header { color: var(--text-normal) }
 .workspace-stack-title { white-space: nowrap; overflow: hidden }
@@ -361,6 +361,12 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .bases-card, .bases-card-filler { width: 32% }
 .bases-card { padding: 10px 12px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background-color: var(--background-primary-alt) }
 .bases-card:hover { border-color: var(--interactive-accent) }
+.bases-kanban { display: flex; gap: 12px; align-items: flex-start; margin: 0 24px 12px 24px }
+.bases-kanban-column { flex-grow: 1; display: flex; flex-direction: column; gap: 8px; padding: 8px; border-radius: var(--radius-m); background-color: var(--background-secondary) }
+.bases-kanban-heading { font-weight: 600; color: var(--text-muted); font-size: var(--font-ui-small); padding: 2px 4px }
+.bases-kanban .bases-card { width: auto }
+.bases-card-move { margin-top: 6px; font-size: var(--font-ui-small); color: var(--text-muted) }
+.bases-card-move:hover { color: var(--text-accent) }
 .bases-card-title { font-weight: 600; color: var(--text-normal); margin-bottom: 6px }
 .bases-card-property { display: flex; gap: 6px; font-size: var(--font-ui-small); line-height: var(--line-height-normal) }
 .bases-card-label { color: var(--text-muted); width: 40% }

@@ -371,6 +371,8 @@ pub enum ViewKind {
     Table,
     Cards,
     List,
+    /// Cards in a column per `groupBy` value.
+    Kanban,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -468,6 +470,7 @@ impl Base {
             let kind = match str_of("type").as_deref() {
                 Some("cards") => ViewKind::Cards,
                 Some("list") => ViewKind::List,
+                Some("kanban") => ViewKind::Kanban,
                 _ => ViewKind::Table,
             };
             let order = get(m, "order").map(|o| o.as_string_list()).unwrap_or_default();
