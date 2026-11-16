@@ -175,3 +175,45 @@ fn closing_a_window_docks_its_pane_and_closing_its_last_tab_closes_it() {
     assert_eq!(app.pane, 0);
     assert_eq!(shown(&app, 0), Some("A.md"));
 }
+
+#[test]
+fn stacked_columns_end_at_the_active_tab_and_the_rest_fold() {
+    use rustsidian_app::view::stack_range;
+    assert_eq!(stack_range(1, 0, 300.0), (0, 0));
+    assert_eq!(stack_range(3, 2, 1000.0), (1, 2));
+    assert_eq!(stack_range(3, 0, 1000.0), (0, 1));
+    assert_eq!(stack_range(3, 1, 5000.0), (0, 2));
+    assert_eq!(stack_range(5, 4, 200.0), (4, 4));
+}
+
+#[test]
+fn stacked_tabs_show_side_by_side_and_a_click_on_a_spine_activates_it() {
+    let d = vault();
+    fs::write(d.path().join("C.md"), "gamma\n").unwrap();
+    fs::write(d.path().join("D.md"), "delta\n").unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    for n in ["A.md", "B.md", "C.md", "D.md"] {
+        app.open_note(n);
+    }
+    app.left_open = false;
+    app.right_open = false;
+    app.run("workspace:toggle-stacked-tabs");
+    assert!(app.session()["panes"][0]["stacked"].as_bool().unwrap());
+
+    let mut fonts = Fonts::new();
+    let f = frame(&mut app, &mut fonts);
+    assert_eq!(f.info.stack.iter().map(|e| e.1).collect::<Vec<_>>(), [0, 1, 2, 3]);
+    let rect = |f: &Frame, i: usize| f.dom.nodes[f.info.stack[i].2].rect;
+    let (spine, col, active) = (rect(&f, 0), rect(&f, 2), rect(&f, 3));
+    assert!(spine.w < 40.0, "{spine:?}");
+    assert!(col.w > 400.0 && col.x + col.w <= active.x + 1.0, "{col:?} {active:?}");
+
+    app.click(&f, &mut fonts, spine.x + spine.w / 2.0, spine.y + 40.0, false);
+    assert_eq!(app.active, 0);
+    let f = frame(&mut app, &mut fonts);
+    assert!(rect(&f, 0).w > 400.0, "the activated tab gets a column");
+
+    app.run("workspace:toggle-stacked-tabs");
+    let f = frame(&mut app, &mut fonts);
+    assert!(f.info.stack.is_empty());
+}

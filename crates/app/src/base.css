@@ -340,6 +340,13 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .workspace-split.mod-horizontal { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden }
 .workspace-split-cell { display: flex; flex-direction: column; overflow: hidden }
 .workspace-leaf { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden }
+.workspace-stack { flex-grow: 1; display: flex; overflow: hidden }
+.workspace-stack-item { flex-grow: 1; flex-basis: 0; display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--background-modifier-border) }
+.workspace-stack-header { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; flex-shrink: 0; background-color: var(--background-secondary); color: var(--text-muted); font-size: 13px; cursor: pointer }
+.workspace-stack-item.is-active .workspace-stack-header { color: var(--text-normal) }
+.workspace-stack-title { white-space: nowrap; overflow: hidden }
+.workspace-stack-spine { width: 32px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 0; padding: 8px 0; overflow: hidden; background-color: var(--background-secondary); border-left: 1px solid var(--background-modifier-border); color: var(--text-muted); font-size: 12px; line-height: 14px; cursor: pointer }
+.workspace-stack-spine:hover { color: var(--text-normal) }
 .workspace-leaf-resize-handle { flex-shrink: 0; background-color: var(--background-modifier-border) }
 .workspace-leaf-resize-handle.mod-vertical { width: 3px }
 .workspace-leaf-resize-handle.mod-horizontal { height: 3px }

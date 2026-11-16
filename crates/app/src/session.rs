@@ -49,7 +49,8 @@ impl App {
         let panes: Vec<Value> = (0..self.panes.len())
             .map(|i| {
                 let (tabs, active) = self.pane_tabs(i);
-                json!({ "tabs": tabs_json(tabs), "active": active, "link": self.panes[i].link })
+                json!({ "tabs": tabs_json(tabs), "active": active, "link": self.panes[i].link,
+                    "stacked": self.panes[i].stacked })
             })
             .collect();
         let mut collapsed: Vec<&String> = self.collapsed.iter().collect();
@@ -101,6 +102,11 @@ impl App {
                 return;
             }
         };
+        self.apply_session(&v);
+    }
+
+    /// Open the tabs, panes and sidebar state of session `v`.
+    pub(crate) fn apply_session(&mut self, v: &Value) {
         let num = |v: &Value| v.as_u64().map(|n| n as usize);
         let panes = v.get("panes").and_then(Value::as_array).filter(|p| !p.is_empty());
         let layout = panes.and_then(|p| crate::split::parse_layout(v.get("layout")?, p.len()));
@@ -110,11 +116,12 @@ impl App {
                 self.layout = layout;
                 for (i, p) in panes.iter().enumerate() {
                     self.panes[i].link = p.get("link").and_then(Value::as_u64).map(|g| g as u32);
+                    self.panes[i].stacked = p.get("stacked").and_then(Value::as_bool).unwrap_or(false);
                     self.in_pane(i, |a| a.restore_tabs(p));
                 }
                 self.focus_pane(v.get("pane").and_then(num).filter(|&p| p < panes.len()).unwrap_or(0));
             }
-            _ => self.restore_tabs(&v),
+            _ => self.restore_tabs(v),
         }
         let flag = |k: &str| v.get(k).and_then(Value::as_bool);
         self.left_open = flag("left").unwrap_or(self.left_open);

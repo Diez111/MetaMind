@@ -120,6 +120,10 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("workspace:split-vertical", "Split right", ""),
     ("workspace:split-horizontal", "Split down", ""),
     ("workspace:move-to-new-window", "Move current tab to new window", ""),
+    ("workspace:toggle-stacked-tabs", "Toggle stacked tabs", ""),
+    ("workspaces:save", "Workspaces: Save current workspace", ""),
+    ("workspaces:load", "Workspaces: Load workspace", ""),
+    ("workspaces:delete", "Workspaces: Delete workspace", ""),
     ("workspace:undo-close-pane", "Reopen closed tab", "Ctrl+Shift+T"),
     ("workspace:next-tab", "Go to next tab", "Ctrl+Tab"),
     ("workspace:previous-tab", "Go to previous tab", "Ctrl+Shift+Tab"),
@@ -255,6 +259,8 @@ pub enum PromptKind {
     /// The name of a new folder inside `Prompt::target`.
     NewFolder,
     Template,
+    /// Workspaces to save, load or delete, as `Prompt::target` says.
+    Workspace,
 }
 
 #[derive(Clone, Debug)]
@@ -1079,6 +1085,10 @@ impl App {
                 items
             }
             PromptKind::Template => self.template_items(&query),
+            PromptKind::Workspace => {
+                let target = self.prompt.as_ref().map(|p| p.target.clone()).unwrap_or_default();
+                self.workspace_items(&target, &query)
+            }
             PromptKind::Rename | PromptKind::NewFolder => {
                 let target = self.prompt.as_ref().map(|p| p.target.clone()).unwrap_or_default();
                 let name = query.trim();
@@ -1308,7 +1318,11 @@ impl App {
             self.link_mentions(rel);
             return;
         }
-        if self.run_plugin_command(command) || self.run_panes(command) || self.run_templates(command) {
+        if self.run_plugin_command(command)
+            || self.run_panes(command)
+            || self.run_templates(command)
+            || self.run_workspaces(command)
+        {
             return;
         }
         if self.run_file_action(command) {
@@ -1390,6 +1404,7 @@ impl App {
             "workspace:split-vertical" => self.split(true),
             "workspace:split-horizontal" => self.split(false),
             "workspace:move-to-new-window" => self.move_to_window(),
+            "workspace:toggle-stacked-tabs" => self.toggle_stacked(),
             "workspace:unlink-pane" => self.unlink_pane(),
             "workspace:close-others" => {
                 for i in (0..self.tabs.len()).rev().filter(|&i| i != self.active).collect::<Vec<_>>() {

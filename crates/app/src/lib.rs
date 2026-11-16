@@ -33,6 +33,7 @@ pub mod templates;
 pub mod update;
 pub mod view;
 pub mod welcome;
+pub mod workspaces;
 
 pub use shell::{App, Key};
 
@@ -129,7 +130,7 @@ impl App {
 
     /// Left click at window coordinates.
     pub fn click(&mut self, frame: &Frame, fonts: &mut Fonts, x: f32, y: f32, shift: bool) {
-        if self.menu_click(frame, x, y) || !self.press_pane(frame, x, y) {
+        if self.menu_click(frame, x, y) || !self.press_pane(frame, x, y) || !self.press_stack(frame, x, y) {
             return;
         }
         if let Some((_, a)) = frame.dom.action_at(x, y).filter(|(_, a)| a.starts_with("suggest:")) {
@@ -210,6 +211,18 @@ impl App {
         })
     }
 
+    /// A press on a stacked tab other than the active one makes it active first. Returns whether
+    /// the press should go on, as for `press_pane`.
+    pub(crate) fn press_stack(&mut self, frame: &Frame, x: f32, y: f32) -> bool {
+        let hit = frame.info.stack.iter().find(|e| frame.dom.nodes[e.2].rect.contains(x, y));
+        let Some(&(_, tab, ..)) = hit.filter(|e| e.0 == self.pane && e.1 != self.active) else { return true };
+        self.run(&format!("tab:{tab}"));
+        frame
+            .dom
+            .action_at(x, y)
+            .is_some_and(|(_, a)| ["close-tab:", "toggle-pin:"].iter().any(|t| a.starts_with(t)))
+    }
+
     /// Extend the selection while dragging with the button held.
     pub fn drag(&mut self, frame: &Frame, fonts: &mut Fonts, x: f32, y: f32) {
         if self.pane_drag.is_some() {
@@ -253,6 +266,9 @@ impl App {
         }
         if let Some(&(p, ..)) = frame.info.panes.iter().find(|e| e.2 == Some(node)) {
             return self.scroll_pane(p, lines.round() as isize);
+        }
+        if let Some(&(p, tab, ..)) = frame.info.stack.iter().find(|e| e.3 == Some(node)) {
+            return self.scroll_tab(p, tab, lines.round() as isize);
         }
         if let Some(id) = frame.dom.nodes[node].el.id.clone() {
             let cur = frame.dom.nodes[node].scroll_y;

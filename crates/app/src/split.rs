@@ -15,6 +15,8 @@ pub struct Pane {
     pub active: usize,
     /// Panes in the same link group follow each other's active note.
     pub link: Option<u32>,
+    /// Tabs shown side by side instead of one at a time.
+    pub stacked: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -439,10 +441,21 @@ impl App {
         self.mirror_edits();
     }
 
+    pub fn toggle_stacked(&mut self) {
+        let p = self.pane;
+        self.panes[p].stacked = !self.panes[p].stacked;
+    }
+
     /// Scroll the active tab of an unfocused pane.
     pub(crate) fn scroll_pane(&mut self, i: usize, blocks: isize) {
-        let Some(p) = self.panes.get_mut(i) else { return };
-        if let Some(t) = p.tabs.get_mut(p.active) {
+        let active = self.panes.get(i).map_or(0, |p| p.active);
+        self.scroll_tab(i, active, blocks);
+    }
+
+    /// Scroll tab `tab` of pane `i`, other than the focused editor.
+    pub(crate) fn scroll_tab(&mut self, i: usize, tab: usize, blocks: isize) {
+        let tabs = if i == self.pane { &mut self.tabs } else { &mut self.panes[i].tabs };
+        if let Some(t) = tabs.get_mut(tab) {
             let max = t.editor.buf.doc().blocks.len().saturating_sub(1) as isize;
             t.top_block = (t.top_block as isize + blocks).clamp(0, max.max(0)) as usize;
         }

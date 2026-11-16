@@ -673,6 +673,8 @@ fn tab_items(b: &mut Builder<'_>, i: usize) {
         b.item("separator-vertical", "Split right", "workspace:split-vertical");
         b.item("separator-horizontal", "Split down", "workspace:split-horizontal");
         b.item("arrow-up-right", "Move to new window", "workspace:move-to-new-window");
+        let stacked = if b.app.panes[b.app.pane].stacked { "Unstack tabs" } else { "Stack tabs" };
+        b.item("list", stacked, "workspace:toggle-stacked-tabs");
         let app = b.app;
         let group = app.panes[app.pane].link;
         let others: Vec<(usize, String)> = (0..app.panes.len())

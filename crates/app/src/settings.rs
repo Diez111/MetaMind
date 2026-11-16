@@ -50,6 +50,12 @@ pub(crate) const CORE_PLUGINS: &[(&str, &str, &str, &[&str])] = &[
     ("outline", "Outline", "Show the headings of the active note.", &["outline:open"]),
     ("switcher", "Quick switcher", "Jump to a note by name.", &["switcher:open"]),
     ("global-search", "Search", "Search the vault with query operators.", &["global-search:open"]),
+    (
+        "workspaces",
+        "Workspaces",
+        "Save and load layouts of tabs and panes.",
+        &["workspaces:save", "workspaces:load", "workspaces:delete"],
+    ),
     ("tag-pane", "Tags view", "List the tags of the vault with their counts.", &["tag-pane:open"]),
     (
         "templates",

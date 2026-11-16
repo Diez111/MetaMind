@@ -169,6 +169,9 @@ pub struct ViewInfo {
     pub canvas_colors: Vec<NodeId>,
     /// Each pane with its leaf element and, unless focused, its scrolling view.
     pub panes: Vec<(usize, NodeId, Option<NodeId>)>,
+    /// Each tab of a stacked pane: (pane, tab, its column or spine, its scrolling view unless
+    /// it is the focused editor).
+    pub stack: Vec<(usize, usize, NodeId, Option<NodeId>)>,
     /// Math and diagram blocks painted after layout.
     pub rich: Vec<crate::rich::Item>,
 }
@@ -604,10 +607,11 @@ fn split_layout(
     pal: &Palette,
     info: &mut ViewInfo,
     viewport_h: f32,
+    width: f32,
 ) {
     let crate::split::Layout::Split { row, kids } = node else {
         if let crate::split::Layout::Leaf(i) = node {
-            pane(app, dom, parent, *i, pal, info, viewport_h);
+            pane(app, dom, parent, *i, pal, info, viewport_h, width);
         }
         return;
     };
@@ -623,12 +627,14 @@ fn split_layout(
         let cell = El::div().class("workspace-split-cell").style(&format!("{dim}: {:.3}%", ratio * 100.0));
         let cell = dom.add(split, cell);
         path.push(k);
-        split_layout(app, dom, cell, kid, path, pal, info, viewport_h);
+        let w = if *row { width * ratio } else { width };
+        split_layout(app, dom, cell, kid, path, pal, info, viewport_h, w);
         path.pop();
     }
 }
 
-/// Pane `pane`: its tab bar and the active tab. Only the focused pane shows the graph or canvas.
+/// Pane `pane`, about `width` wide: its tab bar and the active tab, or all its tabs when
+/// stacked. Only the focused pane shows the graph or canvas.
 #[allow(clippy::too_many_arguments)]
 fn pane(
     app: &App,
@@ -638,6 +644,7 @@ fn pane(
     pal: &Palette,
     info: &mut ViewInfo,
     viewport_h: f32,
+    width: f32,
 ) {
     let focused = pane == app.pane;
     let leaf = dom.add(parent, El::div().class("workspace-leaf").class_if(focused, "mod-active"));
@@ -685,6 +692,11 @@ fn pane(
     let new_tab =
         dom.add(tabs, El::div().class("workspace-tab-header-new-tab").action("file-explorer:new-file"));
     dom.add(new_tab, icons::el("plus"));
+    if app.panes[pane].stacked && !covered {
+        stack(app, dom, leaf, pane, focused, pal, info, width);
+        info.panes.push((pane, leaf, None));
+        return;
+    }
     if !focused {
         let mut own = ViewInfo::default();
         editor(app, dom, leaf, pal, &mut own, open.get(active), false);
@@ -1432,6 +1444,65 @@ pub fn add_graph(app: &mut App, dom: &mut Dom, info: &ViewInfo) {
     dom.nodes[pane].draw = g.paint(dom.nodes[pane].rect, &colors, &text);
 }
 
+/// Which tabs of a stacked pane `width` wide get a column: `(first, last)`, ending at the active
+/// tab when the earlier ones fill the rest. The others fold to spines.
+pub fn stack_range(n: usize, active: usize, width: f32) -> (usize, usize) {
+    const COLUMN: f32 = 480.0;
+    const SPINE: f32 = 32.0;
+    if n == 0 {
+        return (0, 0);
+    }
+    let k = ((width - SPINE * n as f32) / (COLUMN - SPINE)).floor().max(1.0) as usize;
+    let k = k.min(n);
+    let first = (active.min(n - 1) + 1).saturating_sub(k);
+    (first, first + k - 1)
+}
+
+/// Stacked tabs: side by side, the ones that do not fit folded to spines with their title.
+#[allow(clippy::too_many_arguments)]
+fn stack(
+    app: &App,
+    dom: &mut Dom,
+    leaf: NodeId,
+    pane: usize,
+    focused: bool,
+    pal: &Palette,
+    info: &mut ViewInfo,
+    width: f32,
+) {
+    let (open, active) = app.pane_tabs(pane);
+    if open.is_empty() {
+        return editor(app, dom, leaf, pal, info, None, focused);
+    }
+    let (first, last) = stack_range(open.len(), active, width);
+    let row = dom.add(leaf, El::div().class("workspace-stack"));
+    for (i, t) in open.iter().enumerate() {
+        if i < first || i > last {
+            let spine = dom.add(row, El::div().class("workspace-stack-spine").action(format!("tab:{i}")));
+            dom.add(spine, icons::el(icons::for_file(&t.path)));
+            // Spines are too narrow for a line of text, so the title runs down a letter at a time.
+            for c in t.title().chars().take(40) {
+                dom.add(spine, El::div().class("workspace-stack-spine-letter").text(c.to_string()));
+            }
+            info.stack.push((pane, i, spine, None));
+            continue;
+        }
+        let col = dom.add(row, El::div().class("workspace-stack-item").class_if(i == active, "is-active"));
+        let head = dom.add(col, El::div().class("workspace-stack-header").action(format!("tab:{i}")));
+        dom.add(head, icons::el(icons::for_file(&t.path)));
+        dom.add(head, El::div().class("workspace-stack-title").text(t.title().to_string()));
+        if focused && i == active {
+            editor(app, dom, col, pal, info, Some(t), true);
+            info.stack.push((pane, i, col, None));
+        } else {
+            let mut own = ViewInfo::default();
+            editor(app, dom, col, pal, &mut own, Some(t), false);
+            info.rich.append(&mut own.rich);
+            info.stack.push((pane, i, col, own.editor));
+        }
+    }
+}
+
 /// The main window: ribbon, sidebars, the split panes and the status bar.
 fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewInfo, viewport_h: f32) {
     let show_ribbon = app.config.appearance.bool("showRibbon", true);
@@ -1508,8 +1579,11 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
         }
     }
     let root = dom.add(ws, El::div().class("workspace-split mod-root"));
-    split_layout(app, dom, root, &app.layout, &mut Vec::new(), pal, info, viewport_h);
     let right_w = app.anims.toward("right", app.right_open);
+    let side = |w: f32| if w > 0.01 { 250.0 * w.min(1.0) } else { 0.0 };
+    let ribbon_w = if show_ribbon { 44.0 } else { 0.0 };
+    let width = app.window_w - ribbon_w - side(left_w) - side(right_w);
+    split_layout(app, dom, root, &app.layout, &mut Vec::new(), pal, info, viewport_h, width);
     if right_w > 0.01 {
         let mut el = El::div().class("workspace-split mod-right-split");
         if right_w < 1.0 {
@@ -1590,6 +1664,10 @@ fn overlays(app: &App, dom: &mut Dom, viewport_h: f32) {
             PromptKind::Rename => "New name…",
             PromptKind::NewFolder => "Folder name…",
             PromptKind::Template => "Find a template…",
+            PromptKind::Workspace => match p.target.as_str() {
+                "save" => "Workspace name…",
+                _ => "Find a workspace…",
+            },
         };
         let shown = if p.query.is_empty() { placeholder.to_string() } else { format!("{}▏", p.query) };
         let input = dom.add(modal, El::div().class("prompt-input-container"));
@@ -1601,6 +1679,7 @@ fn overlays(app: &App, dom: &mut Dom, viewport_h: f32) {
                 PromptKind::Rename => "edit",
                 PromptKind::NewFolder => "folder-plus",
                 PromptKind::Template => "note",
+                PromptKind::Workspace => "list",
             }),
         );
         dom.add(input, El::div().class("prompt-input").text(shown));
@@ -1682,7 +1761,7 @@ pub fn build(app: &App, viewport_h: f32, solo: Option<usize>) -> (Dom, ViewInfo)
     match solo {
         Some(p) => {
             let root = dom.add(ws, El::div().class("workspace-split mod-root"));
-            pane(app, &mut dom, root, p, &pal, &mut info, viewport_h);
+            pane(app, &mut dom, root, p, &pal, &mut info, viewport_h, app.window_w);
         }
         None => chrome(app, &mut dom, ws, &pal, &mut info, viewport_h),
     }
