@@ -3,6 +3,8 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 use rustsidian_app::cli::{self, Outcome};
+#[cfg(feature = "window")]
+use rustsidian_app::instance;
 
 #[cfg(feature = "window")]
 mod a11y;
@@ -54,7 +56,14 @@ fn main() {
     let code = match cli::run(&args, &mut std::io::stdout()) {
         Outcome::Exit(code) => code,
         #[cfg(feature = "window")]
-        Outcome::Open { vault, note, profile } => window::run(Some(&vault), note.as_deref(), profile),
+        Outcome::Open { vault, note, profile } => {
+            let forwarded = instance::dir().is_some_and(|d| instance::forward(&d, &vault, note.as_deref()));
+            if forwarded {
+                0
+            } else {
+                window::run(Some(&vault), note.as_deref(), profile)
+            }
+        }
         #[cfg(feature = "window")]
         Outcome::Welcome => window::run(None, None, false),
         #[cfg(not(feature = "window"))]

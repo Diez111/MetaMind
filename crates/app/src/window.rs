@@ -2,14 +2,14 @@
 //! Fully event-driven: the loop sleeps until input, a file change or a deadline (autosave,
 //! a notice timing out), and redraws at display rate only while something is animating.
 
-use rustsidian_app::ospref;
 use rustsidian_app::welcome::Welcome;
+use rustsidian_app::{instance, ospref};
 use rustsidian_app::{recent, App, Frame, Key};
 use rustsidian_ui::{Dom, Fonts, Pixmap};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use vault_core::fsio::now_ms;
 use vault_core::watch::VaultWatcher;
@@ -27,6 +27,8 @@ enum UserEvent {
     Access(accesskit_winit::Event),
     /// A first-time index finished on its worker thread: the vault, the note to open, the store.
     Indexed(PathBuf, Option<String>, Result<VaultStore, String>),
+    /// Another launch asked this window to come forward and show a note of its vault.
+    Show(Option<String>),
 }
 
 impl From<accesskit_winit::Event> for UserEvent {
@@ -69,6 +71,8 @@ struct Win {
     pops: Vec<Pop>,
     /// While handling a pop-out window: its id. Its state is then swapped into the fields above.
     solo: Option<u32>,
+    /// The vault shown, read by the thread that answers other launches.
+    shown: Arc<Mutex<Option<PathBuf>>>,
 }
 
 /// A pop-out window and the per-window state that `Win` holds for the main window.
@@ -410,6 +414,9 @@ impl Win {
             }
         });
         self.watcher = Some(handle.thread().clone());
+        if let Ok(mut shown) = self.shown.lock() {
+            *shown = Some(app.store.root.clone());
+        }
         let mut app = app;
         app.set_system_dark(self.window.as_ref().and_then(|w| w.theme()).map(|t| t == Theme::Dark));
         self.app = Some(app);
@@ -422,8 +429,22 @@ impl Win {
         }
     }
 
+    fn show(&mut self, note: Option<&str>) {
+        if let (Some(app), Some(n)) = (&mut self.app, note) {
+            app.open_note(n);
+        }
+        if let Some(w) = &self.window {
+            w.set_minimized(false);
+            w.focus_window();
+        }
+        self.request_redraw();
+    }
+
     /// Leave the current vault (if any) and show the vault chooser.
     fn show_welcome(&mut self) {
+        if let Ok(mut shown) = self.shown.lock() {
+            *shown = None;
+        }
         if let Some(app) = &mut self.app {
             app.save_all();
         }
@@ -562,6 +583,7 @@ impl ApplicationHandler<UserEvent> for Win {
         let (generation, paths) = match event {
             UserEvent::Changed(generation, paths) => (generation, paths),
             UserEvent::Indexed(root, note, store) => return self.indexed(&root, note.as_deref(), store),
+            UserEvent::Show(note) => return self.show(note.as_deref()),
             UserEvent::Access(e) => {
                 match e.window_event {
                     accesskit_winit::WindowEvent::InitialTreeRequested => self.update_access(),
@@ -924,13 +946,32 @@ pub fn run(vault: Option<&Path>, note: Option<&str>, profile: bool) -> i32 {
         indexing: None,
         pops: Vec::new(),
         solo: None,
+        shown: Arc::new(Mutex::new(None)),
     };
+    let instances = instance::dir();
+    if let Some(dir) = &instances {
+        match instance::Instance::register(dir) {
+            Ok(inst) => {
+                let (shown, proxy) = (win.shown.clone(), win.proxy.clone());
+                inst.serve(move |vault, note| {
+                    let mine = shown.lock().ok().and_then(|s| s.clone());
+                    mine.is_some_and(|m| instance::same_vault(&m, vault))
+                        && proxy.send_event(UserEvent::Show(note)).is_ok()
+                });
+            }
+            Err(e) => eprintln!("rustsidian: other launches cannot reach this window: {e}"),
+        }
+    }
     match (initial, pending) {
         (Some(app), _) => win.install(app),
         (None, Some(v)) => win.start_indexing(&v, note),
         (None, None) => win.show_welcome(),
     }
-    match event_loop.run_app(&mut win) {
+    let result = event_loop.run_app(&mut win);
+    if let Some(dir) = &instances {
+        instance::unregister(dir);
+    }
+    match result {
         Ok(()) => 0,
         Err(e) => {
             eprintln!("rustsidian: {e}");

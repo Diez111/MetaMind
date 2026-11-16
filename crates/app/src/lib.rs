@@ -12,6 +12,7 @@ pub mod editing;
 pub mod graphview;
 pub mod icon;
 pub mod icons;
+pub mod instance;
 pub mod media;
 pub mod mentions;
 pub mod menu;
