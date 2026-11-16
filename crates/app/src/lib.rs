@@ -31,6 +31,7 @@ pub mod split;
 pub mod suggest;
 pub mod templates;
 pub mod update;
+pub mod uri;
 pub mod view;
 pub mod welcome;
 pub mod workspaces;

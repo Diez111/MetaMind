@@ -12,6 +12,7 @@ pub const USAGE: &str = "Rustsidian
 USAGE:
   rustsidian                                    Show the welcome screen to pick or create a vault
   rustsidian [open] <vault> [note]              Open a vault in a window
+  rustsidian <rustsidian://link>                Open or create a note from a link (actions: open, new)
   rustsidian index <vault>                      Build or refresh the index and print statistics
   rustsidian search <vault> <query> [--limit N] Search with the query syntax
   rustsidian export <vault> <note> [--format html|md|pdf] [-o <path>]
@@ -276,6 +277,10 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
         "open" => match vault_arg(1) {
             Some(vault) => Outcome::Open { vault, note: a.pos.get(2).cloned(), profile: a.flag("--profile") },
             None => fail("open: expected a vault folder"),
+        },
+        _ if crate::uri::is_link(first) => match crate::uri::resolve(first, &crate::recent::load()) {
+            Ok(t) => Outcome::Open { vault: t.vault, note: t.note, profile: false },
+            Err(e) => fail(&e),
         },
         _ => match vault_arg(0) {
             Some(vault) => Outcome::Open { vault, note: a.pos.get(1).cloned(), profile: a.flag("--profile") },

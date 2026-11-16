@@ -92,7 +92,8 @@ The authoritative list of what Rustsidian does today. Nothing outside it is clai
 | JavaScript community plugin compatibility, CM6 adapter, plugin browser | none | Only the JS engine spike was done |
 | Accessibility (`accesskit`), high contrast, reduced motion | partial | Screen-reader tree through `accesskit` (AT-SPI, UI Automation, NSAccessibility): buttons, headings, text and labelled images, with click actions. The caret and selection are not exposed. Reduced motion and high contrast are read from the OS (Windows animation effects and high-contrast themes, GNOME `enable-animations` and `high-contrast`, macOS Reduce motion and Increase contrast) at start and on focus. Reduced motion stops interface animations and turns on `prefers-reduced-motion`; high contrast turns on `prefers-contrast: more` and a black/white palette over any theme. No in-app toggle for either |
 | GPU rendering (`wgpu`) | none | Software rendering only, by measured decision (DECISIONS.md §2) |
-| Multi-window, system tray, file dialogs, URI scheme, file associations, single-instance IPC | none | |
+| Multi-window, system tray, file dialogs, file associations, single-instance IPC | none | |
+| `rustsidian://` links (`open?vault=&file=`, `open?path=`, `new?vault=&name=&content=`) | partial | Passed as the first command-line argument; vaults by name come from the recent-vaults list. The scheme is not registered with the OS yet, and each link starts a new process |
 | Packaging (MSI, zip, Flatpak, AppImage, deb, rpm) | none | Release workflow publishes tar.gz/zip archives with checksums for Linux, Windows and macOS; `.desktop` file and SVG icon included |
 | `rustsidian doctor`, `--profile`, perf overlay (Ctrl+Shift+F12) | done | |
 
