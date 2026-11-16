@@ -220,6 +220,10 @@ impl App {
 
     /// Open the active note in a new pane to the right of (`row`) or below the focused one.
     pub fn split(&mut self, row: bool) {
+        if self.is_popped(self.pane) {
+            self.notice = Some("Split panes are only available in the main window".to_string());
+            return;
+        }
         let Some(t) = self.tab() else {
             self.notice = Some("Open a note to split".to_string());
             return;
@@ -240,20 +244,108 @@ impl App {
         }
     }
 
-    /// Close panes left without tabs, while another pane remains.
+    /// Close panes left without tabs: a pane in its own window always, a pane of the main
+    /// window while another remains there.
     fn prune_panes(&mut self) {
-        while self.panes.len() > 1 {
-            let Some(i) = (0..self.panes.len()).find(|&i| self.pane_tabs(i).0.is_empty()) else { break };
-            let near = remove_leaf(&mut self.layout, i).unwrap_or(0);
+        loop {
+            let mut main = Vec::new();
+            leaves(&self.layout, &mut main);
+            let empty = |i: usize| self.pane_tabs(i).0.is_empty() && (self.is_popped(i) || main.len() > 1);
+            let Some(i) = (0..self.panes.len()).find(|&i| empty(i)) else { break };
+            let near = if self.is_popped(i) {
+                self.popouts.retain(|p| p.1 != i);
+                None
+            } else {
+                remove_leaf(&mut self.layout, i)
+            };
             if self.pane == i {
-                self.focus_pane(near);
+                let to = near.unwrap_or_else(|| self.main_pane());
+                self.focus_pane(to);
             }
             self.panes.remove(i);
             renumber(&mut self.layout, i);
-            if self.pane > i {
-                self.pane -= 1;
+            let popped = self.popouts.iter_mut().map(|p| &mut p.1);
+            for p in [&mut self.pane, &mut self.last_main].into_iter().chain(popped) {
+                if *p > i {
+                    *p -= 1;
+                }
             }
         }
+    }
+
+    pub fn is_popped(&self, pane: usize) -> bool {
+        self.popouts.iter().any(|p| p.1 == pane)
+    }
+
+    /// The pane shown in window `id`.
+    pub fn window_pane(&self, id: u32) -> Option<usize> {
+        self.popouts.iter().find(|p| p.0 == id).map(|p| p.1)
+    }
+
+    /// The main window's pane to focus when that window is.
+    fn main_pane(&self) -> usize {
+        let mut main = Vec::new();
+        leaves(&self.layout, &mut main);
+        if main.contains(&self.last_main) {
+            self.last_main
+        } else {
+            first_leaf(&self.layout)
+        }
+    }
+
+    /// A window got the keyboard: focus its pane (`None` is the main window).
+    pub fn focus_window(&mut self, id: Option<u32>) {
+        let to = match id {
+            Some(id) => match self.window_pane(id) {
+                Some(p) => p,
+                None => return,
+            },
+            None if self.is_popped(self.pane) => self.main_pane(),
+            None => return,
+        };
+        if !self.is_popped(self.pane) {
+            self.last_main = self.pane;
+        }
+        self.focus_pane(to);
+    }
+
+    /// Move the active tab into a pane of its own, shown in a new window.
+    pub fn move_to_window(&mut self) {
+        if self.tab().is_none() {
+            self.notice = Some("Open a note to move it to a new window".to_string());
+            return;
+        }
+        let tab = self.tabs.remove(self.active);
+        self.active = self.active.min(self.tabs.len().saturating_sub(1));
+        let new = self.panes.len();
+        self.panes.push(Pane::default());
+        self.popouts.push((self.next_popout, new));
+        self.next_popout += 1;
+        if !self.is_popped(self.pane) {
+            self.last_main = self.pane;
+        }
+        self.focus_pane(new);
+        self.tabs.push(tab);
+        self.active = 0;
+    }
+
+    /// Window `id` was closed: its pane goes back into the main window, beside the pane focused
+    /// there last, so no tab is lost.
+    pub fn dock_window(&mut self, id: u32) {
+        let Some(k) = self.popouts.iter().position(|p| p.0 == id) else { return };
+        let (_, p) = self.popouts.remove(k);
+        let at = self.main_pane();
+        insert_beside(&mut self.layout, at, p, true);
+    }
+
+    /// The layout with every window's pane docked, as the next start shows it.
+    pub(crate) fn docked_layout(&self) -> Layout {
+        let mut layout = self.layout.clone();
+        let at = self.main_pane();
+        for &(_, p) in &self.popouts {
+            insert_beside(&mut layout, at, p, true);
+        }
+        layout
     }
 
     /// Link the focused pane with pane `j`: from then on each follows the other's active note.

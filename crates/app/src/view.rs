@@ -1432,12 +1432,8 @@ pub fn add_graph(app: &mut App, dom: &mut Dom, info: &ViewInfo) {
     dom.nodes[pane].draw = g.paint(dom.nodes[pane].rect, &colors, &text);
 }
 
-pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
-    let pal = palette(app);
-    let mut info = ViewInfo::default();
-    let mut dom = Dom::new();
-    dom.nodes[0].el.classes.push(if app.dark { "theme-dark" } else { "theme-light" }.to_string());
-    let ws = dom.add(0, El::div().class("workspace"));
+/// The main window: ribbon, sidebars, the split panes and the status bar.
+fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewInfo, viewport_h: f32) {
     let show_ribbon = app.config.appearance.bool("showRibbon", true);
     let ribbon = dom.add(ws, El::div().class("workspace-ribbon").class_if(!show_ribbon, "is-hidden"));
     let ribbon_action = |dom: &mut Dom, icon: &str, cmd: &str, active: bool| {
@@ -1459,7 +1455,7 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
         if app.disabled_by(cmd).is_some() {
             continue;
         }
-        ribbon_action(&mut dom, icon, cmd, active);
+        ribbon_action(dom, icon, cmd, active);
     }
     for r in &app.plugins.ext.reg.ribbon {
         dom.add(
@@ -1473,7 +1469,7 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
         (if app.dark { "sun" } else { "moon" }, "theme:toggle-light-dark", false),
         ("settings", "app:open-settings", app.settings.is_some()),
     ] {
-        ribbon_action(&mut dom, icon, cmd, active);
+        ribbon_action(dom, icon, cmd, active);
     }
     let left_w = app.anims.toward("left", app.left_open);
     if left_w > 0.01 {
@@ -1492,7 +1488,7 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
             if app.disabled_by(cmd).is_some() {
                 continue;
             }
-            icon_button(&mut dom, head, icon, cmd, app.panel == panel);
+            icon_button(dom, head, icon, cmd, app.panel == panel);
         }
         let cmd = match app.panel {
             Panel::Files => "file-explorer:open",
@@ -1504,15 +1500,15 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
             dom.add(left, El::div().class("pane-empty").text(format!("{name} is turned off.")));
         } else {
             match app.panel {
-                Panel::Files => sidebar_files(app, &mut dom, left, viewport_h),
-                Panel::Search => sidebar_search(app, &mut dom, left),
-                Panel::Bookmarks => crate::panes::bookmarks(app, &mut dom, left),
-                Panel::Tags => crate::panes::tags(app, &mut dom, left),
+                Panel::Files => sidebar_files(app, dom, left, viewport_h),
+                Panel::Search => sidebar_search(app, dom, left),
+                Panel::Bookmarks => crate::panes::bookmarks(app, dom, left),
+                Panel::Tags => crate::panes::tags(app, dom, left),
             }
         }
     }
     let root = dom.add(ws, El::div().class("workspace-split mod-root"));
-    split_layout(app, &mut dom, root, &app.layout, &mut Vec::new(), &pal, &mut info, viewport_h);
+    split_layout(app, dom, root, &app.layout, &mut Vec::new(), pal, info, viewport_h);
     let right_w = app.anims.toward("right", app.right_open);
     if right_w > 0.01 {
         let mut el = El::div().class("workspace-split mod-right-split");
@@ -1520,7 +1516,7 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
             el = el.style(&format!("width: {:.1}px", 250.0 * right_w));
         }
         let right = dom.add(ws, el);
-        right_sidebar(app, &mut dom, right);
+        right_sidebar(app, dom, right);
     }
     let status = dom.add(0, El::div().class("status-bar"));
     // What the element under the pointer does, with its hotkey.
@@ -1577,6 +1573,10 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
         status,
         El::div().class("status-bar-item").text(format!("{} notes", app.store.index.notes().count())),
     );
+}
+
+/// Prompts, the hover preview, settings, menus and notices, over the window.
+fn overlays(app: &App, dom: &mut Dom, viewport_h: f32) {
     if let Some(p) = &app.prompt {
         let t = app.anims.t("prompt");
         let mut el = El::div().class("prompt");
@@ -1617,8 +1617,8 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
             dom.add(row, El::div().class("suggestion-aux").text(item.aux.clone()));
         }
     }
-    hover_popover(app, &mut dom, viewport_h);
-    crate::settings::modal(app, &mut dom);
+    hover_popover(app, dom, viewport_h);
+    crate::settings::modal(app, dom);
     if let Some(m) = &app.menu {
         // Open toward the inside of the window when there is no room at the pointer.
         let x =
@@ -1668,6 +1668,30 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
                 dom.nodes.len()
             )),
         );
+    }
+}
+
+/// The window's view. `solo` is a pane shown alone in a window of its own; the menus, prompts
+/// and notices show in the window whose pane has the keyboard.
+pub fn build(app: &App, viewport_h: f32, solo: Option<usize>) -> (Dom, ViewInfo) {
+    let pal = palette(app);
+    let mut info = ViewInfo::default();
+    let mut dom = Dom::new();
+    dom.nodes[0].el.classes.push(if app.dark { "theme-dark" } else { "theme-light" }.to_string());
+    let ws = dom.add(0, El::div().class("workspace"));
+    match solo {
+        Some(p) => {
+            let root = dom.add(ws, El::div().class("workspace-split mod-root"));
+            pane(app, &mut dom, root, p, &pal, &mut info, viewport_h);
+        }
+        None => chrome(app, &mut dom, ws, &pal, &mut info, viewport_h),
+    }
+    let here = match solo {
+        Some(p) => app.pane == p,
+        None => !app.is_popped(app.pane),
+    };
+    if here {
+        overlays(app, &mut dom, viewport_h);
     }
     for (id, y) in &app.scrolls {
         if let Some(n) = dom.by_id(id) {

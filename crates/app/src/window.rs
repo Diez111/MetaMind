@@ -65,6 +65,47 @@ struct Win {
     watcher: Option<std::thread::Thread>,
     /// A vault being indexed for the first time; the welcome screen shows its progress.
     indexing: Option<Arc<Progress>>,
+    /// Pop-out windows, each showing one pane.
+    pops: Vec<Pop>,
+    /// While handling a pop-out window: its id. Its state is then swapped into the fields above.
+    solo: Option<u32>,
+}
+
+/// A pop-out window and the per-window state that `Win` holds for the main window.
+struct Pop {
+    id: u32,
+    title: String,
+    window: Option<Arc<Window>>,
+    surface: Option<softbuffer::Surface<Arc<Window>, Arc<Window>>>,
+    pixmap: Option<Pixmap>,
+    frame: Option<Frame>,
+    mouse: (f32, f32),
+    dragging: bool,
+    pointer: bool,
+    ime_area: Option<rustsidian_ui::Rect>,
+}
+
+fn new_window(
+    el: &ActiveEventLoop,
+    title: &str,
+    size: LogicalSize<f64>,
+    visible: bool,
+) -> Result<Arc<Window>, String> {
+    let icon = Icon::from_rgba(rustsidian_app::icon::rgba(64), 64, 64).ok();
+    let attrs = Window::default_attributes()
+        .with_title(title)
+        .with_window_icon(icon)
+        .with_inner_size(size)
+        .with_visible(visible);
+    let window = el.create_window(attrs).map_err(|e| format!("cannot create a window: {e}"))?;
+    window.set_ime_allowed(true);
+    Ok(Arc::new(window))
+}
+
+fn new_surface(window: &Arc<Window>) -> Result<softbuffer::Surface<Arc<Window>, Arc<Window>>, String> {
+    softbuffer::Context::new(window.clone())
+        .and_then(|cx| softbuffer::Surface::new(&cx, window.clone()))
+        .map_err(|e| format!("cannot create a drawing surface: {e}"))
 }
 
 fn named(k: &NamedKey) -> Option<&'static str> {
@@ -109,7 +150,14 @@ impl Win {
         if let Some(welcome) = &mut self.welcome {
             self.welcome_dom = Some(welcome.render(&mut self.fonts, pixmap, scale));
         } else if let Some(app) = &mut self.app {
-            self.frame = Some(rustsidian_app::render(app, &mut self.fonts, pixmap, scale));
+            let solo = match self.solo {
+                Some(id) => match app.window_pane(id) {
+                    Some(p) => Some(p),
+                    None => return,
+                },
+                None => None,
+            };
+            self.frame = Some(rustsidian_app::render_window(app, &mut self.fonts, pixmap, scale, solo));
             if let (true, Some(frame)) = (app.screenshot, &self.frame) {
                 app.copy_screenshot(frame, pixmap, scale);
                 // The notice shows on the next frame; the copied one is this frame, without it.
@@ -154,6 +202,10 @@ impl Win {
 
     /// Send the screen-reader tree for the frame just drawn, if a screen reader is listening.
     fn update_access(&mut self) {
+        // The screen-reader adapter belongs to the main window.
+        if self.solo.is_some() {
+            return;
+        }
         let scale = self.window.as_ref().map_or(1.0, |w| w.scale_factor());
         let title = self.title();
         let Some(adapter) = &mut self.access else { return };
@@ -186,9 +238,95 @@ impl Win {
         self.request_redraw();
     }
 
+    /// Redraw every window: they all show the same vault.
     fn request_redraw(&self) {
-        if let Some(w) = &self.window {
+        for w in self.window.iter().chain(self.pops.iter().filter_map(|p| p.window.as_ref())) {
             w.request_redraw();
+        }
+    }
+
+    /// Run `f` with pop-out window `i`'s state in place of the main window's.
+    fn with_pop(&mut self, i: usize, f: impl FnOnce(&mut Win)) {
+        let swap = |w: &mut Win, i: usize| {
+            let p = &mut w.pops[i];
+            std::mem::swap(&mut w.window, &mut p.window);
+            std::mem::swap(&mut w.surface, &mut p.surface);
+            std::mem::swap(&mut w.pixmap, &mut p.pixmap);
+            std::mem::swap(&mut w.frame, &mut p.frame);
+            std::mem::swap(&mut w.mouse, &mut p.mouse);
+            std::mem::swap(&mut w.dragging, &mut p.dragging);
+            std::mem::swap(&mut w.pointer, &mut p.pointer);
+            std::mem::swap(&mut w.ime_area, &mut p.ime_area);
+        };
+        swap(self, i);
+        self.solo = Some(self.pops[i].id);
+        f(self);
+        self.solo = None;
+        swap(self, i);
+    }
+
+    /// Open a window for each pane the app moved out, close those whose pane is gone, and keep
+    /// their titles on the note they show.
+    fn sync_windows(&mut self, el: &ActiveEventLoop) {
+        let Some(app) = &self.app else {
+            if !self.pops.is_empty() {
+                self.pops.clear();
+                if let Some(w) = &self.window {
+                    w.set_title(&self.title());
+                }
+            }
+            return;
+        };
+        let titles: Vec<(u32, String)> = app
+            .popouts
+            .iter()
+            .map(|&(id, pane)| {
+                let (tabs, active) = app.pane_tabs(pane);
+                let note = tabs
+                    .get(active)
+                    .map_or("Rustsidian".to_string(), |t| format!("{} - Rustsidian", t.title()));
+                (id, note)
+            })
+            .collect();
+        self.pops.retain(|p| titles.iter().any(|t| t.0 == p.id));
+        for p in &mut self.pops {
+            let Some((_, t)) = titles.iter().find(|t| t.0 == p.id) else { continue };
+            if let (true, Some(w)) = (*t != p.title, &p.window) {
+                w.set_title(t);
+                p.title.clone_from(t);
+            }
+        }
+        for (id, t) in titles {
+            if self.pops.iter().any(|p| p.id == id) {
+                continue;
+            }
+            let made = new_window(el, &t, LogicalSize::new(800.0, 700.0), true)
+                .and_then(|w| new_surface(&w).map(|s| (w, s)));
+            let (window, surface) = match made {
+                Ok(ws) => ws,
+                Err(e) => {
+                    // Without a window the pane goes back to the main one.
+                    if let Some(app) = &mut self.app {
+                        app.dock_window(id);
+                        app.notice = Some(format!("Cannot open a new window: {e}"));
+                    }
+                    self.request_redraw();
+                    continue;
+                }
+            };
+            window.request_redraw();
+            self.pops.push(Pop {
+                id,
+                title: t,
+                window: Some(window),
+                surface: Some(surface),
+                pixmap: None,
+                frame: None,
+                mouse: (0.0, 0.0),
+                dragging: false,
+                pointer: false,
+                ime_area: None,
+            });
         }
     }
 
@@ -397,32 +535,20 @@ impl ApplicationHandler<UserEvent> for Win {
         if self.window.is_some() {
             return;
         }
-        let icon = Icon::from_rgba(rustsidian_app::icon::rgba(64), 64, 64).ok();
-        let attrs = Window::default_attributes()
-            .with_title(self.title())
-            .with_window_icon(icon)
-            .with_inner_size(LogicalSize::new(1280.0, 800.0))
-            // The accessibility adapter must exist before the window is first shown.
-            .with_visible(false);
-        let window = match el.create_window(attrs) {
-            Ok(w) => Arc::new(w),
+        // The accessibility adapter must exist before the window is first shown.
+        let made = new_window(el, &self.title(), LogicalSize::new(1280.0, 800.0), false)
+            .and_then(|w| new_surface(&w).map(|s| (w, s)));
+        let window = match made {
+            Ok((w, s)) => {
+                self.surface = Some(s);
+                w
+            }
             Err(e) => {
-                eprintln!("rustsidian: cannot create a window: {e}");
+                eprintln!("rustsidian: {e}");
                 el.exit();
                 return;
             }
         };
-        window.set_ime_allowed(true);
-        let surface = softbuffer::Context::new(window.clone())
-            .and_then(|cx| softbuffer::Surface::new(&cx, window.clone()));
-        match surface {
-            Ok(s) => self.surface = Some(s),
-            Err(e) => {
-                eprintln!("rustsidian: cannot create a drawing surface: {e}");
-                el.exit();
-                return;
-            }
-        }
         if let Some(app) = &mut self.app {
             app.set_system_dark(window.theme().map(|t| t == Theme::Dark));
         }
@@ -458,8 +584,24 @@ impl ApplicationHandler<UserEvent> for Win {
         }
     }
 
-    fn window_event(&mut self, el: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
-        if let (Some(access), Some(window)) = (&mut self.access, &self.window) {
+    fn window_event(&mut self, el: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        let pop = self.pops.iter().position(|p| p.window.as_ref().is_some_and(|w| w.id() == id));
+        match pop {
+            Some(i) => self.with_pop(i, |w| w.event(el, event)),
+            None => self.event(el, event),
+        }
+    }
+
+    fn about_to_wait(&mut self, el: &ActiveEventLoop) {
+        self.sync_windows(el);
+        self.wait(el);
+    }
+}
+
+impl Win {
+    /// An event for the main window, or for the pop-out window `self.solo`.
+    fn event(&mut self, el: &ActiveEventLoop, event: WindowEvent) {
+        if let (Some(access), Some(window), None) = (&mut self.access, &self.window, self.solo) {
             access.process_event(window, &event);
         }
         match event {
@@ -496,6 +638,10 @@ impl ApplicationHandler<UserEvent> for Win {
         let scale = self.window.as_ref().map_or(1.0, |w| w.scale_factor()) as f32;
         let Some(app) = &mut self.app else { return };
         match event {
+            WindowEvent::CloseRequested if self.solo.is_some() => {
+                app.dock_window(self.solo.unwrap_or_default());
+                self.request_redraw();
+            }
             WindowEvent::CloseRequested => {
                 app.save_all();
                 el.exit();
@@ -503,8 +649,12 @@ impl ApplicationHandler<UserEvent> for Win {
             WindowEvent::Focused(false) => app.save_all(),
             // These preferences have no change event on every OS, so they are re-read on focus.
             WindowEvent::Focused(true) => {
+                let moved = app.is_popped(app.pane) || self.solo.is_some();
+                if moved {
+                    app.focus_window(self.solo);
+                }
                 let (reduced, contrast) = (ospref::reduced_motion(), ospref::high_contrast());
-                if (reduced, contrast) != (app.reduced_motion, app.high_contrast) {
+                if moved || (reduced, contrast) != (app.reduced_motion, app.high_contrast) {
                     app.set_reduced_motion(reduced);
                     app.high_contrast = contrast;
                     self.request_redraw();
@@ -608,7 +758,7 @@ impl ApplicationHandler<UserEvent> for Win {
         }
     }
 
-    fn about_to_wait(&mut self, el: &ActiveEventLoop) {
+    fn wait(&mut self, el: &ActiveEventLoop) {
         let frame_due = self.last_anim.elapsed() >= self.frame_interval;
         let Some(app) = &mut self.app else {
             // Welcome screen: only its own animations and indexing progress need frames.
@@ -772,6 +922,8 @@ pub fn run(vault: Option<&Path>, note: Option<&str>, profile: bool) -> i32 {
         generation: Arc::new(AtomicU64::new(0)),
         watcher: None,
         indexing: None,
+        pops: Vec::new(),
+        solo: None,
     };
     match (initial, pending) {
         (Some(app), _) => win.install(app),

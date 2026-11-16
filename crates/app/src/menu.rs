@@ -672,6 +672,7 @@ fn tab_items(b: &mut Builder<'_>, i: usize) {
     if i == b.app.active && !p.is_empty() {
         b.item("separator-vertical", "Split right", "workspace:split-vertical");
         b.item("separator-horizontal", "Split down", "workspace:split-horizontal");
+        b.item("arrow-up-right", "Move to new window", "workspace:move-to-new-window");
         let app = b.app;
         let group = app.panes[app.pane].link;
         let others: Vec<(usize, String)> = (0..app.panes.len())

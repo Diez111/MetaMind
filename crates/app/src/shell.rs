@@ -119,6 +119,7 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("workspace:close-all", "Close all tabs", ""),
     ("workspace:split-vertical", "Split right", ""),
     ("workspace:split-horizontal", "Split down", ""),
+    ("workspace:move-to-new-window", "Move current tab to new window", ""),
     ("workspace:undo-close-pane", "Reopen closed tab", "Ctrl+Shift+T"),
     ("workspace:next-tab", "Go to next tab", "Ctrl+Tab"),
     ("workspace:previous-tab", "Go to previous tab", "Ctrl+Shift+Tab"),
@@ -389,6 +390,11 @@ pub struct App {
     /// Index of the focused pane.
     pub pane: usize,
     pub pane_drag: Option<crate::split::PaneDrag>,
+    /// Panes shown in their own windows, as (window id, pane). They are not in `layout`.
+    pub popouts: Vec<(u32, usize)>,
+    pub(crate) next_popout: u32,
+    /// The main window's pane focused last, to focus again when that window is.
+    pub(crate) last_main: usize,
     /// The focused note last seen by linked panes, and the note and buffer version last mirrored.
     pub(crate) followed: Option<String>,
     pub(crate) mirrored: Option<(String, u64)>,
@@ -609,6 +615,9 @@ impl App {
             layout: crate::split::Layout::Leaf(0),
             pane: 0,
             pane_drag: None,
+            popouts: Vec::new(),
+            next_popout: 0,
+            last_main: 0,
             followed: None,
             mirrored: None,
             left_open: true,
@@ -1380,6 +1389,7 @@ impl App {
             "workspace:close" => self.close_tab(self.active),
             "workspace:split-vertical" => self.split(true),
             "workspace:split-horizontal" => self.split(false),
+            "workspace:move-to-new-window" => self.move_to_window(),
             "workspace:unlink-pane" => self.unlink_pane(),
             "workspace:close-others" => {
                 for i in (0..self.tabs.len()).rev().filter(|&i| i != self.active).collect::<Vec<_>>() {

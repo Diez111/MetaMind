@@ -49,12 +49,23 @@ pub struct Frame {
 
 /// Build, style, lay out and paint the window into `pixmap`.
 pub fn render(app: &mut App, fonts: &mut Fonts, pixmap: &mut Pixmap, scale: f32) -> Frame {
+    render_window(app, fonts, pixmap, scale, None)
+}
+
+/// Like `render`, for a window: `solo` is the pane a pop-out window shows alone.
+pub fn render_window(
+    app: &mut App,
+    fonts: &mut Fonts,
+    pixmap: &mut Pixmap,
+    scale: f32,
+    solo: Option<usize>,
+) -> Frame {
     let t = Instant::now();
     app.pump_plugins();
     app.refresh_derived();
     app.animate_changes();
     app.window_w = pixmap.width() as f32 / scale;
-    let (mut dom, info) = view::build(app, pixmap.height() as f32 / scale);
+    let (mut dom, info) = view::build(app, pixmap.height() as f32 / scale, solo);
     let env = app.env();
     dom.style(&app.theme, env);
     dom.layout(fonts, pixmap.width() as f32 / scale, pixmap.height() as f32 / scale);

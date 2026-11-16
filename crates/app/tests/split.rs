@@ -115,3 +115,63 @@ fn panes_are_restored_with_the_session() {
     assert_eq!(right, ["A.md", "B.md"]);
     assert_eq!(shown(&app, 1), Some("B.md"));
 }
+
+#[test]
+fn a_tab_moved_to_a_window_renders_alone_there_and_focus_follows_the_window() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("A.md");
+    app.open_note("B.md");
+    app.run("workspace:move-to-new-window");
+    let &[(id, pane)] = app.popouts.as_slice() else { panic!("{:?}", app.popouts) };
+    assert_eq!(app.window_pane(id), Some(pane));
+    assert_eq!(app.pane, pane);
+    assert_eq!(shown(&app, pane), Some("B.md"));
+    assert_eq!(shown(&app, 0), Some("A.md"));
+    assert_eq!(app.layout, Layout::Leaf(0));
+
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(800, 600).unwrap();
+    let f = rustsidian_app::render_window(&mut app, &mut fonts, &mut pm, 1.0, Some(pane));
+    assert_eq!(f.info.panes.iter().map(|p| p.0).collect::<Vec<_>>(), [pane]);
+    let main = frame(&mut app, &mut fonts);
+    assert_eq!(main.info.panes.iter().map(|p| p.0).collect::<Vec<_>>(), [0]);
+
+    app.focus_window(None);
+    assert_eq!(app.pane, 0);
+    app.focus_window(Some(id));
+    assert_eq!(app.pane, pane);
+    app.run("workspace:split-vertical");
+    assert_eq!(app.panes.len(), 2, "a pop-out window holds one pane");
+}
+
+#[test]
+fn closing_a_window_docks_its_pane_and_closing_its_last_tab_closes_it() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("A.md");
+    app.open_note("B.md");
+    app.run("workspace:move-to-new-window");
+    let (id, pane) = app.popouts[0];
+    let saved = app.session();
+    assert_eq!(app.layout, Layout::Leaf(0));
+    assert!(saved["layout"]["kids"].is_array(), "the session keeps the window's pane: {saved}");
+
+    app.dock_window(id);
+    assert!(app.popouts.is_empty());
+    let Layout::Split { row: true, kids } = &app.layout else { panic!("{:?}", app.layout) };
+    assert_eq!(kids.iter().map(|k| k.0.clone()).collect::<Vec<_>>(), [Layout::Leaf(0), Layout::Leaf(pane)]);
+
+    app.focus_pane(pane);
+    app.run("workspace:move-to-new-window");
+    let (id, pane) = app.popouts[0];
+    assert_eq!(app.window_pane(id), Some(pane));
+    app.run("workspace:close");
+    let mut fonts = Fonts::new();
+    frame(&mut app, &mut fonts);
+    assert!(app.popouts.is_empty());
+    assert_eq!(app.panes.len(), 1);
+    assert_eq!(app.layout, Layout::Leaf(0));
+    assert_eq!(app.pane, 0);
+    assert_eq!(shown(&app, 0), Some("A.md"));
+}

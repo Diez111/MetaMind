@@ -58,7 +58,7 @@ impl App {
             "tabs": tabs_json(&self.tabs),
             "active": self.active,
             "panes": panes,
-            "layout": crate::split::layout_json(&self.layout),
+            "layout": crate::split::layout_json(&self.docked_layout()),
             "pane": self.pane,
             "left": self.left_open,
             "right": self.right_open,
