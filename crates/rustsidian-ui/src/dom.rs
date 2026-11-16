@@ -439,10 +439,14 @@ impl Dom {
             Dim::Pct(p) if max_w.is_finite() => Some(max_w * p / 100.0),
             _ => None,
         };
-        let avail = (fixed_w.unwrap_or(max_w).min(s.max_w) - hx).max(0.0);
+        // An unbounded width stays infinite: `max-width: none` is f32::MAX, and a finite bound
+        // would let a grandchild's percentage resolve against it.
+        let bound = fixed_w.unwrap_or(max_w).min(s.max_w);
+        let avail = if bound >= f32::MAX { f32::INFINITY } else { (bound - hx).max(0.0) };
         let (mut w, mut h) = (0.0f32, 0.0f32);
         if let Some(text) = &n.el.text {
-            let (tw, th) = fonts.measure(text, &n.el.spans, &s.text, s.text.wrap.then_some(avail));
+            let wrap = s.text.wrap.then_some(avail.min(f32::MAX));
+            let (tw, th) = fonts.measure(text, &n.el.spans, &s.text, wrap);
             (w, h) = (tw, th);
         } else {
             let kids = self.flow_children(id);

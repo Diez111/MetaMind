@@ -136,3 +136,25 @@ fn text_queries() {
     let (wrapped_w, wrapped_h) = fonts.measure("aaa bbb ccc ddd eee fff", &[], &style, Some(60.0));
     assert!(wrapped_w <= 61.0 && wrapped_h >= 60.0);
 }
+
+#[test]
+fn percent_width_inside_a_row_child_stays_bounded() {
+    let mut theme = Theme::new();
+    theme.add_sheet(
+        "test",
+        "body { display: flex; flex-direction: column } .row { display: flex; align-items: flex-start }
+         .card { padding: 4px } .bar { width: 50%; height: 10px } .side { width: 100px; height: 10px }",
+    );
+    let mut d = Dom::new();
+    let row = d.add(0, El::div().class("row"));
+    let card = d.add(row, El::div().class("card").id("card"));
+    d.add(card, El::div().class("bar"));
+    d.add(row, El::div().class("side").id("side"));
+    d.style(&theme, Env::default());
+    d.layout(&mut Fonts::new(), 640.0, 400.0);
+    let rect = |id: &str| d.nodes[d.by_id(id).unwrap()].rect;
+    // A percentage of an unknown width has no preferred size, as in CSS.
+    assert!(rect("card").w < 640.0, "{:?}", rect("card"));
+    let side = rect("side");
+    assert!(side.w > 0.0 && side.x + side.w <= 640.0, "{side:?}");
+}
