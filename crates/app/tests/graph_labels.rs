@@ -15,13 +15,17 @@ fn crowded_labels_do_not_overlap() {
     let mut app = App::open(d.path()).unwrap();
     app.run("graph:open");
     let g = app.graph_view.as_mut().unwrap();
-    // Everything within a small area, zoomed in far enough for labels to show.
+    // The settled star, zoomed out until its labels crowd each other but still show.
     let n = g.graph.nodes.len();
     g.settle();
-    g.pos = (0..n).map(|i| [(i % 9) as f32 * 30.0, (i / 9) as f32 * 8.0]).collect();
+    assert!(!g.animating(), "the layout settles");
+    g.settings.text_fade = 3.0;
     g.auto_fit = false;
-    g.zoom = 2.0;
-    g.cam = [120.0, 36.0];
+    g.zoom = 0.3;
+    g.cam = [
+        g.pos.iter().map(|p| p[0]).sum::<f32>() / n as f32,
+        g.pos.iter().map(|p| p[1]).sum::<f32>() / n as f32,
+    ];
     let hub = g.graph.nodes.iter().position(|n| &*n.label == "Hub").unwrap();
     g.hover = Some(hub as u32);
     let style = TextStyle {
