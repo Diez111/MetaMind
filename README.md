@@ -76,7 +76,7 @@ against `SHA256SUMS.txt`.
 
 | System | Archive | Notes |
 |---|---|---|
-| Windows 10/11 x64 | `rustsidian-*-windows-x86_64.zip` | Unzip anywhere and run `rustsidian.exe` |
+| Windows 10/11 x64 | `rustsidian-*-windows-x86_64-setup.exe` or `.zip` | The installer needs no administrator rights, adds a Start menu entry, handles `rustsidian://` links and offers Rustsidian under "Open with" for `.md` files. Or unzip anywhere and run `rustsidian.exe` |
 | macOS (Apple silicon / Intel) | `rustsidian-*-macos-arm64.tar.gz` / `macos-x86_64` | Unsigned: right-click → Open the first time |
 | Linux x64 | `rustsidian-*-linux-x86_64.tar.gz` | Needs `libxkbcommon-x11` on X11 (`sudo apt install libxkbcommon-x11-0`) and `wl-clipboard`, `xclip` or `xsel` for copy and paste |
 
