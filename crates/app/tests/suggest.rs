@@ -105,9 +105,11 @@ fn ctrl_hover_on_a_link_previews_its_note() {
     assert!(!xs.iter().any(|&x| app.hover_link(&frame, &mut fonts, x, y, false)));
     assert!(xs.iter().any(|&x| app.hover_link(&frame, &mut fonts, x, y, true)));
     let h = app.hover_preview.as_ref().unwrap();
-    assert_eq!((h.path.as_str(), h.text.as_str()), ("dir/Second note.md", "# Second\nfirst line"));
+    assert_eq!((h.path.as_str(), h.text.as_str()), ("dir/Second note.md", "# Second\nfirst line\n"));
     let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
-    assert!(frame.dom.nodes.iter().any(|n| n.el.text.as_deref() == Some("first line")));
+    assert!(frame.dom.nodes.iter().any(
+        |n| n.el.text.as_deref() == Some("first line") && n.el.classes.iter().any(|c| c == "embed-line")
+    ));
     // Over plain text the preview closes.
     assert!(app.hover_link(&frame, &mut fonts, r.x + 2.0, y, true));
     assert!(app.hover_preview.is_none());

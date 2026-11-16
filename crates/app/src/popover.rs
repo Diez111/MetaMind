@@ -11,6 +11,7 @@ pub struct HoverPreview {
     pub path: String,
     /// Pointer position the popover opens from.
     pub at: (f32, f32),
+    /// Markdown body of the note without front matter, rendered like an embed.
     pub text: String,
 }
 
@@ -34,6 +35,14 @@ impl App {
         self.store.read(rel).map(|(t, _)| note_preview(&t)).unwrap_or_default()
     }
 
+    /// Markdown body of the file at `rel` for the hover popover, empty when it has none.
+    fn preview_body(&self, rel: &str) -> String {
+        if !path::extension(rel).eq_ignore_ascii_case("md") {
+            return String::new();
+        }
+        self.store.read(rel).map(|(t, _)| strip_front_matter(&t).trim_start().to_string()).unwrap_or_default()
+    }
+
     /// Show or hide the link preview for the pointer at (x, y). Returns true when it changed.
     pub fn hover_link(&mut self, frame: &Frame, fonts: &mut Fonts, x: f32, y: f32, ctrl: bool) -> bool {
         let target = ctrl.then(|| self.link_target_at(frame, fonts, x, y)).flatten();
@@ -46,7 +55,7 @@ impl App {
             return false;
         }
         self.hover_preview = target.map(|path| {
-            let text = self.preview_of(&path);
+            let text = self.preview_body(&path);
             HoverPreview { path, at: (x, y), text }
         });
         true

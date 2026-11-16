@@ -2001,9 +2001,14 @@ fn hover_popover(app: &App, dom: &mut Dom, viewport_h: f32) {
             "left: {x:.1}px; top: {y:.1}px; width: {POPOVER_W}px; max-height: {POPOVER_H}px"
         )),
     );
-    dom.add(pop, El::div().class("hover-popover-title").text(path::stem(&h.path).to_string()));
-    let body = if h.text.is_empty() { "No preview for this file" } else { h.text.as_str() };
-    for line in body.lines() {
-        dom.add(pop, El::div().class("hover-popover-line").text(line.to_string()));
+    let action = format!("open:{}", h.path);
+    dom.add(
+        pop,
+        El::div().class("hover-popover-title").text(path::stem(&h.path).to_string()).action(action.clone()),
+    );
+    if h.text.trim().is_empty() {
+        dom.add(pop, El::div().class("hover-popover-empty").text("No preview for this file"));
+    } else {
+        embedded_blocks(dom, pop, &h.text, &action, &palette(app));
     }
 }

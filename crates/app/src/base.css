@@ -182,7 +182,7 @@ body {
 .editor-suggest-preview-line { color: var(--text-muted); font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden }
 .hover-popover { position: absolute; display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow: hidden }
 .hover-popover-title { font-weight: 600; color: var(--text-normal); white-space: nowrap; overflow: hidden }
-.hover-popover-line { color: var(--text-muted); font-size: var(--font-ui-small); white-space: nowrap; overflow: hidden }
+.hover-popover-empty { color: var(--text-muted); font-size: var(--font-ui-small) }
 .menu { position: absolute; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); padding: 4px; display: flex; flex-direction: column; overflow: hidden }
 .menu-item { height: 28px; padding: 0 10px; border-radius: var(--radius-s); display: flex; align-items: center; gap: 10px; white-space: nowrap; color: var(--text-normal) }
 .menu-item.is-selected, .menu-item:hover { background-color: var(--background-modifier-hover) }
