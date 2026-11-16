@@ -14,6 +14,7 @@ fn unlinked_mentions_are_listed_and_linked() {
         fs::write(d.path().join(p), t).unwrap();
     }
     let mut app = App::open(d.path()).unwrap();
+    app.open_note("Notes.md");
     app.open_note("Plan.md");
     app.right_open = true;
     app.run("backlinks:toggle-unlinked");
@@ -27,6 +28,8 @@ fn unlinked_mentions_are_listed_and_linked() {
         fs::read_to_string(d.path().join("Notes.md")).unwrap(),
         "The [[Plan|plan]] and the [[Plan|roadmap]]. Planning is not a mention.\n"
     );
+    let tab = app.tabs.iter().find(|t| t.path == "Notes.md").unwrap();
+    assert!(tab.editor.buf.text().starts_with("The [[Plan|plan]]"), "the open tab shows the links");
     app.refresh_derived();
     assert!(app.mentions.as_ref().unwrap().files.is_empty());
 }

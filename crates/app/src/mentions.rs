@@ -204,6 +204,8 @@ impl App {
                     c.update(fid, Some(&out));
                 }
                 self.files_changed(&[rel.to_string()]);
+                // The write reindexed the note, so `files_changed` sees no change to reload.
+                self.reload_tabs(&[rel.to_string()]);
                 self.mentions = None;
                 self.notice = Some(format!("Linked {} mention(s) in {}", hits.len(), path::strip_md(rel)));
             }
