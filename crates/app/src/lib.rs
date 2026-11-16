@@ -25,6 +25,7 @@ pub mod session;
 pub mod settings;
 pub mod shell;
 pub mod spell;
+pub mod split;
 pub mod suggest;
 pub mod templates;
 pub mod update;
@@ -83,7 +84,10 @@ pub fn render(app: &mut App, fonts: &mut Fonts, pixmap: &mut Pixmap, scale: f32)
 pub fn pane_image(frame: &Frame, pixmap: &Pixmap, scale: f32) -> Result<Pixmap, String> {
     let has = |n: &rustsidian_ui::dom::Node, c: &str| n.el.classes.iter().any(|x| x == c);
     let nodes = &frame.dom.nodes;
-    let root = nodes.iter().position(|n| has(n, "mod-root")).ok_or("no pane is open")?;
+    let root = nodes
+        .iter()
+        .position(|n| has(n, "workspace-leaf") && has(n, "mod-active"))
+        .ok_or("no pane is open")?;
     let r = nodes[root..].iter().find(|n| has(n, "view-content")).ok_or("no pane is open")?.rect;
     let (x0, y0) = ((r.x * scale).round().max(0.0), (r.y * scale).round().max(0.0));
     let x1 = ((r.x + r.w) * scale).round().min(pixmap.width() as f32);
@@ -112,7 +116,7 @@ impl App {
 
     /// Left click at window coordinates.
     pub fn click(&mut self, frame: &Frame, fonts: &mut Fonts, x: f32, y: f32, shift: bool) {
-        if self.menu_click(frame, x, y) {
+        if self.menu_click(frame, x, y) || !self.press_pane(frame, x, y) {
             return;
         }
         if let Some((_, a)) = frame.dom.action_at(x, y).filter(|(_, a)| a.starts_with("suggest:")) {
@@ -135,6 +139,15 @@ impl App {
             if action == "file-explorer:sort-menu" {
                 let r = frame.dom.nodes[node].rect;
                 return self.sort_menu(r.x, r.y + r.h);
+            }
+            if let Some((k, path)) = action.strip_prefix("pane-resize:").and_then(|a| a.split_once(':')) {
+                let path = path.split('.').filter_map(|i| i.parse().ok()).collect();
+                let parent = frame.dom.nodes[node].parent;
+                if let (Ok(k), Some(p)) = (k.parse(), parent) {
+                    let rect = frame.dom.nodes[p].rect;
+                    self.pane_drag = Some(split::PaneDrag { path, k, rect });
+                }
+                return;
             }
             if let Some(key) = action.strip_prefix("graph:slider:") {
                 return self.graph_slider_press(key, frame.dom.nodes[node].rect, x);
@@ -172,8 +185,23 @@ impl App {
         }
     }
 
+    /// A press in a pane other than the focused one focuses it first. Returns whether the press
+    /// should go on: only tab bar actions do, as the rest of that pane was laid out unfocused.
+    pub(crate) fn press_pane(&mut self, frame: &Frame, x: f32, y: f32) -> bool {
+        let hit = frame.info.panes.iter().find(|(_, leaf, _)| frame.dom.nodes[*leaf].rect.contains(x, y));
+        let Some(&(p, ..)) = hit.filter(|(p, ..)| *p != self.pane) else { return true };
+        self.focus_pane(p);
+        frame.dom.action_at(x, y).is_some_and(|(_, a)| {
+            ["tab:", "close-tab:", "toggle-pin:"].iter().any(|t| a.starts_with(t))
+                || a == "file-explorer:new-file"
+        })
+    }
+
     /// Extend the selection while dragging with the button held.
     pub fn drag(&mut self, frame: &Frame, fonts: &mut Fonts, x: f32, y: f32) {
+        if self.pane_drag.is_some() {
+            return self.pane_drag_to(x, y);
+        }
         if self.explorer_drag.is_some() {
             return self.explorer_drag_to(frame, x, y);
         }
@@ -210,6 +238,9 @@ impl App {
         if Some(node) == frame.info.editor {
             return self.scroll_editor(lines.round() as isize);
         }
+        if let Some(&(p, ..)) = frame.info.panes.iter().find(|e| e.2 == Some(node)) {
+            return self.scroll_pane(p, lines.round() as isize);
+        }
         if let Some(id) = frame.dom.nodes[node].el.id.clone() {
             let cur = frame.dom.nodes[node].scroll_y;
             self.scrolls.insert(id, (cur + lines * 40.0).clamp(0.0, frame.dom.max_scroll(node)));
@@ -219,6 +250,9 @@ impl App {
     /// Middle click: closes the tab under the pointer.
     pub fn middle_click(&mut self, frame: &Frame, x: f32, y: f32) {
         self.menu = None;
+        if !self.press_pane(frame, x, y) {
+            return;
+        }
         let Some((_, action)) = frame.dom.action_at(x, y) else { return };
         match action {
             "graph:focus" => self.run("graph:close"),
@@ -234,6 +268,9 @@ impl App {
 
     /// The left button was released.
     pub fn release(&mut self) {
+        if self.pane_drag.take().is_some() {
+            return;
+        }
         if let Some(d) = self.explorer_drag.take() {
             match (d.moving, d.target) {
                 (false, _) => self.run(&d.action),

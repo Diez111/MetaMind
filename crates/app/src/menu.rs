@@ -78,6 +78,9 @@ impl App {
         if self.prompt.is_some() || self.settings.is_some() {
             return;
         }
+        if !self.press_pane(frame, x, y) {
+            return;
+        }
         let action = frame.dom.action_at(x, y).map(|(_, a)| a.to_string());
         let mut b = Builder { app: self, items: Vec::new() };
         match action.as_deref() {
@@ -331,7 +334,7 @@ impl App {
             Ok(plan) => {
                 self.bookmarks_moved(&plan.moves);
                 for (old, new) in &plan.moves {
-                    for t in self.tabs.iter_mut().filter(|t| t.path.eq_ignore_ascii_case(old)) {
+                    for t in self.all_tabs_mut().filter(|t| t.path.eq_ignore_ascii_case(old)) {
                         t.path = new.clone();
                     }
                     self.plugins.push(ext_api::Event::Rename { path: new.clone(), old_path: old.clone() });
@@ -355,13 +358,13 @@ impl App {
     /// Replace the text of open tabs whose files were rewritten on disk.
     fn reload_tabs(&mut self, paths: &[String]) {
         for p in paths {
-            let Some(i) = self.tabs.iter().position(|t| t.path.eq_ignore_ascii_case(p)) else { continue };
             if let Ok((text, stamp)) = self.store.read(p) {
-                let tab = &mut self.tabs[i];
-                let head = tab.editor.buf.sels[0].head.min(text.len());
-                tab.editor = editor_core::Editor::new(&text);
-                tab.editor.buf.set_sels(vec![Sel::cursor(head)]);
-                tab.stamp = stamp;
+                for tab in self.all_tabs_mut().filter(|t| t.path.eq_ignore_ascii_case(p)) {
+                    let head = tab.editor.buf.sels[0].head.min(text.len());
+                    tab.editor = editor_core::Editor::new(&text);
+                    tab.editor.buf.set_sels(vec![Sel::cursor(head)]);
+                    tab.stamp = stamp;
+                }
             }
         }
     }
@@ -434,12 +437,7 @@ impl App {
         let gone = |p: &str| p.eq_ignore_ascii_case(rel) || p.to_lowercase().starts_with(&prefix);
         match self.store.delete(rel) {
             Ok(dest) => {
-                let before = self.tabs.len();
-                let active_gone = self.tab().is_some_and(|t| gone(&t.path));
-                self.tabs.retain(|t| !gone(&t.path));
-                if active_gone || self.tabs.len() != before {
-                    self.active = self.active.min(self.tabs.len().saturating_sub(1));
-                }
+                self.retain_tabs(|t| !gone(&t.path));
                 self.plugins.push(ext_api::Event::Delete { path: rel.to_string() });
                 self.files_changed(&[]);
                 self.notice = Some(match dest {
@@ -668,6 +666,26 @@ fn tab_items(b: &mut Builder<'_>, i: usize) {
     }
     b.item("x", "Close all", "workspace:close-all");
     b.separator();
+    if i == b.app.active && !p.is_empty() {
+        b.item("separator-vertical", "Split right", "workspace:split-vertical");
+        b.item("separator-horizontal", "Split down", "workspace:split-horizontal");
+        let app = b.app;
+        let group = app.panes[app.pane].link;
+        let others: Vec<(usize, String)> = (0..app.panes.len())
+            .filter(|&j| j != app.pane && (group.is_none() || app.panes[j].link != group))
+            .filter_map(|j| {
+                let (tabs, active) = app.pane_tabs(j);
+                Some((j, tabs.get(active)?.title().to_string()))
+            })
+            .collect();
+        for (j, title) in others {
+            b.item("link", &format!("Link with “{title}”"), format!("link-pane:{j}"));
+        }
+        if group.is_some() {
+            b.item("unlink", "Unlink tab", "workspace:unlink-pane");
+        }
+        b.separator();
+    }
     b.item("pin", if pinned { "Unpin" } else { "Pin" }, format!("toggle-pin:{i}"));
     if !p.is_empty() {
         let mark = if b.app.is_bookmarked(&p) { "Remove bookmark" } else { "Bookmark" };

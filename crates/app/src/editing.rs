@@ -323,8 +323,8 @@ impl App {
             "editor:unfold-all" => t.fold_all(false),
             "editor:insert-table" if t.mode != ViewMode::Reading => t.insert_table(now),
             "editor:toggle-vim" => {
-                let on = self.tabs.iter().any(|t| t.vim.is_some());
-                for t in &mut self.tabs {
+                let on = self.all_tabs().any(|t| t.vim.is_some());
+                for t in self.all_tabs_mut() {
                     t.vim = (!on).then(Default::default);
                 }
                 self.vim = !on;

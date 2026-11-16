@@ -167,6 +167,8 @@ pub struct ViewInfo {
     pub graph_panel: Option<NodeId>,
     pub canvas: Option<NodeId>,
     pub canvas_colors: Vec<NodeId>,
+    /// Each pane with its leaf element and, unless focused, its scrolling view.
+    pub panes: Vec<(usize, NodeId, Option<NodeId>)>,
     /// Math and diagram blocks painted after layout.
     pub rich: Vec<crate::rich::Item>,
 }
@@ -591,8 +593,122 @@ fn backlinks(app: &App, dom: &mut Dom, parent: NodeId) {
     }
 }
 
-fn editor(app: &App, dom: &mut Dom, parent: NodeId, pal: &Palette, info: &mut ViewInfo) {
-    let Some(tab) = app.tab() else {
+/// The editor area: panes laid out by `node`, whose position in the layout tree is `path`.
+#[allow(clippy::too_many_arguments)]
+fn split_layout(
+    app: &App,
+    dom: &mut Dom,
+    parent: NodeId,
+    node: &crate::split::Layout,
+    path: &mut Vec<usize>,
+    pal: &Palette,
+    info: &mut ViewInfo,
+    viewport_h: f32,
+) {
+    let crate::split::Layout::Split { row, kids } = node else {
+        if let crate::split::Layout::Leaf(i) = node {
+            pane(app, dom, parent, *i, pal, info, viewport_h);
+        }
+        return;
+    };
+    let class = if *row { "workspace-split mod-vertical" } else { "workspace-split mod-horizontal" };
+    let split = dom.add(parent, El::div().class(class));
+    let (dim, handle) = if *row { ("width", "mod-vertical") } else { ("height", "mod-horizontal") };
+    let at = path.iter().map(usize::to_string).collect::<Vec<_>>().join(".");
+    for (k, (kid, ratio)) in kids.iter().enumerate() {
+        if k > 0 {
+            let el = El::div().class("workspace-leaf-resize-handle").class(handle);
+            dom.add(split, el.action(format!("pane-resize:{}:{at}", k - 1)));
+        }
+        let cell = El::div().class("workspace-split-cell").style(&format!("{dim}: {:.3}%", ratio * 100.0));
+        let cell = dom.add(split, cell);
+        path.push(k);
+        split_layout(app, dom, cell, kid, path, pal, info, viewport_h);
+        path.pop();
+    }
+}
+
+/// Pane `pane`: its tab bar and the active tab. Only the focused pane shows the graph or canvas.
+#[allow(clippy::too_many_arguments)]
+fn pane(
+    app: &App,
+    dom: &mut Dom,
+    parent: NodeId,
+    pane: usize,
+    pal: &Palette,
+    info: &mut ViewInfo,
+    viewport_h: f32,
+) {
+    let focused = pane == app.pane;
+    let leaf = dom.add(parent, El::div().class("workspace-leaf").class_if(focused, "mod-active"));
+    let tabs = dom.add(leaf, El::div().class("workspace-tab-header-container"));
+    let tab_header =
+        |dom: &mut Dom, icon: &str, title: &str, dirty, active, focus: String, close: (String, &str)| {
+            let tab = dom.add(
+                tabs,
+                El::div().class("workspace-tab-header").class_if(active, "is-active").action(focus),
+            );
+            dom.add(tab, icons::el(icon).class("workspace-tab-header-inner-icon"));
+            dom.add(tab, El::div().class("workspace-tab-header-inner-title").text(title.to_string()));
+            if dirty {
+                dom.add(tab, icons::el("dot").class("workspace-tab-header-status"));
+            }
+            // A pinned tab shows a pin in place of the close button; clicking it unpins.
+            let x = dom.add(tab, El::div().class("workspace-tab-header-inner-close-button").action(close.0));
+            dom.add(x, icons::el(close.1));
+        };
+    let (open, active) = app.pane_tabs(pane);
+    let covered = focused && (app.show_graph || app.canvas_active());
+    for (i, t) in open.iter().enumerate() {
+        tab_header(
+            dom,
+            icons::for_file(&t.path),
+            t.title(),
+            t.editor.buf.is_modified(),
+            i == active && !covered,
+            format!("tab:{i}"),
+            if t.pinned { (format!("toggle-pin:{i}"), "pin") } else { (format!("close-tab:{i}"), "x") },
+        );
+    }
+    if let Some(g) = app.graph_view.as_ref().filter(|_| focused) {
+        let (focus, close) = ("graph:focus".to_string(), ("graph:close".to_string(), "x"));
+        tab_header(dom, "graph", &g.title(), false, app.show_graph, focus, close);
+    }
+    if let Some(c) = app.canvas_view.as_ref().filter(|_| focused) {
+        let (focus, close) = ("canvas:focus".to_string(), ("canvas:close".to_string(), "x"));
+        tab_header(dom, "canvas", &c.title(), false, app.canvas_active(), focus, close);
+    }
+    let new_tab =
+        dom.add(tabs, El::div().class("workspace-tab-header-new-tab").action("file-explorer:new-file"));
+    dom.add(new_tab, icons::el("plus"));
+    if !focused {
+        let mut own = ViewInfo::default();
+        editor(app, dom, leaf, pal, &mut own, open.get(active), false);
+        info.rich.append(&mut own.rich);
+        info.panes.push((pane, leaf, own.editor));
+        return;
+    }
+    match &app.graph_view {
+        Some(g) if app.show_graph => graph(g, dom, leaf, info, viewport_h),
+        _ if app.canvas_active() => {
+            crate::canvasview::pane(app.canvas_view.as_ref().unwrap(), dom, leaf, info)
+        }
+        _ => editor(app, dom, leaf, pal, info, app.tab(), true),
+    }
+    info.panes.push((pane, leaf, None));
+}
+
+/// `tab` in `parent`. Only the focused pane's editor takes input.
+fn editor(
+    app: &App,
+    dom: &mut Dom,
+    parent: NodeId,
+    pal: &Palette,
+    info: &mut ViewInfo,
+    tab: Option<&crate::shell::Tab>,
+    focused: bool,
+) {
+    let Some(tab) = tab else {
         empty_state(app, dom, parent);
         return;
     };
@@ -625,8 +741,11 @@ fn editor(app: &App, dom: &mut Dom, parent: NodeId, pal: &Palette, info: &mut Vi
     let readable =
         if app.config.app.bool("readableLineLength", false) { " is-readable-line-width" } else { "" };
     let class = format!("{class}{readable}");
-    let fade = app.anims.t("view");
-    let mut view_el = El::div().class(&class).id("editor");
+    let fade = if focused { app.anims.t("view") } else { 1.0 };
+    let mut view_el = El::div().class(&class);
+    if focused {
+        view_el = view_el.id("editor");
+    }
     if fade < 1.0 {
         view_el = view_el.style(&format!("opacity: {:.3}", 0.25 + 0.75 * fade));
     }
@@ -636,11 +755,12 @@ fn editor(app: &App, dom: &mut Dom, parent: NodeId, pal: &Palette, info: &mut Vi
     let first = tab.top_block.min(doc.blocks.len().saturating_sub(1));
     // Virtualised: only blocks from the scroll position onward, capped.
     let last = (first + 90).min(doc.blocks.len());
-    note_blocks(app, dom, view, pal, info, tab, tab.mode, first..last, false);
+    note_blocks(app, dom, view, pal, info, tab, tab.mode, focused, first..last, false);
 }
 
-/// Add the note's blocks `range` to `view` as `mode` shows them. `print` lays the note out for
-/// export: folds are open and there are no fold markers.
+/// Add the note's blocks `range` to `view` as `mode` shows them. Without `cursor` the lines
+/// under the selection are rendered too. `print` lays the note out for export: folds are open
+/// and there are no fold markers.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn note_blocks(
     app: &App,
@@ -650,13 +770,14 @@ pub(crate) fn note_blocks(
     info: &mut ViewInfo,
     tab: &crate::shell::Tab,
     mode: ViewMode,
+    cursor: bool,
     range: std::ops::Range<usize>,
     print: bool,
 ) {
     let buf = &tab.editor.buf;
     let doc = buf.doc();
     let (first, last) = (range.start, range.end);
-    let sels: &[Sel] = if mode == ViewMode::Reading { &[] } else { &buf.sels };
+    let sels: &[Sel] = if mode == ViewMode::Reading || !cursor { &[] } else { &buf.sels };
     let deco_mode = if mode == ViewMode::Source {
         editor_core::deco::Mode::Source
     } else {
@@ -1386,51 +1507,7 @@ pub fn build(app: &App, viewport_h: f32) -> (Dom, ViewInfo) {
         }
     }
     let root = dom.add(ws, El::div().class("workspace-split mod-root"));
-    let tabs = dom.add(root, El::div().class("workspace-tab-header-container"));
-    let tab_header =
-        |dom: &mut Dom, icon: &str, title: &str, dirty, active, focus: String, close: (String, &str)| {
-            let tab = dom.add(
-                tabs,
-                El::div().class("workspace-tab-header").class_if(active, "is-active").action(focus),
-            );
-            dom.add(tab, icons::el(icon).class("workspace-tab-header-inner-icon"));
-            dom.add(tab, El::div().class("workspace-tab-header-inner-title").text(title.to_string()));
-            if dirty {
-                dom.add(tab, icons::el("dot").class("workspace-tab-header-status"));
-            }
-            // A pinned tab shows a pin in place of the close button; clicking it unpins.
-            let x = dom.add(tab, El::div().class("workspace-tab-header-inner-close-button").action(close.0));
-            dom.add(x, icons::el(close.1));
-        };
-    for (i, t) in app.tabs.iter().enumerate() {
-        tab_header(
-            &mut dom,
-            icons::for_file(&t.path),
-            t.title(),
-            t.editor.buf.is_modified(),
-            i == app.active && !app.show_graph && !app.canvas_active(),
-            format!("tab:{i}"),
-            if t.pinned { (format!("toggle-pin:{i}"), "pin") } else { (format!("close-tab:{i}"), "x") },
-        );
-    }
-    if let Some(g) = &app.graph_view {
-        let (focus, close) = ("graph:focus".to_string(), ("graph:close".to_string(), "x"));
-        tab_header(&mut dom, "graph", &g.title(), false, app.show_graph, focus, close);
-    }
-    if let Some(c) = &app.canvas_view {
-        let (focus, close) = ("canvas:focus".to_string(), ("canvas:close".to_string(), "x"));
-        tab_header(&mut dom, "canvas", &c.title(), false, app.canvas_active(), focus, close);
-    }
-    let new_tab =
-        dom.add(tabs, El::div().class("workspace-tab-header-new-tab").action("file-explorer:new-file"));
-    dom.add(new_tab, icons::el("plus"));
-    match &app.graph_view {
-        Some(g) if app.show_graph => graph(g, &mut dom, root, &mut info, viewport_h),
-        _ if app.canvas_active() => {
-            crate::canvasview::pane(app.canvas_view.as_ref().unwrap(), &mut dom, root, &mut info)
-        }
-        _ => editor(app, &mut dom, root, &pal, &mut info),
-    }
+    split_layout(app, &mut dom, root, &app.layout, &mut Vec::new(), &pal, &mut info, viewport_h);
     let right_w = app.anims.toward("right", app.right_open);
     if right_w > 0.01 {
         let mut el = El::div().class("workspace-split mod-right-split");

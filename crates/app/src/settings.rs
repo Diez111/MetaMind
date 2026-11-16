@@ -390,13 +390,14 @@ impl App {
             "vimMode" => {
                 let on = self.config.app.bool("vimMode", false);
                 self.vim = on;
-                for t in &mut self.tabs {
+                for t in self.all_tabs_mut() {
                     t.vim = on.then(Default::default);
                 }
             }
             "useTab" | "tabSize" | "autoPairBrackets" | "autoPairMarkdown" | "smartIndentList" => {
-                for t in &mut self.tabs {
-                    t.editor.settings = editor_settings(&self.config);
+                let s = editor_settings(&self.config);
+                for t in self.all_tabs_mut() {
+                    t.editor.settings = s.clone();
                 }
             }
             "newLinkFormat" => self.store.index.link_format = self.config.link_format(),

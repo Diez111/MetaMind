@@ -3,7 +3,7 @@
 //! Kept in its own file so the layout tree in `workspace.json`, which other apps own, is never
 //! rewritten.
 
-use crate::shell::{App, Panel, RightPanel, ViewMode};
+use crate::shell::{App, Panel, RightPanel, Tab, ViewMode};
 use editor_core::Sel;
 use serde_json::{json, Value};
 
@@ -26,29 +26,40 @@ fn panel_name(p: Panel) -> &'static str {
     }
 }
 
+fn tabs_json(tabs: &[Tab]) -> Vec<Value> {
+    tabs.iter()
+        .map(|t| {
+            let s = t.editor.buf.sels.first().copied().unwrap_or(Sel::cursor(0));
+            json!({
+                "path": t.path,
+                "mode": mode_name(t.mode),
+                "top": t.top_block,
+                "cursor": [s.anchor, s.head],
+                "folds": t.folds.headers(),
+                "pinned": t.pinned,
+            })
+        })
+        .collect()
+}
+
 impl App {
-    /// The session as JSON.
+    /// The session as JSON. `tabs` and `active` repeat the focused pane for versions without
+    /// split panes.
     pub fn session(&self) -> Value {
-        let tabs: Vec<Value> = self
-            .tabs
-            .iter()
-            .map(|t| {
-                let s = t.editor.buf.sels.first().copied().unwrap_or(Sel::cursor(0));
-                json!({
-                    "path": t.path,
-                    "mode": mode_name(t.mode),
-                    "top": t.top_block,
-                    "cursor": [s.anchor, s.head],
-                    "folds": t.folds.headers(),
-                    "pinned": t.pinned,
-                })
+        let panes: Vec<Value> = (0..self.panes.len())
+            .map(|i| {
+                let (tabs, active) = self.pane_tabs(i);
+                json!({ "tabs": tabs_json(tabs), "active": active, "link": self.panes[i].link })
             })
             .collect();
         let mut collapsed: Vec<&String> = self.collapsed.iter().collect();
         collapsed.sort_unstable();
         json!({
-            "tabs": tabs,
+            "tabs": tabs_json(&self.tabs),
             "active": self.active,
+            "panes": panes,
+            "layout": crate::split::layout_json(&self.layout),
+            "pane": self.pane,
             "left": self.left_open,
             "right": self.right_open,
             "panel": panel_name(self.panel),
@@ -91,6 +102,43 @@ impl App {
             }
         };
         let num = |v: &Value| v.as_u64().map(|n| n as usize);
+        let panes = v.get("panes").and_then(Value::as_array).filter(|p| !p.is_empty());
+        let layout = panes.and_then(|p| crate::split::parse_layout(v.get("layout")?, p.len()));
+        match (panes, layout) {
+            (Some(panes), Some(layout)) => {
+                self.panes = panes.iter().map(|_| Default::default()).collect();
+                self.layout = layout;
+                for (i, p) in panes.iter().enumerate() {
+                    self.panes[i].link = p.get("link").and_then(Value::as_u64).map(|g| g as u32);
+                    self.in_pane(i, |a| a.restore_tabs(p));
+                }
+                self.focus_pane(v.get("pane").and_then(num).filter(|&p| p < panes.len()).unwrap_or(0));
+            }
+            _ => self.restore_tabs(&v),
+        }
+        let flag = |k: &str| v.get(k).and_then(Value::as_bool);
+        self.left_open = flag("left").unwrap_or(self.left_open);
+        self.right_open = flag("right").unwrap_or(self.right_open);
+        self.panel = match v.get("panel").and_then(Value::as_str) {
+            Some("search") => Panel::Search,
+            Some("bookmarks") => Panel::Bookmarks,
+            Some("tags") => Panel::Tags,
+            _ => Panel::Files,
+        };
+        self.right_panel = match v.get("rightPanel").and_then(Value::as_str) {
+            Some("outgoing") => RightPanel::Outgoing,
+            Some("outline") => RightPanel::Outline,
+            _ => RightPanel::Backlinks,
+        };
+        if let Some(c) = v.get("collapsed").and_then(Value::as_array) {
+            self.collapsed = c.iter().filter_map(Value::as_str).map(str::to_string).collect();
+            self.tree = None;
+        }
+    }
+
+    /// Open the tabs saved in `v` (`tabs` and `active`) in the focused pane.
+    fn restore_tabs(&mut self, v: &Value) {
+        let num = |v: &Value| v.as_u64().map(|n| n as usize);
         let mut active = None;
         let want = v.get("active").and_then(num);
         for (i, t) in v.get("tabs").and_then(Value::as_array).into_iter().flatten().enumerate() {
@@ -129,24 +177,6 @@ impl App {
         }
         if let Some(i) = active.or(self.tabs.len().checked_sub(1)) {
             self.open_note(&self.tabs[i].path.clone());
-        }
-        let flag = |k: &str| v.get(k).and_then(Value::as_bool);
-        self.left_open = flag("left").unwrap_or(self.left_open);
-        self.right_open = flag("right").unwrap_or(self.right_open);
-        self.panel = match v.get("panel").and_then(Value::as_str) {
-            Some("search") => Panel::Search,
-            Some("bookmarks") => Panel::Bookmarks,
-            Some("tags") => Panel::Tags,
-            _ => Panel::Files,
-        };
-        self.right_panel = match v.get("rightPanel").and_then(Value::as_str) {
-            Some("outgoing") => RightPanel::Outgoing,
-            Some("outline") => RightPanel::Outline,
-            _ => RightPanel::Backlinks,
-        };
-        if let Some(c) = v.get("collapsed").and_then(Value::as_array) {
-            self.collapsed = c.iter().filter_map(Value::as_str).map(str::to_string).collect();
-            self.tree = None;
         }
     }
 }

@@ -49,13 +49,12 @@ struct AppHost<'a>(&'a mut App);
 
 impl AppHost<'_> {
     fn reload_open_tab(&mut self, rel: &str) {
-        let app = &mut *self.0;
-        let Some(i) = app.tabs.iter().position(|t| t.path.eq_ignore_ascii_case(rel)) else { return };
-        if app.tabs[i].editor.buf.is_modified() {
+        if self.dirty_tab(rel) {
             return;
         }
-        if let Ok((text, stamp)) = app.store.read(rel) {
-            let tab = &mut app.tabs[i];
+        let app = &mut *self.0;
+        let Ok((text, stamp)) = app.store.read(rel) else { return };
+        for tab in app.all_tabs_mut().filter(|t| t.path.eq_ignore_ascii_case(rel)) {
             let head = tab.editor.buf.sels[0].head.min(text.len());
             tab.editor = Editor::new(&text);
             tab.editor.buf.set_sels(vec![Sel::cursor(head)]);
@@ -64,7 +63,7 @@ impl AppHost<'_> {
     }
 
     fn dirty_tab(&self, rel: &str) -> bool {
-        self.0.tabs.iter().any(|t| t.path.eq_ignore_ascii_case(rel) && t.editor.buf.is_modified())
+        self.0.all_tabs().any(|t| t.path.eq_ignore_ascii_case(rel) && t.editor.buf.is_modified())
     }
 }
 
@@ -78,7 +77,9 @@ impl Host for AppHost<'_> {
     }
 
     fn read_note(&mut self, rel: &str) -> Result<String, String> {
-        if let Some(t) = self.0.tabs.iter().find(|t| t.path.eq_ignore_ascii_case(rel)) {
+        if let Some(t) =
+            self.0.all_tabs().find(|t| t.path.eq_ignore_ascii_case(rel) && t.editor.buf.is_modified())
+        {
             if t.editor.buf.is_modified() {
                 return Ok(t.editor.buf.text());
             }
@@ -111,8 +112,7 @@ impl Host for AppHost<'_> {
             return Err(format!("not found: {rel}"));
         }
         self.0.store.delete(rel).map_err(|e| e.to_string())?;
-        self.0.tabs.retain(|t| !t.path.eq_ignore_ascii_case(rel));
-        self.0.active = self.0.active.min(self.0.tabs.len().saturating_sub(1));
+        self.0.retain_tabs(|t| !t.path.eq_ignore_ascii_case(rel));
         self.0.files_changed(&[]);
         self.0.plugins.push(Event::Delete { path: rel.into() });
         Ok(())
@@ -124,7 +124,7 @@ impl Host for AppHost<'_> {
         }
         let plan = self.0.store.rename(from, to).map_err(|e| e.to_string())?;
         for (old, new) in &plan.moves {
-            for t in self.0.tabs.iter_mut().filter(|t| t.path.eq_ignore_ascii_case(old)) {
+            for t in self.0.all_tabs_mut().filter(|t| t.path.eq_ignore_ascii_case(old)) {
                 t.path = new.clone();
             }
             self.0.plugins.push(Event::Rename { path: new.clone(), old_path: old.clone() });

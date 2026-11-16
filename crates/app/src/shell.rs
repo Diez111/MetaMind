@@ -117,6 +117,8 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("workspace:close", "Close current tab", "Ctrl+W"),
     ("workspace:close-others", "Close all other tabs", ""),
     ("workspace:close-all", "Close all tabs", ""),
+    ("workspace:split-vertical", "Split right", ""),
+    ("workspace:split-horizontal", "Split down", ""),
     ("workspace:undo-close-pane", "Reopen closed tab", "Ctrl+Shift+T"),
     ("workspace:next-tab", "Go to next tab", "Ctrl+Tab"),
     ("workspace:previous-tab", "Go to previous tab", "Ctrl+Shift+Tab"),
@@ -324,6 +326,23 @@ impl Tab {
     pub fn title(&self) -> &str {
         path::stem(&self.path)
     }
+
+    pub(crate) fn new(path: String, text: &str, stamp: Stamp, vim: bool) -> Tab {
+        Tab {
+            path,
+            editor: Editor::new(text),
+            stamp,
+            mode: ViewMode::LivePreview,
+            top_block: 0,
+            last_edit_ms: 0,
+            meta: None,
+            folds: Default::default(),
+            hidden: (0, Vec::new()),
+            hidden_dirty: false,
+            vim: vim.then(Default::default),
+            pinned: false,
+        }
+    }
 }
 
 pub struct SearchResult {
@@ -357,8 +376,17 @@ pub struct App {
     pub preedit: String,
     /// The input method's cursor as a byte offset into `preedit`.
     pub preedit_cursor: Option<usize>,
+    /// Tabs of the focused pane.
     pub tabs: Vec<Tab>,
     pub active: usize,
+    pub panes: Vec<crate::split::Pane>,
+    pub layout: crate::split::Layout,
+    /// Index of the focused pane.
+    pub pane: usize,
+    pub pane_drag: Option<crate::split::PaneDrag>,
+    /// The focused note last seen by linked panes, and the note and buffer version last mirrored.
+    pub(crate) followed: Option<String>,
+    pub(crate) mirrored: Option<(String, u64)>,
     pub left_open: bool,
     pub right_open: bool,
     pub panel: Panel,
@@ -570,6 +598,12 @@ impl App {
             config,
             tabs: Vec::new(),
             active: 0,
+            panes: vec![Default::default()],
+            layout: crate::split::Layout::Leaf(0),
+            pane: 0,
+            pane_drag: None,
+            followed: None,
+            mirrored: None,
             left_open: true,
             right_open: false,
             panel: Panel::Files,
@@ -629,6 +663,7 @@ impl App {
     /// Bring derived data up to date before a frame: link graph, explorer rows, and the
     /// metadata of the active note. Each is recomputed only when its input changed.
     pub fn refresh_derived(&mut self) {
+        self.sync_panes();
         if !self.defer_graph {
             self.graph = Some(self.store.index.graph());
             self.store.release_cache_pages();
@@ -786,7 +821,7 @@ impl App {
         self.open_note_inner(rel, true);
     }
 
-    fn open_note_inner(&mut self, rel: &str, record: bool) {
+    pub(crate) fn open_note_inner(&mut self, rel: &str, record: bool) {
         let mut rel = path::normalize(rel);
         // Accept a note name or partial path the way a link would be resolved.
         if self.store.index.id(&rel).is_none() {
@@ -806,20 +841,7 @@ impl App {
             }
             match self.store.read(&rel) {
                 Ok((text, stamp)) => {
-                    self.tabs.push(Tab {
-                        path: rel.clone(),
-                        editor: Editor::new(&text),
-                        stamp,
-                        mode: ViewMode::LivePreview,
-                        top_block: 0,
-                        last_edit_ms: 0,
-                        meta: None,
-                        folds: Default::default(),
-                        hidden: (0, Vec::new()),
-                        hidden_dirty: false,
-                        vim: self.vim.then(Default::default),
-                        pinned: false,
-                    });
+                    self.tabs.push(Tab::new(rel.clone(), &text, stamp, self.vim));
                     self.active = self.tabs.len() - 1;
                     self.init_new_tab();
                 }
@@ -860,6 +882,8 @@ impl App {
                         c.update(id, Some(&text));
                     }
                 }
+                let path = tab.path.clone();
+                self.saved_elsewhere(&path, &text, stamp);
                 true
             }
             Err(WriteError::Conflict { .. }) => {
@@ -894,20 +918,23 @@ impl App {
     /// Save every modified tab (called when the window loses focus, on a timer, and on quit).
     pub fn save_all(&mut self) {
         self.canvas_save();
-        let active = self.active;
-        for i in 0..self.tabs.len() {
-            self.active = i;
-            self.save();
+        for p in 0..self.panes.len() {
+            self.in_pane(p, |a| {
+                let active = a.active;
+                for i in 0..a.tabs.len() {
+                    a.active = i;
+                    a.save();
+                }
+                a.active = active;
+            });
         }
-        self.active = active;
         self.save_session();
         let _ = self.store.save_cache();
     }
 
     /// Milliseconds until the autosave is due, if any tab has unsaved edits.
     pub fn autosave_due_in(&self, now_ms: u64) -> Option<u64> {
-        self.tabs
-            .iter()
+        self.all_tabs()
             .filter(|t| t.editor.buf.is_modified())
             .map(|t| (t.last_edit_ms + 2000).saturating_sub(now_ms))
             .min()
@@ -940,15 +967,16 @@ impl App {
                     c.update(id, std::fs::read_to_string(self.store.abs(p)).ok().as_deref());
                 }
             }
-            let Some(i) = self.tabs.iter().position(|t| t.path.eq_ignore_ascii_case(p)) else { continue };
-            if self.tabs[i].editor.buf.is_modified() {
+            let open = |t: &&mut Tab| t.path.eq_ignore_ascii_case(p);
+            if self.all_tabs_mut().filter(open).any(|t| t.editor.buf.is_modified()) {
                 self.notice = Some(format!("{p} changed on disk while it has unsaved edits here."));
             } else if let Ok((text, stamp)) = self.store.read(p) {
-                let tab = &mut self.tabs[i];
-                let head = tab.editor.buf.sels[0].head;
-                tab.editor = Editor::new(&text);
-                tab.editor.buf.set_sels(vec![Sel::cursor(head)]);
-                tab.stamp = stamp;
+                for tab in self.all_tabs_mut().filter(open) {
+                    let head = tab.editor.buf.sels[0].head;
+                    tab.editor = Editor::new(&text);
+                    tab.editor.buf.set_sels(vec![Sel::cursor(head)]);
+                    tab.stamp = stamp;
+                }
             }
         }
     }
@@ -1203,6 +1231,9 @@ impl App {
             }
             return;
         }
+        if let Some(j) = command.strip_prefix("link-pane:").and_then(|i| i.parse::<usize>().ok()) {
+            return self.link_pane(j);
+        }
         if let Some(i) = command.strip_prefix("toggle-pin:").and_then(|i| i.parse::<usize>().ok()) {
             if let Some(t) = self.tabs.get_mut(i) {
                 t.pinned ^= true;
@@ -1314,6 +1345,9 @@ impl App {
                 self.show_canvas = false;
             }
             "workspace:close" => self.close_tab(self.active),
+            "workspace:split-vertical" => self.split(true),
+            "workspace:split-horizontal" => self.split(false),
+            "workspace:unlink-pane" => self.unlink_pane(),
             "workspace:close-others" => {
                 for i in (0..self.tabs.len()).rev().filter(|&i| i != self.active).collect::<Vec<_>>() {
                     self.close_tab(i);
@@ -1444,8 +1478,7 @@ impl App {
                     match self.store.delete(&p) {
                         Ok(_) => {
                             self.plugins.push(ext_api::Event::Delete { path: p.clone() });
-                            self.tabs.remove(self.active);
-                            self.active = self.active.min(self.tabs.len().saturating_sub(1));
+                            self.retain_tabs(|t| !t.path.eq_ignore_ascii_case(&p));
                             self.notice = Some(format!("Moved {p} to trash"));
                         }
                         Err(e) => self.notice = Some(format!("Cannot delete {p}: {e}")),

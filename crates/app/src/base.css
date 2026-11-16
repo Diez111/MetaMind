@@ -336,3 +336,10 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .welcome-button.mod-cta { background-color: var(--interactive-accent); color: var(--text-on-accent) }
 .welcome-button.mod-cta:hover { background-color: var(--text-accent) }
 .welcome-error { color: #e5484d; font-size: var(--font-ui-smaller); margin-top: 8px }
+.workspace-split.mod-vertical { flex-grow: 1; display: flex; overflow: hidden }
+.workspace-split.mod-horizontal { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden }
+.workspace-split-cell { display: flex; flex-direction: column; overflow: hidden }
+.workspace-leaf { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden }
+.workspace-leaf-resize-handle { flex-shrink: 0; background-color: var(--background-modifier-border) }
+.workspace-leaf-resize-handle.mod-vertical { width: 3px }
+.workspace-leaf-resize-handle.mod-horizontal { height: 3px }
