@@ -225,6 +225,7 @@ fn cli_commands() {
     assert_eq!(code, 0, "{out}");
     assert_eq!(call(&["plugin", "new"]).0, 2);
     assert_eq!(call(&[&v]).0, -1, "a bare vault path opens a window");
+    assert_eq!(call(&[&format!("{v}/Home.md")]).0, -1, "a note file opens its vault");
     assert_eq!(call(&["nonsense"]).0, 2);
     assert_eq!(call(&["rustsidian://frobnicate"]).0, 2, "links are parsed, not taken as folders");
     let (_, out) = call(&["commands"]);

@@ -48,7 +48,7 @@ pub fn resolve(uri: &str, vaults: &[PathBuf]) -> Result<Target, String> {
     match action.as_str() {
         "open" => {
             if let Some(p) = get("path") {
-                return by_path(Path::new(p), vaults);
+                return for_path(Path::new(p), vaults);
             }
             let vault = vault(get("vault"), vaults)?;
             Ok(Target { vault, note: get("file").map(str::to_string) })
@@ -82,9 +82,29 @@ fn vault(name: Option<&str>, vaults: &[PathBuf]) -> Result<PathBuf, String> {
         .ok_or_else(|| format!("no recently opened vault is named `{name}`"))
 }
 
+/// A command-line argument naming an existing file, as a path or a `file://` URL (desktop
+/// launchers may pass either).
+pub fn local_file(arg: &str) -> Option<PathBuf> {
+    let p = match arg.strip_prefix("file://") {
+        Some(rest) => {
+            // `file://host/path` names another machine; only an empty host is local.
+            let rest = path::percent_decode(rest.strip_prefix("localhost").unwrap_or(rest));
+            let abs = rest.strip_prefix('/')?;
+            // `file:///C:/x` on Windows; `file:///home/x` elsewhere.
+            if cfg!(windows) && abs.get(1..2) == Some(":") {
+                PathBuf::from(abs)
+            } else {
+                PathBuf::from(format!("/{abs}"))
+            }
+        }
+        None => PathBuf::from(arg),
+    };
+    p.is_file().then(|| std::fs::canonicalize(&p).unwrap_or(p))
+}
+
 /// A folder opens as a vault; a file opens in the known vault that contains it, or else in the
-/// nearest enclosing folder that has a `.obsidian` settings folder.
-fn by_path(p: &Path, vaults: &[PathBuf]) -> Result<Target, String> {
+/// nearest enclosing folder that has a `.obsidian` settings folder, or else its own folder.
+pub fn for_path(p: &Path, vaults: &[PathBuf]) -> Result<Target, String> {
     if p.is_dir() {
         return Ok(Target { vault: p.to_path_buf(), note: None });
     }

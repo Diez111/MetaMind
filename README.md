@@ -82,6 +82,9 @@ against `SHA256SUMS.txt`.
 
 On Linux, `packaging/rustsidian.desktop` and `packaging/rustsidian.svg` add a menu entry when
 copied to `~/.local/share/applications` and `~/.local/share/icons/hicolor/scalable/apps`.
+The entry also offers Rustsidian for Markdown files and `rustsidian://` links; run
+`update-desktop-database ~/.local/share/applications` after copying, and
+`xdg-mime default rustsidian.desktop x-scheme-handler/rustsidian` to make it the link handler.
 
 ## Build from source
 

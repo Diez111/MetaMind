@@ -2,8 +2,9 @@
 Type=Application
 Name=Rustsidian
 Comment=Fast native Markdown knowledge base
-Exec=rustsidian %f
+Exec=rustsidian %u
 Icon=rustsidian
 Terminal=false
 Categories=Office;Utility;TextEditor;
 Keywords=notes;markdown;wiki;vault;
+MimeType=text/markdown;x-scheme-handler/rustsidian;

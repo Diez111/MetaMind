@@ -54,3 +54,17 @@ fn new_writes_a_note_without_overwriting() {
     assert!(resolve("rustsidian://new?name=../escape", &vaults).is_err());
     assert!(!d.path().parent().unwrap().join("escape.md").exists());
 }
+
+#[test]
+fn local_file_accepts_paths_and_file_urls() {
+    use rustsidian_app::uri::local_file;
+    let d = tempfile::tempdir().unwrap();
+    let file = d.path().join("My Note.md");
+    fs::write(&file, "x").unwrap();
+    let canon = fs::canonicalize(&file).unwrap();
+    assert_eq!(local_file(&file.to_string_lossy()), Some(canon.clone()));
+    let url = format!("file://{}", file.to_string_lossy().replace(' ', "%20"));
+    assert_eq!(local_file(&url), Some(canon));
+    assert_eq!(local_file(&d.path().to_string_lossy()), None, "a folder is not a file");
+    assert_eq!(local_file("file://elsewhere/x.md"), None);
+}

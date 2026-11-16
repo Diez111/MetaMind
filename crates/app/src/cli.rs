@@ -12,6 +12,7 @@ pub const USAGE: &str = "Rustsidian
 USAGE:
   rustsidian                                    Show the welcome screen to pick or create a vault
   rustsidian [open] <vault> [note]              Open a vault in a window
+  rustsidian <file.md>                          Open a note in the vault that contains it
   rustsidian <rustsidian://link>                Open or create a note from a link (actions: open, new)
   rustsidian index <vault>                      Build or refresh the index and print statistics
   rustsidian search <vault> <query> [--limit N] Search with the query syntax
@@ -282,10 +283,22 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
             Ok(t) => Outcome::Open { vault: t.vault, note: t.note, profile: false },
             Err(e) => fail(&e),
         },
-        _ => match vault_arg(0) {
-            Some(vault) => Outcome::Open { vault, note: a.pos.get(1).cloned(), profile: a.flag("--profile") },
-            None => fail(&format!("`{first}` is neither a command nor a folder. Run `rustsidian help`.")),
-        },
+        _ => {
+            if let Some(file) = crate::uri::local_file(first) {
+                return match crate::uri::for_path(&file, &crate::recent::load()) {
+                    Ok(t) => Outcome::Open { vault: t.vault, note: t.note, profile: a.flag("--profile") },
+                    Err(e) => fail(&e),
+                };
+            }
+            match vault_arg(0) {
+                Some(vault) => {
+                    Outcome::Open { vault, note: a.pos.get(1).cloned(), profile: a.flag("--profile") }
+                }
+                None => fail(&format!(
+                    "`{first}` is neither a command, a file nor a folder. Run `rustsidian help`."
+                )),
+            }
+        }
     }
 }
 
