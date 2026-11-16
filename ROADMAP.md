@@ -5,7 +5,7 @@ stays plain Markdown on disk. Each level below builds on the one before it and s
 with one headline feature; the performance budgets in [FEATURES.md](FEATURES.md#performance-budgets)
 gate every release.
 
-Status today (v0.4.1): editor, links, search, graph, canvas, themes, hotkeys, WASM plugins and Rhai
+Status today (v0.5.0): editor, links, search, graph, canvas, themes, hotkeys, WASM plugins and Rhai
 scripts are in place, and most of Level 1 has landed, including spellcheck, PDF export and pasting
 images. Still missing from Level 1: split panes and workspaces, printing, and signed
 macOS/Windows installers. There is no sync, no mobile app and no database views.
