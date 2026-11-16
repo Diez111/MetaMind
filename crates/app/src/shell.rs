@@ -379,6 +379,11 @@ pub struct App {
     pub right_panel: RightPanel,
     pub backlinks_collapsed: bool,
     pub backlinks_desc: bool,
+    /// Whole lines around each backlink instead of a few words.
+    pub backlinks_more: bool,
+    /// The backlinks filter text; `None` while the filter field is hidden.
+    pub backlinks_filter: Option<String>,
+    pub backlinks_editing: bool,
     pub(crate) tree: Option<Vec<TreeRow>>,
     /// While set, the link graph is not computed (the first frame is presented without it).
     pub defer_graph: bool,
@@ -389,6 +394,8 @@ pub struct App {
     pub notice: Option<String>,
     pub perf: bool,
     pub last_frame_us: u64,
+    /// Copy screenshot was chosen: the window copies the pane from the next frame it draws.
+    pub screenshot: bool,
     pub quit: bool,
     /// Scroll offsets of scrollable panes, by element id.
     pub scrolls: HashMap<String, f32>,
@@ -581,6 +588,9 @@ impl App {
             right_panel: RightPanel::Backlinks,
             backlinks_collapsed: false,
             backlinks_desc: false,
+            backlinks_more: false,
+            backlinks_filter: None,
+            backlinks_editing: false,
             tree: None,
             defer_graph: false,
             pending: Vec::new(),
@@ -589,6 +599,7 @@ impl App {
             notice: None,
             perf: false,
             last_frame_us: 0,
+            screenshot: false,
             quit: false,
             scrolls: HashMap::new(),
             fuzzy: Fuzzy::new(),
@@ -1384,6 +1395,15 @@ impl App {
             "backlinks:toggle-unlinked" => self.show_unlinked = !self.show_unlinked,
             "backlinks:toggle-collapse" => self.backlinks_collapsed ^= true,
             "backlinks:toggle-sort" => self.backlinks_desc ^= true,
+            "backlinks:toggle-context" => {
+                self.backlinks_more ^= true;
+                self.linked = None;
+            }
+            "backlinks:toggle-filter" => {
+                self.backlinks_filter = self.backlinks_filter.is_none().then(String::new);
+                self.backlinks_editing = self.backlinks_filter.is_some();
+            }
+            "backlinks:edit-filter" => self.backlinks_editing = self.backlinks_filter.is_some(),
             "backlinks:open" | "outgoing-links:open" | "outline:open" => {
                 self.right_open = true;
                 self.right_panel = match command {

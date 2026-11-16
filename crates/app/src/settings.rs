@@ -642,6 +642,9 @@ impl App {
         if let Some(r) = self.graph_key(key) {
             return Some(r);
         }
+        if let Some(r) = self.backlinks_key(key) {
+            return Some(r);
+        }
         let s = self.settings.as_mut()?;
         let plain = !key.ctrl && !key.alt && !key.shift;
         if let Some(cmd) = s.capture.clone() {
@@ -683,7 +686,7 @@ impl App {
     }
 
     pub(crate) fn modal_text(&mut self, text: &str) -> bool {
-        if self.prop_text(text) || self.graph_text(text) {
+        if self.prop_text(text) || self.graph_text(text) || self.backlinks_text(text) {
             return true;
         }
         let Some(s) = &mut self.settings else { return false };

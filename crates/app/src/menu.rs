@@ -274,6 +274,7 @@ impl App {
                     }
                 }
                 "workspace:export-pdf" => self.export_pdf(),
+                "workspace:copy-screenshot" => self.screenshot = self.tab().is_some(),
                 "file-explorer:reveal-active-file" => self.reveal_in_explorer(),
                 "editor:copy" => self.copy(false),
                 "editor:cut" => self.copy(true),
@@ -680,6 +681,9 @@ fn tab_items(b: &mut Builder<'_>, i: usize) {
         b.item("folder", "Show in system explorer", format!("reveal:{p}"));
         if i == b.app.active {
             b.item("book", "Export to PDF", "workspace:export-pdf");
+            if !b.app.show_graph && !b.app.canvas_active() {
+                b.item("image", "Copy screenshot", "workspace:copy-screenshot");
+            }
         }
         b.separator();
     }

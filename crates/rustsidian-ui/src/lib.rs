@@ -11,7 +11,7 @@ pub use dom::{Dom, El, NodeId, Style};
 pub use scene::{render, Cmd, Image, Rect, Scene};
 pub use text::{FontRef, Fonts, GlyphRun, PlacedGlyph, Span, TextStyle};
 pub use theme_engine::{Color, Env, Theme};
-pub use tiny_skia::{Color as SkColor, Pixmap};
+pub use tiny_skia::{Color as SkColor, IntRect, Pixmap};
 
 /// Style, lay out and paint a tree into a new pixmap. Convenience for tests and screenshots.
 pub fn render_to_pixmap(

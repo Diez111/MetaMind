@@ -110,6 +110,11 @@ impl Win {
             self.welcome_dom = Some(welcome.render(&mut self.fonts, pixmap, scale));
         } else if let Some(app) = &mut self.app {
             self.frame = Some(rustsidian_app::render(app, &mut self.fonts, pixmap, scale));
+            if let (true, Some(frame)) = (app.screenshot, &self.frame) {
+                app.copy_screenshot(frame, pixmap, scale);
+                // The notice shows on the next frame; the copied one is this frame, without it.
+                window.request_redraw();
+            }
         } else {
             return;
         }

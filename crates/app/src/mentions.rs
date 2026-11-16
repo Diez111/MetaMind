@@ -115,6 +115,7 @@ impl App {
             return;
         }
         let Some(me) = self.store.index.id(&rel) else { return };
+        let context = if self.backlinks_more { 2000 } else { 40 };
         let mut files = Vec::new();
         for &src in graph.back.get(me as usize).map(Vec::as_slice).unwrap_or(&[]) {
             let Some(f) = self.store.index.entry(src) else { continue };
@@ -132,12 +133,36 @@ impl App {
                 .filter(|l| self.store.index.resolve(&l.target, &p) == Some(me))
                 .filter(|l| text.is_char_boundary(l.start as usize) && text.is_char_boundary(l.end as usize))
                 .take(3)
-                .map(|l| snippet(&text, Match { start: l.start, end: l.end }, 40).0.trim().to_string())
+                .map(|l| snippet(&text, Match { start: l.start, end: l.end }, context).0.trim().to_string())
                 .collect();
             files.push((p, snippets));
         }
         files.sort_unstable_by_key(|f| f.0.to_lowercase());
         self.linked = Some(Mentions { graph, path: rel, files });
+    }
+
+    pub(crate) fn backlinks_text(&mut self, text: &str) -> bool {
+        match &mut self.backlinks_filter {
+            Some(f) if self.backlinks_editing => {
+                f.push_str(text);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub(crate) fn backlinks_key(&mut self, key: &crate::shell::Key) -> Option<bool> {
+        let f = self.backlinks_filter.as_mut().filter(|_| self.backlinks_editing)?;
+        match key.key.as_str() {
+            "Backspace" if key.ctrl => f.clear(),
+            "Backspace" => {
+                f.pop();
+            }
+            "Enter" | "Escape" | "Tab" => self.backlinks_editing = false,
+            _ if key.ctrl || key.alt => return None,
+            _ => {}
+        }
+        Some(true)
     }
 
     /// Turn every unlinked mention of the active note in `rel` into a link.

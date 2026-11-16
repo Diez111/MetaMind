@@ -79,7 +79,37 @@ pub fn render(app: &mut App, fonts: &mut Fonts, pixmap: &mut Pixmap, scale: f32)
     Frame { dom, info, caret }
 }
 
+/// The open pane of a drawn frame, without the tab bar and sidebars, at the pixmap's resolution.
+pub fn pane_image(frame: &Frame, pixmap: &Pixmap, scale: f32) -> Result<Pixmap, String> {
+    let has = |n: &rustsidian_ui::dom::Node, c: &str| n.el.classes.iter().any(|x| x == c);
+    let nodes = &frame.dom.nodes;
+    let root = nodes.iter().position(|n| has(n, "mod-root")).ok_or("no pane is open")?;
+    let r = nodes[root..].iter().find(|n| has(n, "view-content")).ok_or("no pane is open")?.rect;
+    let (x0, y0) = ((r.x * scale).round().max(0.0), (r.y * scale).round().max(0.0));
+    let x1 = ((r.x + r.w) * scale).round().min(pixmap.width() as f32);
+    let y1 = ((r.y + r.h) * scale).round().min(pixmap.height() as f32);
+    rustsidian_ui::IntRect::from_ltrb(x0 as i32, y0 as i32, x1 as i32, y1 as i32)
+        .and_then(|rect| pixmap.clone_rect(rect))
+        .ok_or_else(|| "the pane is not visible".to_string())
+}
+
 impl App {
+    /// Finish Copy screenshot with the frame just drawn.
+    pub fn copy_screenshot(&mut self, frame: &Frame, pixmap: &Pixmap, scale: f32) {
+        self.screenshot = false;
+        let copied = pane_image(frame, pixmap, scale).and_then(|pm| {
+            if self.system_clipboard {
+                clipboard::set_image(&pm)
+            } else {
+                Err("the system clipboard is off".to_string())
+            }
+        });
+        self.notice = Some(match copied {
+            Ok(()) => "Screenshot copied".to_string(),
+            Err(e) => format!("Cannot copy screenshot: {e}"),
+        });
+    }
+
     /// Left click at window coordinates.
     pub fn click(&mut self, frame: &Frame, fonts: &mut Fonts, x: f32, y: f32, shift: bool) {
         if self.menu_click(frame, x, y) {
@@ -99,6 +129,9 @@ impl App {
             if !action.starts_with("graph:edit:") && !action.starts_with("graph:insert:") {
                 self.graph_end_edit();
             }
+            if action != "backlinks:edit-filter" {
+                self.backlinks_editing = false;
+            }
             if action == "file-explorer:sort-menu" {
                 let r = frame.dom.nodes[node].rect;
                 return self.sort_menu(r.x, r.y + r.h);
@@ -117,6 +150,7 @@ impl App {
             return self.run(&action);
         }
         self.graph_end_edit();
+        self.backlinks_editing = false;
         if self.prompt.is_some() {
             return self.run("prompt:dismiss");
         }

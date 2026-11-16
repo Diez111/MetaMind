@@ -564,6 +564,28 @@ fn new_canvas_gets_a_free_name_and_opens() {
 }
 
 #[test]
+fn copy_screenshot_crops_the_open_pane() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("Home");
+    app.run("workspace:copy-screenshot");
+    assert!(app.screenshot);
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(1000, 700).unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 2.0);
+    let pane =
+        frame.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == "markdown-source-view")).unwrap();
+    let r = pane.rect;
+    let shot = rustsidian_app::pane_image(&frame, &pm, 2.0).unwrap();
+    assert_eq!((shot.width(), shot.height()), ((r.w * 2.0).round() as u32, (r.h * 2.0).round() as u32));
+    let (x, y) = ((r.x * 2.0).round() as u32, (r.y * 2.0).round() as u32);
+    assert_eq!(shot.pixel(5, 5), pm.pixel(x + 5, y + 5));
+    app.copy_screenshot(&frame, &pm, 2.0);
+    assert!(!app.screenshot);
+    assert_eq!(app.notice.as_deref(), Some("Cannot copy screenshot: the system clipboard is off"));
+}
+
+#[test]
 fn canvas_view() {
     let d = vault();
     let w = |p: &str, t: &str| fs::write(d.path().join(p), t).unwrap();

@@ -64,6 +64,25 @@ fn linked_mentions_show_context_and_panels_switch() {
     assert!(z < a);
     assert!(!t.iter().any(|s| s.contains("today")), "collapsed results hide context");
 
+    app.run("backlinks:toggle-collapse");
+    app.run("backlinks:toggle-filter");
+    app.text_input("TODAY");
+    let t = texts(&render(&mut app, &mut fonts, &mut pm, 1.0));
+    let count = |name: &str| t.iter().filter(|s| *s == name).count();
+    // Each name is also in the file list.
+    assert_eq!((count("Alpha"), count("Zed")), (2, 1), "the filter keeps notes whose snippets match");
+    app.run("backlinks:toggle-context");
+    app.refresh_derived();
+    let linked = &app.linked.as_ref().unwrap().files;
+    assert_eq!(linked[0].1, ["See [[Plan|the plan]] today."]);
+    app.key(rustsidian_app::Key::parse("Escape").unwrap());
+    app.text_input("x");
+    assert_eq!(
+        app.backlinks_filter.as_deref(),
+        Some("TODAY"),
+        "typing goes elsewhere once the field is left"
+    );
+
     app.run("outgoing-links:open");
     let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
     assert!(frame.dom.nodes.iter().any(|n| n.el.action.as_deref() == Some("open:Other.md")));

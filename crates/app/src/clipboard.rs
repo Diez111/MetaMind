@@ -1,4 +1,4 @@
-//! The system clipboard, as plain text. Windows is reached through the Win32 API; macOS and Linux
+//! The system clipboard: text, and images for paste and Copy screenshot. Windows is reached through the Win32 API; macOS and Linux
 //! through the standard command-line tools (`pbcopy`, `wl-copy`, `xclip`, `xsel`), so no
 //! windowing-toolkit clipboard crate is needed.
 
@@ -12,6 +12,12 @@ pub fn set(text: &str) -> Result<(), String> {
 /// Read text from the system clipboard. Line endings come back as `\n`.
 pub fn get() -> Result<String, String> {
     imp::get().map(|t| t.replace("\r\n", "\n"))
+}
+
+/// Put an image on the system clipboard.
+pub fn set_image(pm: &rustsidian_ui::Pixmap) -> Result<(), String> {
+    let png = pm.encode_png().map_err(|e| e.to_string())?;
+    imp::set_png(&png, pm)
 }
 
 /// What a paste into a note inserts.
@@ -49,6 +55,28 @@ fn uri_list(list: &str) -> Vec<PathBuf> {
         .filter_map(|l| l.strip_prefix("localhost").unwrap_or(l).strip_prefix('/'))
         .map(|p| PathBuf::from(format!("/{}", vault_core::path::percent_decode(p))))
         .collect()
+}
+
+/// An image as a 32-bit bottom-up `CF_DIB`, for programs that do not read the "PNG" format.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn to_dib(pm: &rustsidian_ui::Pixmap) -> Vec<u8> {
+    let (w, h) = (pm.width(), pm.height());
+    let mut dib = Vec::with_capacity(40 + w as usize * h as usize * 4);
+    for v in [40u32, w, h] {
+        dib.extend(v.to_le_bytes());
+    }
+    dib.extend(1u16.to_le_bytes());
+    dib.extend(32u16.to_le_bytes());
+    dib.extend(0u32.to_le_bytes());
+    dib.extend((w * h * 4).to_le_bytes());
+    dib.extend([0u8; 16]);
+    for row in pm.pixels().chunks(w as usize).rev() {
+        for p in row {
+            let c = p.demultiply();
+            dib.extend([c.blue(), c.green(), c.red(), c.alpha()]);
+        }
+    }
+    dib
 }
 
 /// A Windows device-independent bitmap (`CF_DIB`: header, optional masks and palette, pixels)
@@ -144,35 +172,59 @@ mod imp {
     }
 
     pub fn set(text: &str) -> Result<(), String> {
-        let wide: Vec<u16> = text.encode_utf16().chain([0]).collect();
+        let wide: Vec<u8> = text.encode_utf16().chain([0]).flat_map(u16::to_le_bytes).collect();
         open()?;
-        // SAFETY: the clipboard is open. The block is allocated with the size of `wide` and only
-        // written while locked; after SetClipboardData succeeds the system owns it.
+        // SAFETY: the clipboard is open.
         let result = unsafe {
             EmptyClipboard();
-            let mem = GlobalAlloc(GMEM_MOVEABLE, wide.len() * 2);
-            if mem.is_null() {
-                Err("out of memory".to_string())
-            } else {
-                let dst = GlobalLock(mem) as *mut u16;
-                if dst.is_null() {
-                    GlobalFree(mem);
-                    Err("cannot lock clipboard memory".to_string())
-                } else {
-                    std::ptr::copy_nonoverlapping(wide.as_ptr(), dst, wide.len());
-                    GlobalUnlock(mem);
-                    if SetClipboardData(CF_UNICODETEXT, mem).is_null() {
-                        GlobalFree(mem);
-                        Err("cannot set clipboard data".to_string())
-                    } else {
-                        Ok(())
-                    }
-                }
-            }
+            put(CF_UNICODETEXT, &wide)
         };
         // SAFETY: opened above.
         unsafe { CloseClipboard() };
         result
+    }
+
+    /// The image as "PNG" for programs that keep transparency, and as a bitmap for the rest.
+    pub fn set_png(png: &[u8], pm: &rustsidian_ui::Pixmap) -> Result<(), String> {
+        let name: Vec<u16> = "PNG".encode_utf16().chain([0]).collect();
+        let dib = super::to_dib(pm);
+        open()?;
+        // SAFETY: the clipboard is open; `name` is zero-terminated.
+        let result = unsafe {
+            EmptyClipboard();
+            let format = RegisterClipboardFormatW(name.as_ptr());
+            if format != 0 {
+                put(format, png)?;
+            }
+            put(CF_DIB, &dib)
+        };
+        // SAFETY: opened above.
+        unsafe { CloseClipboard() };
+        result
+    }
+
+    /// Hand a copy of `data` to the clipboard as `format`.
+    ///
+    /// # Safety
+    /// The clipboard must be open. The block is allocated with the size of `data` and only
+    /// written while locked; after SetClipboardData succeeds the system owns it.
+    unsafe fn put(format: u32, data: &[u8]) -> Result<(), String> {
+        let mem = GlobalAlloc(GMEM_MOVEABLE, data.len());
+        if mem.is_null() {
+            return Err("out of memory".to_string());
+        }
+        let dst = GlobalLock(mem) as *mut u8;
+        if dst.is_null() {
+            GlobalFree(mem);
+            return Err("cannot lock clipboard memory".to_string());
+        }
+        std::ptr::copy_nonoverlapping(data.as_ptr(), dst, data.len());
+        GlobalUnlock(mem);
+        if SetClipboardData(format, mem).is_null() {
+            GlobalFree(mem);
+            return Err("cannot set clipboard data".to_string());
+        }
+        Ok(())
     }
 
     pub fn get() -> Result<String, String> {
@@ -312,6 +364,52 @@ mod imp {
         Err(MISSING.into())
     }
 
+    #[cfg(not(target_os = "macos"))]
+    pub fn set_png(png: &[u8], _: &rustsidian_ui::Pixmap) -> Result<(), String> {
+        let mut t: Vec<&[&str]> = Vec::new();
+        if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+            t.push(&["wl-copy", "--type", "image/png"]);
+        }
+        t.push(&["xclip", "-selection", "clipboard", "-target", "image/png"]);
+        for copy in t {
+            let Ok(mut child) = Command::new(copy[0])
+                .args(&copy[1..])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+            else {
+                continue;
+            };
+            let wrote = child.stdin.take().map(|mut s| s.write_all(png));
+            let status = child.wait().map_err(|e| e.to_string())?;
+            return match wrote {
+                Some(Ok(())) if status.success() => Ok(()),
+                Some(Err(e)) => Err(format!("{}: {e}", copy[0])),
+                _ => Err(format!("{} failed", copy[0])),
+            };
+        }
+        Err("no image clipboard tool found (install wl-clipboard or xclip)".into())
+    }
+
+    /// AppleScript reads the image from a file; a long hex literal could pass the argument limit.
+    #[cfg(target_os = "macos")]
+    pub fn set_png(png: &[u8], _: &rustsidian_ui::Pixmap) -> Result<(), String> {
+        let file = std::env::temp_dir().join("rustsidian-screenshot.png");
+        std::fs::write(&file, png).map_err(|e| e.to_string())?;
+        let script = format!(
+            "set the clipboard to (read (POSIX file \"{}\") as «class PNGf»)",
+            file.display().to_string().replace('\\', "\\\\").replace('"', "\\\"")
+        );
+        let ok = Command::new("osascript").args(["-e", &script]).stderr(Stdio::null()).status();
+        let _ = std::fs::remove_file(&file);
+        match ok {
+            Ok(s) if s.success() => Ok(()),
+            Ok(_) => Err("osascript failed".into()),
+            Err(e) => Err(format!("osascript: {e}")),
+        }
+    }
+
     pub fn get() -> Result<String, String> {
         for (_, paste) in tools() {
             let Ok(out) = Command::new(paste[0]).args(&paste[1..]).stderr(Stdio::null()).output() else {
@@ -406,6 +504,16 @@ mod tests {
     fn rgba(png: &[u8], x: u32, y: u32) -> (u8, u8, u8, u8) {
         let p = Pixmap::decode_png(png).unwrap().pixel(x, y).unwrap().demultiply();
         (p.red(), p.green(), p.blue(), p.alpha())
+    }
+
+    #[test]
+    fn images_round_trip_through_bitmaps() {
+        let mut pm = Pixmap::new(3, 2).unwrap();
+        pm.fill(rustsidian_ui::SkColor::from_rgba8(10, 20, 30, 255));
+        pm.data_mut()[..4].copy_from_slice(&[200, 100, 50, 255]);
+        let png = dib_to_png(&to_dib(&pm)).unwrap();
+        assert_eq!(rgba(&png, 0, 0), (200, 100, 50, 255));
+        assert_eq!(rgba(&png, 2, 1), (10, 20, 30, 255));
     }
 
     #[test]

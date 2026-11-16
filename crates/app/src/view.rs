@@ -496,9 +496,43 @@ fn backlinks(app: &App, dom: &mut Dom, parent: NodeId) {
     let bar = dom.add(parent, El::div().class("nav-buttons-container"));
     let b = icon_button(dom, bar, "collapse", "backlinks:toggle-collapse", app.backlinks_collapsed);
     dom.nodes[b].el.attrs.push(("aria-label".into(), "Collapse results".into()));
+    let b = icon_button(dom, bar, "context", "backlinks:toggle-context", app.backlinks_more);
+    dom.nodes[b].el.attrs.push(("aria-label".into(), "Show more context".into()));
     let b = icon_button(dom, bar, "sort", "backlinks:toggle-sort", app.backlinks_desc);
     dom.nodes[b].el.attrs.push(("aria-label".into(), "Change sort order".into()));
-    let files = app.linked.as_ref().map(|m| m.files.as_slice()).unwrap_or(&[]);
+    let b = icon_button(dom, bar, "search", "backlinks:toggle-filter", app.backlinks_filter.is_some());
+    dom.nodes[b].el.attrs.push(("aria-label".into(), "Show search filter".into()));
+    if let Some(f) = &app.backlinks_filter {
+        let (text, faint) = match (f.is_empty(), app.backlinks_editing) {
+            (_, true) => (format!("{f}▏"), false),
+            (true, false) => ("Filter...".to_string(), true),
+            (false, false) => (f.clone(), false),
+        };
+        let field = dom.add(
+            parent,
+            El::div()
+                .class("graph-input backlinks-filter")
+                .class_if(app.backlinks_editing, "is-editing")
+                .action("backlinks:edit-filter"),
+        );
+        dom.add(field, icons::el("search"));
+        dom.add(field, El::div().class("graph-input-text").class_if(faint, "is-placeholder").text(text));
+    }
+    let needle = app.backlinks_filter.as_deref().unwrap_or("").to_lowercase();
+    let files: Vec<(&String, Vec<&String>)> = app
+        .linked
+        .as_ref()
+        .map(|m| m.files.as_slice())
+        .unwrap_or(&[])
+        .iter()
+        .filter_map(|(p, snippets)| {
+            if needle.is_empty() || p.to_lowercase().contains(&needle) {
+                return Some((p, snippets.iter().collect()));
+            }
+            let hits: Vec<&String> = snippets.iter().filter(|s| s.to_lowercase().contains(&needle)).collect();
+            (!hits.is_empty()).then_some((p, hits))
+        })
+        .collect();
     let header = dom.add(parent, El::div().class("nav-header"));
     dom.add(header, El::div().class("nav-header-title").text("Linked mentions"));
     dom.add(header, El::div().class("tree-item-flair").text(files.len().to_string()));
@@ -510,6 +544,7 @@ fn backlinks(app: &App, dom: &mut Dom, parent: NodeId) {
         if app.backlinks_desc { Box::new(files.iter().rev()) } else { Box::new(files.iter()) };
     for (p, snippets) in ordered {
         let row = dom.add(back, El::div().class("tree-item-self").action(format!("open:{p}")));
+        let p = p.as_str();
         dom.add(row, El::div().class("tree-item-inner").text(path::strip_md(p).to_string()));
         dom.add(row, El::div().class("tree-item-flair").text(snippets.len().to_string()));
         if app.backlinks_collapsed {
@@ -518,7 +553,11 @@ fn backlinks(app: &App, dom: &mut Dom, parent: NodeId) {
         for s in snippets {
             dom.add(
                 back,
-                El::div().class("search-result-file-match").text(s.clone()).action(format!("open:{p}")),
+                El::div()
+                    .class("search-result-file-match")
+                    .class_if(app.backlinks_more, "is-wrapped")
+                    .text(s.to_string())
+                    .action(format!("open:{p}")),
             );
         }
     }
