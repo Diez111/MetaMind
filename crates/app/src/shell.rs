@@ -261,6 +261,8 @@ pub enum PromptKind {
     Template,
     /// Workspaces to save, load or delete, as `Prompt::target` says.
     Workspace,
+    /// A new value for the base table cell `Prompt::target` (`path|column`).
+    BaseCell,
 }
 
 #[derive(Clone, Debug)]
@@ -1088,6 +1090,10 @@ impl App {
             PromptKind::Workspace => {
                 let target = self.prompt.as_ref().map(|p| p.target.clone()).unwrap_or_default();
                 self.workspace_items(&target, &query)
+            }
+            PromptKind::BaseCell => {
+                let target = self.prompt.as_ref().map(|p| p.target.clone()).unwrap_or_default();
+                self.base_cell_items(&target, &query)
             }
             PromptKind::Rename | PromptKind::NewFolder => {
                 let target = self.prompt.as_ref().map(|p| p.target.clone()).unwrap_or_default();

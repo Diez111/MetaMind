@@ -116,3 +116,26 @@ fn a_base_with_bad_syntax_shows_the_error() {
     let f = frame(&mut app, &mut Fonts::new());
     assert!(f.dom.nodes.iter().any(|n| n.el.text.as_deref().is_some_and(|t| t.contains("cannot be read"))));
 }
+
+#[test]
+fn clicking_a_property_cell_edits_the_note() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("A.md");
+    app.open_note("Books.base");
+    let mut fonts = Fonts::new();
+    let f = frame(&mut app, &mut fonts);
+    assert!(find_action(&f, "base:edit:A.md|formula.total").is_none());
+    let (x, y) = find_action(&f, "base:edit:A.md|status").expect("an editable status cell");
+    app.click(&f, &mut fonts, x, y, false);
+    assert_eq!(app.prompt.as_ref().map(|p| p.query.as_str()), Some("reading"));
+    app.prompt.as_mut().unwrap().query.clear();
+    app.text_input("paused");
+    app.key(rustsidian_app::Key::new("Enter"));
+    let text = fs::read_to_string(d.path().join("A.md")).unwrap();
+    assert!(text.contains("status: paused\n"), "{text}");
+    // The open tab shows the change, and so do the rows.
+    assert!(app.all_tabs().any(|t| t.path == "A.md" && t.editor.buf.text().contains("status: paused")));
+    frame(&mut app, &mut fonts);
+    assert!(rows(&app).iter().any(|(p, c)| p == "A.md" && c[1] == Val::Str("paused".into())));
+}

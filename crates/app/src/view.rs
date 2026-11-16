@@ -1668,6 +1668,7 @@ fn overlays(app: &App, dom: &mut Dom, viewport_h: f32) {
                 "save" => "Workspace name…",
                 _ => "Find a workspace…",
             },
+            PromptKind::BaseCell => "Empty to remove the property…",
         };
         let shown = if p.query.is_empty() { placeholder.to_string() } else { format!("{}▏", p.query) };
         let input = dom.add(modal, El::div().class("prompt-input-container"));
@@ -1680,6 +1681,7 @@ fn overlays(app: &App, dom: &mut Dom, viewport_h: f32) {
                 PromptKind::NewFolder => "folder-plus",
                 PromptKind::Template => "note",
                 PromptKind::Workspace => "list",
+                PromptKind::BaseCell => "edit",
             }),
         );
         dom.add(input, El::div().class("prompt-input").text(shown));

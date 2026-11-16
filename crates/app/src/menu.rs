@@ -359,7 +359,7 @@ impl App {
     }
 
     /// Replace the text of open tabs whose files were rewritten on disk.
-    fn reload_tabs(&mut self, paths: &[String]) {
+    pub(crate) fn reload_tabs(&mut self, paths: &[String]) {
         for p in paths {
             if let Ok((text, stamp)) = self.store.read(p) {
                 for tab in self.all_tabs_mut().filter(|t| t.path.eq_ignore_ascii_case(p)) {

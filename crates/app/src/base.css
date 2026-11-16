@@ -355,6 +355,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .bases-count { margin-left: auto }
 .bases-table { margin: 0 24px 12px 24px }
 .bases-table .internal-link { color: var(--link-color) }
+.bases-table .bases-editable:hover { background-color: var(--background-modifier-hover) }
 .bases-group-heading { margin: 8px 24px 6px 24px; font-weight: 600; color: var(--text-muted); font-size: var(--font-ui-small) }
 .bases-cards { display: flex; gap: 12px; align-items: flex-start; margin: 0 24px 12px 24px }
 .bases-card, .bases-card-filler { width: 32% }

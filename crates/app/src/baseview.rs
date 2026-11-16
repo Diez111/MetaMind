@@ -1,10 +1,12 @@
 //! The pane that shows an open `.base` file.
 
 use crate::bases::{self, Base, Item, Row, ViewKind};
-use crate::shell::{App, Focus};
+use crate::properties::{self, Kind};
+use crate::shell::{App, Focus, PromptItem, PromptKind};
+use md_engine::frontmatter::Value;
 use rustsidian_ui::{Dom, El, NodeId};
 use vault_core::fsio::{self, Stamp};
-use vault_core::path;
+use vault_core::{path, WriteError};
 
 /// Most rows drawn at once; the rest are counted, not built.
 const MAX_SHOWN: usize = 500;
@@ -67,6 +69,21 @@ impl App {
     }
 
     pub(crate) fn run_base(&mut self, command: &str) -> bool {
+        if let Some(rest) = command.strip_prefix("base:edit:") {
+            if let Some((rel, col)) = rest.split_once('|') {
+                let current =
+                    self.store.read(rel).ok().and_then(|(t, _)| cell_text(&t, &bases::canonical(col)));
+                self.open_name_prompt(PromptKind::BaseCell, rest, &current.unwrap_or_default());
+            }
+            return true;
+        }
+        if let Some(rest) = command.strip_prefix("base:set:") {
+            let mut parts = rest.splitn(3, '|');
+            if let (Some(rel), Some(col), Some(input)) = (parts.next(), parts.next(), parts.next()) {
+                self.set_note_property(rel, &bases::canonical(col), input);
+            }
+            return true;
+        }
         if let Some(i) = command.strip_prefix("base:view:").and_then(|i| i.parse::<usize>().ok()) {
             if let Some(v) = &mut self.base_view {
                 v.view = i;
@@ -87,6 +104,57 @@ impl App {
             _ => return false,
         }
         true
+    }
+
+    /// The prompt row that sets the cell in `target` (`path|column`) to `query`.
+    pub(crate) fn base_cell_items(&self, target: &str, query: &str) -> Vec<PromptItem> {
+        let Some((rel, col)) = target.split_once('|') else { return Vec::new() };
+        let key = bases::canonical(col);
+        let value = query.trim();
+        let label = if value.is_empty() {
+            format!("Remove \u{201c}{key}\u{201d} from {}", path::stem(rel))
+        } else {
+            format!("Set \u{201c}{key}\u{201d} to \u{201c}{value}\u{201d}")
+        };
+        vec![PromptItem { label, aux: "Enter".into(), action: format!("base:set:{target}|{value}") }]
+    }
+
+    /// Write property `key` of the note at `rel` on disk; an empty `input` removes it.
+    fn set_note_property(&mut self, rel: &str, key: &str, input: &str) {
+        // Unsaved edits in an open tab would be overwritten by the rewrite below.
+        self.save_all();
+        if self.all_tabs().any(|t| t.path.eq_ignore_ascii_case(rel) && t.editor.buf.is_modified()) {
+            self.notice = Some(format!("Cannot change {rel}: its edits could not be saved"));
+            return;
+        }
+        let (text, stamp) = match self.store.read(rel) {
+            Ok(r) => r,
+            Err(e) => {
+                self.notice = Some(format!("Cannot read {rel}: {e}"));
+                return;
+            }
+        };
+        let out = match with_property(&text, key, input) {
+            Ok(out) if out == text => return,
+            Ok(out) => out,
+            Err(e) => {
+                self.notice = Some(e);
+                return;
+            }
+        };
+        match self.store.write(rel, &out, Some(stamp)) {
+            Ok(_) => {
+                if let (Some(c), Some(id)) = (&mut self.corpus, self.store.index.id(rel)) {
+                    c.update(id, Some(&out));
+                }
+                self.reload_tabs(&[rel.to_string()]);
+                self.files_changed(&[rel.to_string()]);
+            }
+            Err(WriteError::Conflict { .. }) => {
+                self.notice = Some(format!("{rel} changed on disk; try again"))
+            }
+            Err(WriteError::Io(e)) => self.notice = Some(format!("Cannot update {rel}: {e}")),
+        }
     }
 
     /// Compute the current view's rows if they are stale.
@@ -117,6 +185,76 @@ impl App {
         let items = bases::run(base, view, &cols, &rows);
         v.items = Some((cols, items));
     }
+}
+
+/// The front matter value of `key` in `text` as the edit prompt shows it.
+fn cell_text(text: &str, key: &str) -> Option<String> {
+    let front = properties::scan(text)?;
+    let v = &front.entries[front.index(key)?].value;
+    Some(match v {
+        Value::List(items) => items.iter().map(scalar_text).collect::<Vec<_>>().join(", "),
+        v => scalar_text(v),
+    })
+}
+
+fn scalar_text(v: &Value) -> String {
+    match v {
+        Value::Null | Value::List(_) | Value::Map(_) => String::new(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => md_engine::frontmatter::fmt_number(*n),
+        Value::String(s) => s.clone(),
+    }
+}
+
+/// `text` with property `key` set from `input`, keeping the type the property has: lists split
+/// on commas, numbers and checkboxes must parse. An empty `input` removes the property.
+pub fn with_property(text: &str, key: &str, input: &str) -> Result<String, String> {
+    let input = input.trim();
+    let front = properties::scan(text);
+    let at = front.as_ref().and_then(|f| f.index(key));
+    let old = front.as_ref().zip(at).map(|(f, i)| &f.entries[i].value);
+    let change = if input.is_empty() {
+        let (Some(f), Some(i)) = (&front, at) else { return Ok(text.to_string()) };
+        f.remove(i)
+    } else {
+        let value = match properties::kind(key, old.unwrap_or(&Value::Null)) {
+            Kind::List => Value::List(
+                input
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(|s| Value::String(s.into()))
+                    .collect(),
+            ),
+            Kind::Number => match input.parse::<f64>() {
+                Ok(n) if n.is_finite() => Value::Number(n),
+                _ => return Err(format!("\"{input}\" is not a number")),
+            },
+            Kind::Checkbox => match input.to_ascii_lowercase().as_str() {
+                "true" | "yes" => Value::Bool(true),
+                "false" | "no" => Value::Bool(false),
+                _ => return Err(format!("\"{key}\" is a checkbox: enter true or false")),
+            },
+            Kind::Other => return Err(format!("\"{key}\" holds nested values; edit it in the note")),
+            Kind::Text | Kind::Date => Value::String(input.to_string()),
+        };
+        match (&front, at) {
+            (Some(f), Some(i)) => f.set_value(i, &value),
+            (Some(f), None) => f.add(key, &value),
+            (None, _) if text.starts_with("---") => {
+                return Err("The note's front matter cannot be read; edit it in the note".to_string())
+            }
+            (None, _) => properties::create(key, &value),
+        }
+    };
+    let mut out = text.to_string();
+    out.replace_range(change.start..change.end, &change.text);
+    Ok(out)
+}
+
+/// Columns that are note properties, which the table can edit.
+fn editable(col: &str) -> bool {
+    !col.starts_with("file.") && !col.starts_with("formula.")
 }
 
 fn file_name_cell(col: &str) -> bool {
@@ -201,6 +339,10 @@ fn table(base: &Base, cols: &[String], rows: &[Item], dom: &mut Dom, parent: Nod
             let cell = El::div().class("table-cell").style(&width);
             let cell = if file_name_cell(c) {
                 cell.class("internal-link").text(link_text(item, c, i)).action(format!("open:{}", item.path))
+            } else if editable(c) {
+                cell.class("bases-editable")
+                    .text(item.cells[i].to_string())
+                    .action(format!("base:edit:{}|{c}", item.path))
             } else {
                 cell.text(item.cells[i].to_string())
             };
@@ -253,5 +395,30 @@ fn list(cols: &[String], rows: &[Item], dom: &mut Dom, parent: NodeId) {
         if !extra.is_empty() {
             dom.add(li, El::div().class("bases-list-extra").text(extra.join(" · ")));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::with_property;
+
+    #[test]
+    fn set_keeps_the_property_type() {
+        let t = "---\nstatus: done\nprice: 5\ntags: [a]\nok: true\n---\nbody\n";
+        assert_eq!(with_property(t, "status", "open").unwrap(), t.replace("done", "open"));
+        assert!(with_property(t, "price", "7").unwrap().contains("price: 7\n"));
+        assert!(with_property(t, "price", "lots").is_err());
+        assert!(with_property(t, "ok", "no").unwrap().contains("ok: false\n"));
+        let tags = with_property(t, "tags", "a, b").unwrap();
+        assert!(!tags.contains("[a]") && tags.contains("b"), "{tags}");
+    }
+
+    #[test]
+    fn adds_removes_and_creates_front_matter() {
+        let t = "---\nstatus: done\n---\nbody\n";
+        assert_eq!(with_property(t, "status", " ").unwrap(), "---\n---\nbody\n");
+        assert_eq!(with_property(t, "owner", "me").unwrap(), "---\nstatus: done\nowner: me\n---\nbody\n");
+        assert_eq!(with_property("body\n", "owner", "me").unwrap(), "---\nowner: me\n---\nbody\n");
+        assert_eq!(with_property("body\n", "owner", "").unwrap(), "body\n");
     }
 }
