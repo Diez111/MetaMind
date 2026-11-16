@@ -638,20 +638,33 @@ impl GraphView {
             Some(_) => fade * 0.2,
             None => fade,
         };
+        // Labels are placed most important first: the hovered node and its neighbours, then by
+        // link count. One that would overlap a placed label is left out, as in Obsidian.
         let mut labelled: Vec<usize> = visible.into_iter().filter(|&i| alpha(i) > 0.01).collect();
-        if labelled.len() > MAX_LABELS {
-            labelled.sort_by_key(|&i| {
-                (std::cmp::Reverse(near.get(i).copied()), std::cmp::Reverse(g.nodes[i].degree))
-            });
-            labelled.truncate(MAX_LABELS);
-        }
+        labelled.sort_by_key(|&i| {
+            (
+                std::cmp::Reverse(focus == Some(i as u32)),
+                std::cmp::Reverse(near.get(i).copied()),
+                std::cmp::Reverse(g.nodes[i].degree),
+            )
+        });
+        let mut placed: Vec<Rect> = Vec::new();
         for i in labelled {
+            if placed.len() >= MAX_LABELS {
+                break;
+            }
             let size = if focus == Some(i as u32) { text.size * 0.9 } else { text.size };
             let label: String = g.nodes[i].label.chars().take(40).collect();
             let w = label.chars().count() as f32 * size * 0.52;
+            let (x, y) = (screen[i].0 - w / 2.0, screen[i].1 + self.radius(i) + 3.0);
+            let r = Rect::new(x - 2.0, y, w + 4.0, size * 1.25);
+            if placed.iter().any(|p| overlaps(p, &r)) {
+                continue;
+            }
+            placed.push(r);
             cmds.push(Cmd::Text {
-                x: screen[i].0 - w / 2.0,
-                y: screen[i].1 + self.radius(i) + 3.0,
+                x,
+                y,
                 width: None,
                 text: label,
                 spans: Vec::new(),
@@ -661,6 +674,10 @@ impl GraphView {
         cmds.push(Cmd::PopClip);
         cmds
     }
+}
+
+fn overlaps(a: &Rect, b: &Rect) -> bool {
+    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 }
 
 impl App {
