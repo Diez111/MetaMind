@@ -343,3 +343,22 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .workspace-leaf-resize-handle { flex-shrink: 0; background-color: var(--background-modifier-border) }
 .workspace-leaf-resize-handle.mod-vertical { width: 3px }
 .workspace-leaf-resize-handle.mod-horizontal { height: 3px }
+.bases-view { overflow: auto; padding: 12px 0 }
+.bases-view-tab.is-active { color: var(--text-normal); background-color: var(--background-modifier-hover) }
+.bases-count { margin-left: auto }
+.bases-table { margin: 0 24px 12px 24px }
+.bases-table .internal-link { color: var(--link-color) }
+.bases-group-heading { margin: 8px 24px 6px 24px; font-weight: 600; color: var(--text-muted); font-size: var(--font-ui-small) }
+.bases-cards { display: flex; gap: 12px; align-items: flex-start; margin: 0 24px 12px 24px }
+.bases-card, .bases-card-filler { width: 32% }
+.bases-card { padding: 10px 12px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background-color: var(--background-primary-alt) }
+.bases-card:hover { border-color: var(--interactive-accent) }
+.bases-card-title { font-weight: 600; color: var(--text-normal); margin-bottom: 6px }
+.bases-card-property { display: flex; gap: 6px; font-size: var(--font-ui-small); line-height: var(--line-height-normal) }
+.bases-card-label { color: var(--text-muted); width: 40% }
+.bases-card-value { color: var(--text-normal); width: 60% }
+.bases-list { margin: 0 24px 12px 24px }
+.bases-list-item { display: flex; gap: 10px; padding: 3px 0 }
+.bases-list-item .internal-link { color: var(--link-color) }
+.bases-list-extra { color: var(--text-muted) }
+.bases-more, .bases-error { margin: 8px 24px; color: var(--text-muted) }

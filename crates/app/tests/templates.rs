@@ -62,3 +62,24 @@ fn unique_note_uses_settings_and_never_reuses_a_name() {
     assert_eq!(second, first.replace(".md", " 1.md"));
     assert!(d.path().join(&second).is_file());
 }
+
+#[test]
+fn previous_and_next_daily_notes_skip_missing_days() {
+    let d = vault();
+    fs::write(d.path().join(".obsidian/daily-notes.json"), r#"{"folder":"Daily"}"#).unwrap();
+    fs::create_dir_all(d.path().join("Daily")).unwrap();
+    fs::write(d.path().join("Daily/2020-01-01.md"), "one\n").unwrap();
+    fs::write(d.path().join("Daily/2020-01-05.md"), "five\n").unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("daily-notes");
+    let path = |app: &App| app.tab().unwrap().path.clone();
+    app.run("daily-notes:goto-prev");
+    assert_eq!(path(&app), "Daily/2020-01-05.md");
+    app.run("daily-notes:goto-prev");
+    assert_eq!(path(&app), "Daily/2020-01-01.md");
+    app.run("daily-notes:goto-prev");
+    assert_eq!(app.notice.as_deref(), Some("No earlier daily note"));
+    assert_eq!(path(&app), "Daily/2020-01-01.md");
+    app.run("daily-notes:goto-next");
+    assert_eq!(path(&app), "Daily/2020-01-05.md");
+}

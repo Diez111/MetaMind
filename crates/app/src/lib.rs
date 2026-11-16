@@ -2,6 +2,8 @@
 
 pub mod anim;
 pub mod attach;
+pub mod bases;
+pub mod baseview;
 pub mod canvasview;
 pub mod cli;
 pub mod clipboard;
@@ -257,6 +259,7 @@ impl App {
         match action {
             "graph:focus" => self.run("graph:close"),
             "canvas:focus" => self.run("canvas:close"),
+            "base:focus" => self.run("base:close"),
             a => {
                 if let Some(i) = a.strip_prefix("tab:").or_else(|| a.strip_prefix("close-tab:")) {
                     let cmd = format!("close-tab:{i}");

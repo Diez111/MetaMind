@@ -266,6 +266,7 @@ pub fn for_file(path: &str) -> &'static str {
     match vault_core::path::extension(path).to_ascii_lowercase().as_str() {
         "md" => "note",
         "canvas" => "canvas",
+        "base" => "table",
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" => "image",
         _ => "file",
     }

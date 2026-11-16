@@ -96,6 +96,9 @@ impl App {
             Some("canvas:focus") => {
                 b.item("x", "Close", "canvas:close");
             }
+            Some("base:focus") => {
+                b.item("x", "Close", "base:close");
+            }
             Some(_) => return,
             None => {
                 let in_files =
@@ -511,7 +514,7 @@ impl App {
     /// Copy (or cut) the selections. With nothing selected the whole line is taken, as in most
     /// code editors.
     fn copy(&mut self, cut: bool) {
-        if self.focus != Focus::Editor || self.show_graph || self.canvas_active() {
+        if self.focus != Focus::Editor || self.show_graph || self.canvas_active() || self.base_active() {
             return;
         }
         let now = fsio::now_ms();
@@ -699,7 +702,7 @@ fn tab_items(b: &mut Builder<'_>, i: usize) {
         b.item("folder", "Show in system explorer", format!("reveal:{p}"));
         if i == b.app.active {
             b.item("book", "Export to PDF", "workspace:export-pdf");
-            if !b.app.show_graph && !b.app.canvas_active() {
+            if !b.app.show_graph && !b.app.canvas_active() && !b.app.base_active() {
                 b.item("image", "Copy screenshot", "workspace:copy-screenshot");
             }
         }

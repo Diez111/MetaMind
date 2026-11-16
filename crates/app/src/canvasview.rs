@@ -687,6 +687,7 @@ impl App {
             }
         }
         self.show_canvas = true;
+        self.show_base = false;
         self.show_graph = false;
         self.focus = Focus::Editor;
     }
@@ -763,6 +764,7 @@ impl App {
                 v.auto_fit = false;
                 v.dirty = true;
                 self.show_canvas = true;
+                self.show_base = false;
                 self.show_graph = false;
                 self.focus = Focus::Editor;
             }

@@ -658,7 +658,7 @@ fn pane(
             dom.add(x, icons::el(close.1));
         };
     let (open, active) = app.pane_tabs(pane);
-    let covered = focused && (app.show_graph || app.canvas_active());
+    let covered = focused && (app.show_graph || app.canvas_active() || app.base_active());
     for (i, t) in open.iter().enumerate() {
         tab_header(
             dom,
@@ -678,6 +678,10 @@ fn pane(
         let (focus, close) = ("canvas:focus".to_string(), ("canvas:close".to_string(), "x"));
         tab_header(dom, "canvas", &c.title(), false, app.canvas_active(), focus, close);
     }
+    if let Some(b) = app.base_view.as_ref().filter(|_| focused) {
+        let (focus, close) = ("base:focus".to_string(), ("base:close".to_string(), "x"));
+        tab_header(dom, "table", &b.title(), false, app.base_active(), focus, close);
+    }
     let new_tab =
         dom.add(tabs, El::div().class("workspace-tab-header-new-tab").action("file-explorer:new-file"));
     dom.add(new_tab, icons::el("plus"));
@@ -693,6 +697,7 @@ fn pane(
         _ if app.canvas_active() => {
             crate::canvasview::pane(app.canvas_view.as_ref().unwrap(), dom, leaf, info)
         }
+        _ if app.base_active() => crate::baseview::pane(app.base_view.as_ref().unwrap(), dom, leaf),
         _ => editor(app, dom, leaf, pal, info, app.tab(), true),
     }
     info.panes.push((pane, leaf, None));

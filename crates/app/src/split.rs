@@ -205,6 +205,7 @@ impl App {
         self.swap_pane(i);
         self.show_graph = false;
         self.show_canvas = false;
+        self.show_base = false;
         self.focus = Focus::Editor;
     }
 

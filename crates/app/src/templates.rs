@@ -121,6 +121,35 @@ impl App {
         self.open_note(&rel);
     }
 
+    /// Open the daily note before or after the one in the active tab, skipping days without one.
+    /// Dates are found by formatting candidate days, so any name format works; the search spans
+    /// ten years either side of today.
+    pub(crate) fn daily_step(&mut self, forward: bool) {
+        const SPAN: i64 = 3653;
+        let v = read_json(self, "daily-notes.json");
+        let fmt = non_empty(&v, "format", "YYYY-MM-DD");
+        let folder = non_empty(&v, "folder", "").trim_matches('/').to_string();
+        let today = (fsio::now_ms() / 1000) as i64;
+        let name_of = |k: i64| -> Option<String> {
+            let secs = u64::try_from(today + k * 86400).ok()?;
+            Some(path::join(&folder, &format!("{}.md", datetime::format(&fmt, secs))))
+        };
+        let Some(cur) = self.tab().map(|t| t.path.clone()) else { return };
+        let Some(at) = (-SPAN..=SPAN).find(|&k| name_of(k).is_some_and(|n| n.eq_ignore_ascii_case(&cur)))
+        else {
+            self.notice = Some("The active note is not a daily note".to_string());
+            return;
+        };
+        let mut days: Box<dyn Iterator<Item = i64>> =
+            if forward { Box::new(at + 1..=SPAN) } else { Box::new((-SPAN..at).rev()) };
+        match days.find_map(|k| name_of(k).filter(|n| self.store.index.id(n).is_some())) {
+            Some(rel) => self.open_note(&rel),
+            None => {
+                self.notice = Some(format!("No {} daily note", if forward { "later" } else { "earlier" }))
+            }
+        }
+    }
+
     /// Create a note named by the current time, with the format, folder and template from
     /// `zk-prefixer.json`. A name already taken gets a counter.
     pub(crate) fn new_unique_note(&mut self) {

@@ -178,6 +178,7 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("editor:select-next-occurrence", "Select next occurrence", "Ctrl+D"),
     ("editor:follow-link", "Follow link under cursor", "Alt+Enter"),
     ("canvas:new", "Canvas: Create new canvas", ""),
+    ("bases:new", "Bases: Create new base", ""),
     ("canvas:add-text", "Canvas: Add text node", ""),
     ("canvas:delete-selected", "Canvas: Delete selected node", ""),
     ("canvas:edit-selected", "Canvas: Edit selected text node", ""),
@@ -196,6 +197,8 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("graph:animate", "Graph view: Animate layout", ""),
     ("graph:reset-settings", "Graph view: Restore default settings", ""),
     ("daily-notes", "Daily notes: Open today's daily note", ""),
+    ("daily-notes:goto-prev", "Daily notes: Open previous daily note", ""),
+    ("daily-notes:goto-next", "Daily notes: Open next daily note", ""),
     ("zk-prefixer", "Unique note creator: Create new unique note", ""),
     ("random-note", "Random note: Open random note", ""),
     ("app:delete-file", "Delete current file", ""),
@@ -362,6 +365,8 @@ pub struct App {
     pub show_graph: bool,
     pub canvas_view: Option<crate::canvasview::CanvasView>,
     pub show_canvas: bool,
+    pub base_view: Option<crate::baseview::BaseView>,
+    pub show_base: bool,
     pub store: VaultStore,
     pub config: VaultConfig,
     pub theme: Theme,
@@ -585,6 +590,8 @@ impl App {
             show_graph: false,
             canvas_view: None,
             show_canvas: false,
+            base_view: None,
+            show_base: false,
             recovery: Recovery::new(root),
             store,
             theme,
@@ -664,6 +671,7 @@ impl App {
     /// metadata of the active note. Each is recomputed only when its input changed.
     pub fn refresh_derived(&mut self) {
         self.sync_panes();
+        self.base_refresh();
         if !self.defer_graph {
             self.graph = Some(self.store.index.graph());
             self.store.release_cache_pages();
@@ -800,10 +808,12 @@ impl App {
 
     /// The note being edited; `None` while the graph has the main pane.
     pub fn tab(&self) -> Option<&Tab> {
-        self.tabs.get(self.active).filter(|_| !self.show_graph && !self.canvas_active())
+        self.tabs
+            .get(self.active)
+            .filter(|_| !self.show_graph && !self.canvas_active() && !self.base_active())
     }
     pub fn tab_mut(&mut self) -> Option<&mut Tab> {
-        let shown = !self.show_graph && !self.canvas_active();
+        let shown = !self.show_graph && !self.canvas_active() && !self.base_active();
         self.tabs.get_mut(self.active).filter(|_| shown)
     }
 
@@ -832,6 +842,9 @@ impl App {
         if path::kind_of(&rel) == FileKind::Canvas {
             return self.open_canvas(&rel);
         }
+        if path::kind_of(&rel) == FileKind::Base {
+            return self.open_base(&rel);
+        }
         if let Some(i) = self.tabs.iter().position(|t| t.path.eq_ignore_ascii_case(&rel)) {
             self.active = i;
         } else {
@@ -854,6 +867,7 @@ impl App {
         self.focus = Focus::Editor;
         self.show_graph = false;
         self.show_canvas = false;
+        self.show_base = false;
         self.plugins.push(ext_api::Event::FileOpen { path: rel.clone() });
         if record {
             self.history.truncate(self.history_pos + usize::from(!self.history.is_empty()));
@@ -884,6 +898,9 @@ impl App {
                 }
                 let path = tab.path.clone();
                 self.saved_elsewhere(&path, &text, stamp);
+                if let Some(b) = &mut self.base_view {
+                    b.items = None;
+                }
                 true
             }
             Err(WriteError::Conflict { .. }) => {
@@ -944,6 +961,7 @@ impl App {
     pub fn files_changed(&mut self, paths: &[String]) {
         self.tree = None;
         self.canvas_files_changed(paths);
+        self.base_files_changed(paths);
         if let Some(g) = &mut self.graph_view {
             g.dirty = true;
         }
@@ -1020,7 +1038,7 @@ impl App {
                     self.store
                         .index
                         .iter()
-                        .filter(|(_, f)| f.kind == FileKind::Canvas)
+                        .filter(|(_, f)| matches!(f.kind, FileKind::Canvas | FileKind::Base))
                         .map(|(_, f)| &*f.path),
                 );
                 if query.is_empty() {
@@ -1227,6 +1245,7 @@ impl App {
                 self.active = i;
                 self.show_graph = false;
                 self.show_canvas = false;
+                self.show_base = false;
                 self.focus = Focus::Editor;
             }
             return;
@@ -1311,6 +1330,18 @@ impl App {
                     Err(e) => self.notice = Some(format!("Cannot create note: {e}")),
                 }
             }
+            "bases:new" => {
+                let name = (0..)
+                    .map(|n| if n == 0 { "Untitled.base".to_string() } else { format!("Untitled {n}.base") })
+                    .map(|f| path::join(&self.new_note_dir(), &f))
+                    .find(|p| self.store.index.id(p).is_none() && !self.store.root.join(p).exists())
+                    .unwrap_or_default();
+                self.tree = None;
+                match self.store.create(&name, "views:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - file.mtime\n") {
+                    Ok(_) => self.open_base(&name),
+                    Err(e) => self.notice = Some(format!("Cannot create base: {e}")),
+                }
+            }
             "canvas:new" => {
                 let name =
                     (0..)
@@ -1339,10 +1370,12 @@ impl App {
                 self.graph_view = None;
                 self.show_graph = false;
             }
+            "workspace:close" if self.base_active() => self.run("base:close"),
             "workspace:close" | "canvas:close" if self.canvas_active() || command == "canvas:close" => {
                 self.canvas_save();
                 self.canvas_view = None;
                 self.show_canvas = false;
+                self.show_base = false;
             }
             "workspace:close" => self.close_tab(self.active),
             "workspace:split-vertical" => self.split(true),
@@ -1398,6 +1431,7 @@ impl App {
                 self.switch_vault = true;
             }
             "workspace:next-tab" | "workspace:previous-tab" if self.show_graph => self.show_graph = false,
+            "workspace:next-tab" | "workspace:previous-tab" if self.base_active() => self.show_base = false,
             "workspace:next-tab" | "workspace:previous-tab" if self.canvas_active() => {
                 self.show_canvas = false
             }
@@ -1465,6 +1499,8 @@ impl App {
             "editor:toggle-strikethrough" => wrap(self, "~~"),
             "editor:follow-link" => self.follow_link(),
             "daily-notes" => self.open_daily_note(),
+            "daily-notes:goto-prev" => self.daily_step(false),
+            "daily-notes:goto-next" => self.daily_step(true),
             "zk-prefixer" => self.new_unique_note(),
             "random-note" => {
                 let notes: Vec<String> = self.store.index.notes().map(|(_, f)| f.path.to_string()).collect();
@@ -1502,7 +1538,7 @@ impl App {
                 self.quit = true;
             }
             _ => {
-                if self.run_graph(command) || self.run_canvas(command) {
+                if self.run_graph(command) || self.run_canvas(command) || self.run_base(command) {
                     return;
                 }
                 if self.run_editing(command, now) {
