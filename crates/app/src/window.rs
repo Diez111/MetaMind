@@ -835,7 +835,7 @@ impl Win {
             .min();
         // While the graph layout or an interface animation is moving, redraw at display rate;
         // both stop by themselves.
-        let animating = app.graph_animating() || app.anims.active();
+        let animating = app.graph_animating() || app.anims.active() || app.scrolling();
         if (animating && frame_due) || (self.animating && !animating) {
             self.last_anim = Instant::now();
             redraw = true;

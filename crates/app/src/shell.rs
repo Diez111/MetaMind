@@ -305,6 +305,8 @@ pub struct ExplorerDrag {
 }
 
 pub const TREE_ROW_HEIGHT: f32 = 26.0;
+/// Pixels the editor scrolls per wheel line (a wheel notch is three).
+pub const SCROLL_LINE: f32 = 40.0;
 const META_DEBOUNCE_MS: u64 = 400;
 
 pub struct Tab {
@@ -312,8 +314,13 @@ pub struct Tab {
     pub editor: Editor,
     pub stamp: Stamp,
     pub mode: ViewMode,
-    /// Index of the first top-level block shown (the editor scrolls block-wise).
+    /// Index of the top-level block the view is anchored to; only blocks near it are laid out.
     pub top_block: usize,
+    /// How far the view is scrolled past the top of `top_block`, in pixels. Rendering moves
+    /// the anchor to the block at the top of the view.
+    pub scroll_px: f32,
+    /// Wheel scrolling still to be applied, eased in over the next frames.
+    pub scroll_pending: f32,
     pub last_edit_ms: u64,
     /// Metadata of the buffer text, valid for the buffer version it was computed at.
     pub meta: Option<(u64, vault_core::NoteMeta)>,
@@ -338,6 +345,28 @@ impl Tab {
     pub fn title(&self) -> &str {
         path::stem(&self.path)
     }
+    /// Show block `block` at the top of the view.
+    pub fn scroll_to_block(&mut self, block: usize) {
+        self.top_block = block;
+        self.scroll_px = 0.0;
+        self.scroll_pending = 0.0;
+    }
+    /// Scroll by `px`; `smooth` eases it in over the next frames.
+    pub fn scroll_by(&mut self, px: f32, smooth: bool) {
+        if smooth {
+            self.scroll_pending += px;
+        } else {
+            self.scroll_px += px + std::mem::take(&mut self.scroll_pending);
+        }
+    }
+    /// Move part of the pending scroll into the view.
+    pub fn step_scroll(&mut self) {
+        // A fixed share per frame: fast at first, slowing into place.
+        let step =
+            if self.scroll_pending.abs() < 1.0 { self.scroll_pending } else { self.scroll_pending * 0.3 };
+        self.scroll_px += step;
+        self.scroll_pending -= step;
+    }
 
     pub(crate) fn new(path: String, text: &str, stamp: Stamp, vim: bool) -> Tab {
         Tab {
@@ -346,6 +375,8 @@ impl Tab {
             stamp,
             mode: ViewMode::LivePreview,
             top_block: 0,
+            scroll_px: 0.0,
+            scroll_pending: 0.0,
             last_edit_ms: 0,
             meta: None,
             folds: Default::default(),
@@ -1713,13 +1744,10 @@ impl App {
                 };
                 if t.mode == ViewMode::Reading {
                     match key.key.as_str() {
-                        "ArrowDown" | "PageDown" => {
-                            t.top_block = (t.top_block + if key.key == "PageDown" { 10 } else { 1 })
-                                .min(t.editor.buf.doc().blocks.len().saturating_sub(1))
-                        }
-                        "ArrowUp" | "PageUp" => {
-                            t.top_block = t.top_block.saturating_sub(if key.key == "PageUp" { 10 } else { 1 })
-                        }
+                        "ArrowDown" => t.scroll_by(SCROLL_LINE, false),
+                        "ArrowUp" => t.scroll_by(-SCROLL_LINE, false),
+                        "PageDown" => t.scroll_by(SCROLL_LINE * 10.0, !self.reduced_motion),
+                        "PageUp" => t.scroll_by(-SCROLL_LINE * 10.0, !self.reduced_motion),
                         _ => return false,
                     }
                     return true;
@@ -1854,20 +1882,35 @@ impl App {
         let Some(t) = self.tabs.get_mut(self.active) else { return };
         let head = t.editor.buf.sels.last().map_or(0, |s| s.head);
         let Some(block) = t.editor.buf.doc().block_index_at(head) else {
-            t.top_block = 0;
+            t.scroll_to_block(0);
             return;
         };
-        if block < t.top_block {
-            t.top_block = block;
+        if block < t.top_block || (block == t.top_block && t.scroll_px > 0.0) {
+            t.scroll_to_block(block);
         } else if block > t.top_block + 18 {
-            t.top_block = block - 18;
+            t.scroll_to_block(block - 18);
         }
     }
 
-    pub fn scroll_editor(&mut self, blocks: isize) {
-        if let Some(t) = self.tabs.get_mut(self.active) {
-            let max = t.editor.buf.doc().blocks.len().saturating_sub(1) as isize;
-            t.top_block = (t.top_block as isize + blocks).clamp(0, max.max(0)) as usize;
+    /// Scroll the focused editor by `lines` wheel lines.
+    pub fn scroll_editor(&mut self, lines: f32) {
+        let p = self.pane;
+        let active = self.active;
+        self.scroll_tab(p, active, lines);
+    }
+
+    /// Ease in pending wheel scrolling, once per frame.
+    pub fn step_scrolls(&mut self) {
+        for (i, p) in self.panes.iter_mut().enumerate() {
+            if i != self.pane {
+                p.tabs.iter_mut().for_each(Tab::step_scroll);
+            }
         }
+        self.tabs.iter_mut().for_each(Tab::step_scroll);
+    }
+
+    pub fn scrolling(&self) -> bool {
+        let other = self.panes.iter().enumerate().filter(|&(i, _)| i != self.pane).flat_map(|(_, p)| &p.tabs);
+        self.tabs.iter().chain(other).any(|t| t.scroll_pending != 0.0)
     }
 }

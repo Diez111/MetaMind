@@ -233,6 +233,7 @@ impl App {
         let mut tab = Tab::new(t.path.clone(), &t.editor.buf.text(), t.stamp, t.vim.is_some());
         tab.mode = t.mode;
         tab.top_block = t.top_block;
+        tab.scroll_px = t.scroll_px;
         let sels = t.editor.buf.sels.clone();
         let new = self.panes.len();
         self.panes.push(Pane::default());
@@ -447,18 +448,24 @@ impl App {
     }
 
     /// Scroll the active tab of an unfocused pane.
-    pub(crate) fn scroll_pane(&mut self, i: usize, blocks: isize) {
+    pub(crate) fn scroll_pane(&mut self, i: usize, lines: f32) {
         let active = self.panes.get(i).map_or(0, |p| p.active);
-        self.scroll_tab(i, active, blocks);
+        self.scroll_tab(i, active, lines);
     }
 
-    /// Scroll tab `tab` of pane `i`, other than the focused editor.
-    pub(crate) fn scroll_tab(&mut self, i: usize, tab: usize, blocks: isize) {
-        let tabs = if i == self.pane { &mut self.tabs } else { &mut self.panes[i].tabs };
-        if let Some(t) = tabs.get_mut(tab) {
-            let max = t.editor.buf.doc().blocks.len().saturating_sub(1) as isize;
-            t.top_block = (t.top_block as isize + blocks).clamp(0, max.max(0)) as usize;
+    /// Scroll tab `tab` of pane `i` by `lines` wheel lines.
+    pub(crate) fn scroll_tab(&mut self, i: usize, tab: usize, lines: f32) {
+        // Touchpads send many small deltas, which already move smoothly; a wheel notch is
+        // eased in.
+        let smooth = lines.abs() >= 1.5 && !self.reduced_motion;
+        if let Some(t) = self.pane_tab_mut(i, tab) {
+            t.scroll_by(lines * crate::shell::SCROLL_LINE, smooth);
         }
+    }
+
+    pub(crate) fn pane_tab_mut(&mut self, i: usize, tab: usize) -> Option<&mut Tab> {
+        let tabs = if i == self.pane { &mut self.tabs } else { &mut self.panes.get_mut(i)?.tabs };
+        tabs.get_mut(tab)
     }
 
     pub(crate) fn pane_drag_to(&mut self, x: f32, y: f32) {

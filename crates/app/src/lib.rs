@@ -67,11 +67,13 @@ pub fn render_window(
     app.pump_plugins();
     app.refresh_derived();
     app.animate_changes();
+    app.step_scrolls();
     app.window_w = pixmap.width() as f32 / scale;
     let (mut dom, info) = view::build(app, pixmap.height() as f32 / scale, solo);
     let env = app.env();
     dom.style(&app.theme, env);
     dom.layout(fonts, pixmap.width() as f32 / scale, pixmap.height() as f32 / scale);
+    view::scroll_views(app, &mut dom, &info);
     // The suggestion and the composing text sit at the caret, which is only known after layout.
     let caret = view::caret_rect(app, &dom, &info, fonts);
     let mut preedit = None;
@@ -264,13 +266,13 @@ impl App {
         }
         let Some(node) = frame.dom.scroller_at(x, y) else { return };
         if Some(node) == frame.info.editor {
-            return self.scroll_editor(lines.round() as isize);
+            return self.scroll_editor(lines);
         }
         if let Some(&(p, ..)) = frame.info.panes.iter().find(|e| e.2 == Some(node)) {
-            return self.scroll_pane(p, lines.round() as isize);
+            return self.scroll_pane(p, lines);
         }
         if let Some(&(p, tab, ..)) = frame.info.stack.iter().find(|e| e.3 == Some(node)) {
-            return self.scroll_tab(p, tab, lines.round() as isize);
+            return self.scroll_tab(p, tab, lines);
         }
         if let Some(id) = frame.dom.nodes[node].el.id.clone() {
             let cur = frame.dom.nodes[node].scroll_y;

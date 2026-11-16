@@ -826,6 +826,17 @@ impl Dom {
         None
     }
 
+    /// Scroll `id` to `y` after layout, moving its descendants to match.
+    pub fn set_scroll(&mut self, id: NodeId, y: f32) {
+        let dy = self.nodes[id].scroll_y - y;
+        self.nodes[id].scroll_y = y;
+        let mut stack = self.nodes[id].children.clone();
+        while let Some(n) = stack.pop() {
+            self.nodes[n].rect.y += dy;
+            stack.extend_from_slice(&self.nodes[n].children);
+        }
+    }
+
     pub fn max_scroll(&self, id: NodeId) -> f32 {
         (self.nodes[id].content_h - self.content_box(id).h).max(0.0)
     }

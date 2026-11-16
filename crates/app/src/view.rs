@@ -174,6 +174,22 @@ pub struct ViewInfo {
     pub stack: Vec<(usize, usize, NodeId, Option<NodeId>)>,
     /// Math and diagram blocks painted after layout.
     pub rich: Vec<crate::rich::Item>,
+    /// Each note view, to scroll once its blocks are laid out.
+    pub scrolled: Vec<Scrolled>,
+    /// (block, first node it added) for each block `note_blocks` visited.
+    pub marks: Vec<(usize, NodeId)>,
+}
+
+/// A note view: tab `tab` of pane `pane`, showing blocks from `marks`.
+pub struct Scrolled {
+    pub pane: usize,
+    pub tab: usize,
+    pub view: NodeId,
+    /// (block, its first node) for each block shown, in order.
+    pub marks: Vec<(usize, NodeId)>,
+    /// The first and last blocks of the note are in the view.
+    pub start: bool,
+    pub end: bool,
 }
 
 /// Syntax-highlight spans for a fenced code block, appended to `spans`. `map` is the
@@ -699,8 +715,9 @@ fn pane(
     }
     if !focused {
         let mut own = ViewInfo::default();
-        editor(app, dom, leaf, pal, &mut own, open.get(active), false);
+        editor(app, dom, leaf, pal, &mut own, open.get(active).map(|t| (pane, active, t)), false);
         info.rich.append(&mut own.rich);
+        info.scrolled.append(&mut own.scrolled);
         info.panes.push((pane, leaf, own.editor));
         return;
     }
@@ -710,7 +727,7 @@ fn pane(
             crate::canvasview::pane(app.canvas_view.as_ref().unwrap(), dom, leaf, info)
         }
         _ if app.base_active() => crate::baseview::pane(app.base_view.as_ref().unwrap(), dom, leaf),
-        _ => editor(app, dom, leaf, pal, info, app.tab(), true),
+        _ => editor(app, dom, leaf, pal, info, app.tab().map(|t| (pane, app.active, t)), true),
     }
     info.panes.push((pane, leaf, None));
 }
@@ -722,10 +739,10 @@ fn editor(
     parent: NodeId,
     pal: &Palette,
     info: &mut ViewInfo,
-    tab: Option<&crate::shell::Tab>,
+    tab: Option<(usize, usize, &crate::shell::Tab)>,
     focused: bool,
 ) {
-    let Some(tab) = tab else {
+    let Some((pane, tab_i, tab)) = tab else {
         empty_state(app, dom, parent);
         return;
     };
@@ -769,10 +786,66 @@ fn editor(
     let view = dom.add(parent, view_el);
     info.editor = Some(view);
     let doc = tab.editor.buf.doc();
-    let first = tab.top_block.min(doc.blocks.len().saturating_sub(1));
-    // Virtualised: only blocks from the scroll position onward, capped.
-    let last = (first + 90).min(doc.blocks.len());
+    // Virtualised: only blocks around the scroll position, capped. A few above it are laid out
+    // so the view can scroll up smoothly.
+    let top = tab.top_block.min(doc.blocks.len().saturating_sub(1));
+    let first = top.saturating_sub(8);
+    let last = (top + 90).min(doc.blocks.len());
+    info.marks.clear();
     note_blocks(app, dom, view, pal, info, tab, tab.mode, focused, first..last, false);
+    let added = dom.nodes.len();
+    let mut marks: Vec<(usize, NodeId)> = Vec::new();
+    // A block that added nothing shares its mark with the next one.
+    for (b, n) in info.marks.drain(..).filter(|&(_, n)| n < added) {
+        if marks.last().is_some_and(|m| m.1 == n) {
+            marks.pop();
+        }
+        marks.push((b, n));
+    }
+    info.scrolled.push(Scrolled {
+        pane,
+        tab: tab_i,
+        view,
+        marks,
+        start: first == 0,
+        end: last == doc.blocks.len(),
+    });
+}
+
+/// Scroll each note view to its tab's position, now that its blocks have their heights, and
+/// anchor the tab to the block at the top of the view.
+pub fn scroll_views(app: &mut App, dom: &mut Dom, info: &ViewInfo) {
+    for s in &info.scrolled {
+        let Some(t) = app.pane_tab_mut(s.pane, s.tab) else { continue };
+        if s.marks.is_empty() {
+            t.scroll_to_block(0);
+            continue;
+        }
+        let top = dom.content_rect(s.view).y;
+        // Offsets of the blocks in the view's content; the first starts at the top, margin
+        // included.
+        let pos: Vec<f32> = (0..s.marks.len())
+            .map(|k| if k == 0 { 0.0 } else { dom.nodes[s.marks[k].1].rect.y - top })
+            .collect();
+        let anchor = s.marks.iter().position(|&(b, _)| b >= t.top_block).unwrap_or(s.marks.len() - 1);
+        let max = dom.max_scroll(s.view);
+        let want = pos[anchor] + t.scroll_px;
+        let mut y = want;
+        if s.start {
+            y = y.max(0.0);
+        }
+        if s.end {
+            y = y.min(max);
+        }
+        if y != want {
+            // Ran into the start or end of the note.
+            t.scroll_pending = 0.0;
+        }
+        dom.set_scroll(s.view, y.clamp(0.0, max));
+        let k = pos.iter().rposition(|&p| p <= y).unwrap_or(0);
+        t.top_block = s.marks[k].0;
+        t.scroll_px = y - pos[k];
+    }
 }
 
 /// Add the note's blocks `range` to `view` as `mode` shows them. Without `cursor` the lines
@@ -802,6 +875,7 @@ pub(crate) fn note_blocks(
     };
     let decos = decorate(doc, first..last, sels, deco_mode);
     for (i, b) in doc.blocks[first..last].iter().enumerate() {
+        info.marks.push((first + i, dom.nodes.len()));
         let root = b.tree.root();
         let (s, e) = (b.start + root.span.start as usize, b.start + root.span.end as usize);
         let class = match root.kind {
@@ -1492,12 +1566,13 @@ fn stack(
         dom.add(head, icons::el(icons::for_file(&t.path)));
         dom.add(head, El::div().class("workspace-stack-title").text(t.title().to_string()));
         if focused && i == active {
-            editor(app, dom, col, pal, info, Some(t), true);
+            editor(app, dom, col, pal, info, Some((pane, i, t)), true);
             info.stack.push((pane, i, col, None));
         } else {
             let mut own = ViewInfo::default();
-            editor(app, dom, col, pal, &mut own, Some(t), false);
+            editor(app, dom, col, pal, &mut own, Some((pane, i, t)), false);
             info.rich.append(&mut own.rich);
+            info.scrolled.append(&mut own.scrolled);
             info.stack.push((pane, i, col, own.editor));
         }
     }

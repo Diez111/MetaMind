@@ -121,7 +121,7 @@ body {
 .workspace-tab-header-new-tab .svg-icon { width: 14px; height: 14px }
 .workspace-tab-header.is-active { background-color: var(--background-primary); color: var(--text-normal) }
 .workspace-tab-header:hover { color: var(--text-normal) }
-.view-header { padding: 5px 10px; color: var(--text-muted); border-bottom: 1px solid var(--background-modifier-border); white-space: nowrap; overflow: hidden; display: flex; align-items: center; gap: 4px; min-height: 34px }
+.view-header { padding: 5px 10px; color: var(--text-muted); border-bottom: 1px solid var(--background-modifier-border); white-space: nowrap; overflow: hidden; display: flex; align-items: center; gap: 4px; min-height: 34px; flex-shrink: 0 }
 .view-header-title { flex-grow: 1; white-space: nowrap; overflow: hidden; padding: 0 8px }
 .view-content { flex-grow: 1; overflow-y: auto; padding: 16px 0 }
 .cm-line, .markdown-preview-block { font-size: var(--font-text-size); font-family: var(--font-text); line-height: var(--line-height-normal); color: var(--text-normal); padding: 0 48px; margin-bottom: 6px }

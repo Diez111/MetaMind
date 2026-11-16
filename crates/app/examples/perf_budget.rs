@@ -169,7 +169,7 @@ fn main() {
                 } else {
                     let t = Instant::now();
                     for _ in 0..100 {
-                        app.scroll_editor(3);
+                        app.scroll_editor(3.0);
                         render(&mut app, &mut fonts, &mut pm, 1.0);
                     }
                     r.check(
