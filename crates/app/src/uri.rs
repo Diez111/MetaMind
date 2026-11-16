@@ -99,7 +99,8 @@ pub fn local_file(arg: &str) -> Option<PathBuf> {
         }
         None => PathBuf::from(arg),
     };
-    p.is_file().then(|| std::fs::canonicalize(&p).unwrap_or(p))
+    // Without `\\?\`, so the path compares equal to the recent-vault list.
+    p.is_file().then(|| std::fs::canonicalize(&p).map(|c| crate::recent::clean(&c)).unwrap_or(p))
 }
 
 /// A folder opens as a vault; a file opens in the known vault that contains it, or else in the
