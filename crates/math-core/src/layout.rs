@@ -1,3 +1,4 @@
+use crate::color::Color;
 use crate::parse::{Align, Face, Node};
 use crate::syms::Kind;
 
@@ -36,6 +37,8 @@ pub struct Glyph {
     pub text: String,
     pub size: f32,
     pub face: Face,
+    /// Set by `\textcolor`/`\color`; `None` means the painter's own text colour.
+    pub color: Option<Color>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -45,6 +48,32 @@ pub struct Seg {
     pub x1: f32,
     pub y1: f32,
     pub width: f32,
+    /// Set by `\textcolor`/`\color`; `None` means the painter's own text colour.
+    pub color: Option<Color>,
+}
+
+/// Spacing around and inside a laid-out formula.
+///
+/// `padding_x`/`padding_y` are the breathing room the box adds around its own glyphs: the returned
+/// `Layout` is the padded box, so painters can draw it edge to edge. `run_gap` is extra space in
+/// pixels between the top-level items of the formula (between a fraction and the `+` after it, not
+/// between the glyphs of one item); `0.0` keeps the textbook spacing.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Metrics {
+    pub padding_x: f32,
+    pub padding_y: f32,
+    pub run_gap: f32,
+}
+
+impl Metrics {
+    /// No padding, no extra gap: the box hugs the ink.
+    pub const ZERO: Metrics = Metrics { padding_x: 0.0, padding_y: 0.0, run_gap: 0.0 };
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        Metrics { padding_x: 6.0, padding_y: 5.0, run_gap: 0.0 }
+    }
 }
 
 /// Positioned output. `y` of a glyph is its baseline measured from the top of the box.
@@ -88,7 +117,7 @@ impl B {
         }
     }
     fn seg(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, width: f32) {
-        self.s.push(Seg { x0, y0, x1, y1, width });
+        self.s.push(Seg { x0, y0, x1, y1, width, color: None });
     }
 }
 
@@ -103,6 +132,9 @@ const AXIS: f32 = 0.25;
 
 pub struct Ctx<'a> {
     pub m: &'a mut dyn Measure,
+    metrics: Metrics,
+    /// Nesting level of the node lists being laid out; the metrics only touch level 0.
+    depth: usize,
 }
 
 fn extents(text: &str) -> (f32, f32) {
@@ -138,7 +170,20 @@ fn kind_of(n: &Node) -> Kind {
             Some(first) if g.len() == 1 => kind_of(first),
             _ => Kind::Ord,
         },
+        // A coloured run keeps the spacing class of what it colours.
+        Node::Color { body, .. } => match body.as_slice() {
+            [only] => kind_of(only),
+            _ => Kind::Ord,
+        },
         _ => Kind::Ord,
+    }
+}
+
+fn brace_of(n: &Node) -> Option<(bool, &[Node])> {
+    match n {
+        Node::Brace { over, body } => Some((*over, body)),
+        Node::Group(g) if g.len() == 1 => brace_of(&g[0]),
+        _ => None,
     }
 }
 
@@ -162,11 +207,19 @@ impl Ctx<'_> {
         let (a, d) = extents(t);
         let w = self.m.width(t, size, face);
         let mut b = B { w, a: a * size, d: d * size, ..B::default() };
-        b.g.push(Glyph { x: 0.0, y: 0.0, text: t.to_string(), size, face });
+        b.g.push(Glyph { x: 0.0, y: 0.0, text: t.to_string(), size, face, color: None });
         b
     }
 
     fn list(&mut self, nodes: &[Node], st: St) -> B {
+        let top = self.depth == 0;
+        self.depth += 1;
+        let b = self.list_inner(nodes, st, top);
+        self.depth -= 1;
+        b
+    }
+
+    fn list_inner(&mut self, nodes: &[Node], st: St, top: bool) -> B {
         let mut out = B::default();
         let mut prev: Option<Kind> = None;
         let mut x = 0.0;
@@ -187,6 +240,9 @@ impl Ctx<'_> {
             }
             if let (Some(p), false) = (prev, st.script) {
                 x += gap(p, k) * st.size;
+            }
+            if top && prev.is_some() {
+                x += self.metrics.run_gap.max(0.0);
             }
             let b = self.node(n, st);
             out.a = out.a.max(b.a);
@@ -242,6 +298,22 @@ impl Ctx<'_> {
                 }
                 b
             }
+            Node::Brace { over, body } => {
+                let b = self.list(body, st);
+                self.braced(*over, b, None, st)
+            }
+            Node::Stack { over, small, base } => self.stack(*over, small, base, st),
+            Node::Color { color, body } => {
+                let mut b = self.list(body, st);
+                // Nested colours win; this only fills what is still unstyled.
+                for g in &mut b.g {
+                    g.color = g.color.or(Some(*color));
+                }
+                for sg in &mut b.s {
+                    sg.color = sg.color.or(Some(*color));
+                }
+                b
+            }
         }
     }
 
@@ -262,7 +334,7 @@ impl Ctx<'_> {
         let half = if integral { 0.62 * gs } else { 0.5 * gs };
         let mut b = B { w, a: center + half, d: half - center, ..B::default() };
         let base = if integral { 0.25 * gs } else { 0.32 * gs } - center;
-        b.g.push(Glyph { x: 0.0, y: base, text: sym.to_string(), size: gs, face: Face::Roman });
+        b.g.push(Glyph { x: 0.0, y: base, text: sym.to_string(), size: gs, face: Face::Roman, color: None });
         b
     }
 
@@ -272,6 +344,18 @@ impl Ctx<'_> {
 
     fn script(&mut self, base: &Node, sup: Option<&[Node]>, sub: Option<&[Node]>, st: St) -> B {
         let s = st.size;
+        // `\underbrace{x}_{n}`: the annotation belongs under the brace, not beside it.
+        if let Some((over, body)) = brace_of(base) {
+            let (label, rest) = if over { (sup, sub) } else { (sub, sup) };
+            let b = self.list(body, st);
+            let out = self.braced(over, b, label, st);
+            let side = rest.map(|n| self.list(n, self.sub_st(st)));
+            return match (side, over) {
+                (None, _) => out,
+                (Some(o), true) => self.side_scripts(out, None, Some(o), st),
+                (Some(o), false) => self.side_scripts(out, Some(o), None, st),
+            };
+        }
         let limits = match base {
             Node::Atom { text, kind: Kind::Op, .. } => {
                 st.display && BIG.contains(&text.as_str()) && !matches!(text.as_str(), "∫" | "∬" | "∭" | "∮")
@@ -286,29 +370,41 @@ impl Ctx<'_> {
         let sst = self.sub_st(st);
         let up_b = sup.map(|n| self.list(n, sst));
         let dn_b = sub.map(|n| self.list(n, sst));
-        let mut out = B::default();
         if limits {
-            let w = bb.w.max(up_b.as_ref().map_or(0.0, |b| b.w)).max(dn_b.as_ref().map_or(0.0, |b| b.w));
-            let (mut a, mut d) = (bb.a, bb.d);
-            if let Some(u) = up_b {
-                let y = -(bb.a + 0.12 * s + u.d);
-                a = bb.a + 0.12 * s + u.d + u.a;
-                let dx = (w - u.w) / 2.0;
-                out.put(u, dx, y);
-            }
-            if let Some(l) = dn_b {
-                let y = bb.d + 0.12 * s + l.a;
-                d = bb.d + 0.12 * s + l.a + l.d;
-                let dx = (w - l.w) / 2.0;
-                out.put(l, dx, y);
-            }
-            let dx = (w - bb.w) / 2.0;
-            out.put(bb, dx, 0.0);
-            out.w = w;
-            out.a = a;
-            out.d = d;
-            return out;
+            return self.stacked(bb, up_b, dn_b, s, 0.12);
         }
+        self.side_scripts(bb, up_b, dn_b, st)
+    }
+
+    /// Superscript and subscript squeezed against the base, as big operators do in display style.
+    /// `gap` is the clearance between the base and the scripts, in ems.
+    fn stacked(&mut self, bb: B, up_b: Option<B>, dn_b: Option<B>, s: f32, gap: f32) -> B {
+        let mut out = B::default();
+        let w = bb.w.max(up_b.as_ref().map_or(0.0, |b| b.w)).max(dn_b.as_ref().map_or(0.0, |b| b.w));
+        let (mut a, mut d) = (bb.a, bb.d);
+        if let Some(u) = up_b {
+            let y = -(bb.a + gap * s + u.d);
+            a = bb.a + gap * s + u.d + u.a;
+            let dx = (w - u.w) / 2.0;
+            out.put(u, dx, y);
+        }
+        if let Some(l) = dn_b {
+            let y = bb.d + gap * s + l.a;
+            d = bb.d + gap * s + l.a + l.d;
+            let dx = (w - l.w) / 2.0;
+            out.put(l, dx, y);
+        }
+        let dx = (w - bb.w) / 2.0;
+        out.put(bb, dx, 0.0);
+        out.w = w;
+        out.a = a;
+        out.d = d;
+        out
+    }
+
+    fn side_scripts(&mut self, bb: B, up_b: Option<B>, dn_b: Option<B>, st: St) -> B {
+        let s = st.size;
+        let mut out = B::default();
         let mut up = 0.0;
         let mut down = 0.0;
         if let Some(u) = &up_b {
@@ -343,6 +439,76 @@ impl Ctx<'_> {
         out.w = bw + sw + pad + 0.02 * s;
         out.a = a;
         out.d = d;
+        out
+    }
+
+    /// A horizontal brace hugging `body`, with an optional annotation on the far side of it.
+    ///
+    /// The box grows by the brace depth plus the label height, so a paragraph that stacks several
+    /// annotated underbraces keeps them apart instead of overlapping the line below.
+    fn braced(&mut self, over: bool, body: B, label: Option<&[Node]>, st: St) -> B {
+        let s = st.size;
+        let t = 0.05 * s;
+        let depth = 0.26 * s;
+        let gap = 0.1 * s;
+        let lab = label.map(|l| self.list(l, self.sub_st(st)));
+        let w = body.w.max(lab.as_ref().map_or(0.0, |l| l.w));
+        let (bw_src, bdx) = (body.w, (w - body.w) / 2.0);
+        let mut out = B { w, a: body.a, d: body.d, ..B::default() };
+        out.put(body, bdx, 0.0);
+        let o = if over { -1.0f32 } else { 1.0 };
+        let flat = o * ((if over { out.a } else { out.d }) + gap);
+        let cusp = flat + o * depth;
+        let mid = flat + o * depth * 0.5;
+        let (bx0, bx1) = if bw_src > 0.01 { (bdx, bdx + bw_src) } else { (0.0, w) };
+        let bw = (bx1 - bx0).max(0.0);
+        let cx = (bx0 + bx1) / 2.0;
+        let e = (bw * 0.12).min(bw * 0.25).max(0.01);
+        let c = (bw * 0.06).min(bw * 0.2).max(0.01);
+        out.seg(bx0, flat, bx0 + e, mid, t);
+        out.seg(bx0 + e, mid, cx - c, mid, t);
+        out.seg(cx - c, mid, cx, cusp, t);
+        out.seg(cx, cusp, cx + c, mid, t);
+        out.seg(cx + c, mid, bx1 - e, mid, t);
+        out.seg(bx1 - e, mid, bx1, flat, t);
+        match (lab, over) {
+            (None, true) => out.a = out.a.max(-cusp + t),
+            (None, false) => out.d = out.d.max(cusp + t),
+            (Some(l), true) => {
+                let y = cusp - 0.06 * s - l.d;
+                let dx = (w - l.w) / 2.0;
+                out.a = out.a.max(-y + l.a);
+                out.put(l, dx, y);
+            }
+            (Some(l), false) => {
+                let y = cusp + 0.06 * s + l.a;
+                let dx = (w - l.w) / 2.0;
+                out.d = out.d.max(y + l.d);
+                out.put(l, dx, y);
+            }
+        }
+        out
+    }
+
+    /// `\overset{small}{base}` and `\underset{small}{base}`.
+    fn stack(&mut self, over: bool, small: &[Node], base: &[Node], st: St) -> B {
+        let s = st.size;
+        let b = self.list(base, st);
+        let m = self.list(small, self.sub_st(st));
+        let w = b.w.max(m.w);
+        let (bdx, mdx) = ((w - b.w) / 2.0, (w - m.w) / 2.0);
+        let mut out = B { w, a: b.a, d: b.d, ..B::default() };
+        out.put(b, bdx, 0.0);
+        let gap = 0.1 * s;
+        if over {
+            let y = -(out.a + gap + m.d);
+            out.a = -y + m.a;
+            out.put(m, mdx, y);
+        } else {
+            let y = out.d + gap + m.a;
+            out.d = y + m.d;
+            out.put(m, mdx, y);
+        }
         out
     }
 
@@ -625,13 +791,27 @@ impl Ctx<'_> {
 }
 
 pub fn layout(nodes: &[Node], size: f32, display: bool, m: &mut dyn Measure) -> Layout {
-    let mut cx = Ctx { m };
+    layout_with(nodes, size, display, &Metrics::default(), m)
+}
+
+/// Lay out with explicit spacing knobs; see [`Metrics`].
+pub fn layout_with(
+    nodes: &[Node],
+    size: f32,
+    display: bool,
+    metrics: &Metrics,
+    m: &mut dyn Measure,
+) -> Layout {
+    let mut cx = Ctx { m, metrics: *metrics, depth: 0 };
     let b = cx.list(nodes, St { size, display, script: false });
-    let (a, d) = (b.a.max(0.7 * size), b.d.max(0.2 * size));
-    let mut l = Layout { width: b.w, ascent: a, descent: d, ..Layout::default() };
+    let px = metrics.padding_x.max(0.0);
+    let py = metrics.padding_y.max(0.0);
+    let (a, d) = (b.a.max(0.7 * size) + py, b.d.max(0.2 * size) + py);
+    let mut l = Layout { width: b.w + 2.0 * px, ascent: a, descent: d, ..Layout::default() };
     l.glyphs =
         b.g.into_iter()
             .map(|mut g| {
+                g.x += px;
                 g.y += a;
                 g
             })
@@ -639,6 +819,8 @@ pub fn layout(nodes: &[Node], size: f32, display: bool, m: &mut dyn Measure) -> 
     l.segs =
         b.s.into_iter()
             .map(|mut s| {
+                s.x0 += px;
+                s.x1 += px;
                 s.y0 += a;
                 s.y1 += a;
                 s
