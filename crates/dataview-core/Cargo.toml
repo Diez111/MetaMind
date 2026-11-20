@@ -1,0 +1,16 @@
+[package]
+name = "dataview-core"
+description = "Dataview query blocks: TABLE queries over note front matter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+vault-core = { path = "../vault-core" }
+md-engine = { path = "../md-engine" }
+
+[dev-dependencies]
+proptest = "1"

@@ -11,7 +11,7 @@ exactly that.
 ```
 L0  md-engine      theme-engine (CSS)      mermaid-core
 L1  vault-core  (uses md-engine)           editor-core (uses md-engine)
-L2  search-core    graph-core    canvas-core    bases-core      (use vault-core)
+L2  search-core    graph-core    canvas-core    bases-core    dataview-core      (use vault-core)
 L3  ext-api  (commands, events, feature registry, config schemas, scripting)
 L4  plugin-host-wasm        compat-js (optional, separate cdylib)
 L5  rustsidian-ui  (retained widget tree, taffy layout, CSS styling, render backends)
@@ -52,6 +52,7 @@ were not started; steps 9 and 11 are partial.
 | theme-engine | done (engine) | Parser, selectors, cascade, `var()`, `calc()`, media queries, shorthands, transitions (parse + easing), inspector; 15 unit tests + never-panic property tests (40k cases). Supported/unsupported subset is listed in the crate docs. Loading `.obsidian/themes` and snippets with live reload is app-layer work. |
 | canvas-core | done | JSON Canvas parse/edit/write with lossless round trip (unknown fields, key order, the usual layout); 3 tests. View in `app/canvasview.rs`. |
 | bases-core | not started | Crate does not exist. |
+| dataview-core | done (subset) | `TABLE` queries over note front matter: parser with a canonical form, evaluator (folder scoping, `WHERE` with `=`, `!=`, `<`, `<=`, `>`, `>=`, `null`, `date(…)` and `AND`, multi-key `SORT`), GFM output; 24 tests (units, fixture vault, render, canonical-form property test). Checked against an independent oracle on the reference vault. The app draws the table in place of the `dataview` fence in reading view and live preview, cached per vault revision. No `LIST`/`TASK`/`CALENDAR`, `GROUP BY`, `FLATTEN`, `LIMIT` or calculations. |
 | mermaid-core | partial | Flowchart and sequence diagrams with own layered layout, painted with display-list commands; 10 tests. Other diagram types show their source. |
 | math-core | partial | LaTeX subset to a box layout, painted with display-list commands; 12 tests. |
 | highlight-core | done | Hand-written tokenizer for the common languages; 8 tests. |

@@ -407,6 +407,8 @@ pub struct App {
     pub show_canvas: bool,
     pub base_view: Option<crate::baseview::BaseView>,
     pub show_base: bool,
+    /// Tables of the `dataview` blocks drawn so far, per query and vault revision.
+    pub(crate) dataview: crate::dataview::Cached,
     pub store: VaultStore,
     pub config: VaultConfig,
     pub theme: Theme,
@@ -637,6 +639,7 @@ impl App {
             show_canvas: false,
             base_view: None,
             show_base: false,
+            dataview: Default::default(),
             recovery: Recovery::new(root),
             store,
             theme,

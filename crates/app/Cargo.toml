@@ -26,6 +26,7 @@ scripting = ["dep:scripting"]
 md-engine = { path = "../md-engine" }
 vault-core = { path = "../vault-core" }
 search-core = { path = "../search-core" }
+dataview-core = { path = "../dataview-core" }
 graph-core = { path = "../graph-core" }
 canvas-core = { path = "../canvas-core" }
 editor-core = { path = "../editor-core" }

@@ -7,6 +7,7 @@ pub mod baseview;
 pub mod canvasview;
 pub mod cli;
 pub mod clipboard;
+pub mod dataview;
 pub mod datetime;
 pub mod editing;
 pub mod graphview;

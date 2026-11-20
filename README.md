@@ -118,6 +118,7 @@ caveats are in [FEATURES.md](FEATURES.md#performance-budgets).
 crates/md-engine         Markdown parser, incremental re-parse, HTML, front matter
 crates/vault-core        index, link resolution, rename, cache, IO, watcher, vault config
 crates/search-core       query language, corpus scan, fuzzy matcher
+crates/dataview-core     TABLE queries over front matter, GFM tables
 crates/graph-core        graph model, filters, Barnes-Hut layout, graph.json
 crates/editor-core       rope buffer, undo tree, commands, folding, decorations, tables, vim
 crates/theme-engine      CSS parser, selectors, cascade, values

@@ -924,6 +924,17 @@ pub(crate) fn note_blocks(
             table(dom, view, pal, &src, s, &b.tree, b.start, first + i, &block_decos, info);
             continue;
         }
+        // A `dataview` fence shows its result in place of the source; when the query cannot be
+        // read the source stays and a notice says why.
+        let mut dataview_error = None;
+        if rendered {
+            if let Some(query) = crate::dataview::query_source(&b.tree, &src, root.span.start) {
+                match crate::dataview::block(app, dom, view, &query) {
+                    Ok(()) => continue,
+                    Err(e) => dataview_error = Some(format!("Dataview: {e}")),
+                }
+            }
+        }
         if rendered {
             if let Some(kind) = crate::rich::block_kind(&b.tree, &src, root.span.start) {
                 let node = crate::rich::add(dom, view, kind, &mut info.rich);
@@ -1018,6 +1029,9 @@ pub(crate) fn note_blocks(
             embeds(app, dom, view, &tab.path, &b.tree, &buf.slice(b.start, b.end()));
         }
         if rendered {
+            if let Some(n) = dataview_error {
+                dom.add(view, El::div().class("rich-notice").text(n));
+            }
             if let Some(n) = crate::rich::notice(&b.tree, &src, root.span.start) {
                 dom.add(view, El::div().class("rich-notice").text(n));
             }
