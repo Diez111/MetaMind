@@ -931,6 +931,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "excalidraw-core"
+version = "0.6.1"
+dependencies = [
+ "canvas-core",
+ "proptest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ext-api"
 version = "0.6.1"
 dependencies = [
