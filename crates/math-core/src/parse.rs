@@ -1,3 +1,4 @@
+use crate::color::Color;
 use crate::syms::{self, Kind};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -27,7 +28,28 @@ pub enum Node {
     Matrix { rows: Vec<Vec<Vec<Node>>>, open: String, close: String, align: Align },
     Accent { kind: &'static str, body: Vec<Node> },
     Line { over: bool, body: Vec<Node> },
+    // `\underbrace{..}` or `\overbrace{..}`: the brace hugs the body and the `_`/`^` annotation
+    // is placed against it instead of beside it.
+    Brace { over: bool, body: Vec<Node> },
+    // `\overset{small}{base}` and `\underset{small}{base}`.
+    Stack { over: bool, small: Vec<Node>, base: Vec<Node> },
+    // `\textcolor{c}{..}`, and the rest of a group after `\color{c}`.
+    Color { color: Color, body: Vec<Node> },
     Unknown(String),
+}
+
+/// A command the layout does not know. `offset` is a byte offset into the parsed source.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Diagnostic {
+    pub offset: usize,
+    pub command: String,
+}
+
+/// What `parse_full` returns: the tree plus the commands that were kept as source text.
+#[derive(Clone, Default, Debug)]
+pub struct Parsed {
+    pub nodes: Vec<Node>,
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 #[derive(PartialEq, Debug)]
@@ -41,21 +63,23 @@ enum Term {
 }
 
 pub fn parse(src: &str) -> Vec<Node> {
-    let mut p = Parser { c: src.chars().collect(), i: 0, depth: 0 };
-    let mut out = Vec::new();
-    loop {
-        let (mut nodes, term) = p.seq(None);
-        out.append(&mut nodes);
-        if term == Term::End || p.i >= p.c.len() {
-            return out;
-        }
-    }
+    parse_full(src).nodes
+}
+
+/// Parse and keep the diagnostics for commands that fell back to their source text.
+pub fn parse_full(src: &str) -> Parsed {
+    let mut p = Parser::new(src);
+    let nodes = p.run();
+    Parsed { nodes, diagnostics: p.diags }
 }
 
 struct Parser {
     c: Vec<char>,
     i: usize,
     depth: usize,
+    /// Byte offset of `c[0]` in the source this parser is reading; non-zero for a fragment.
+    base: usize,
+    diags: Vec<Diagnostic>,
 }
 
 fn atom(text: impl Into<String>, kind: Kind, face: Face) -> Node {
@@ -63,6 +87,44 @@ fn atom(text: impl Into<String>, kind: Kind, face: Face) -> Node {
 }
 
 impl Parser {
+    fn new(src: &str) -> Self {
+        Parser { c: src.chars().collect(), i: 0, depth: 0, base: 0, diags: Vec::new() }
+    }
+
+    fn run(&mut self) -> Vec<Node> {
+        let mut out = Vec::new();
+        loop {
+            let (mut nodes, term) = self.seq(None);
+            out.append(&mut nodes);
+            if term == Term::End || self.i >= self.c.len() {
+                return out;
+            }
+        }
+    }
+
+    /// Byte offset of the char at `i`, in the coordinates of the whole source.
+    fn byte_at(&self, i: usize) -> usize {
+        self.base + self.c[..i.min(self.c.len())].iter().map(|c| c.len_utf8()).sum::<usize>()
+    }
+
+    /// Keep `src` as source text and record where it was.
+    fn unknown(&mut self, at: usize, cmd: String) -> Node {
+        self.note(at, cmd.clone());
+        Node::Unknown(cmd)
+    }
+
+    fn note(&mut self, at: usize, cmd: String) {
+        self.diags.push(Diagnostic { offset: self.byte_at(at), command: cmd });
+    }
+
+    /// Parse a nested source that came from somewhere inside this one, keeping byte offsets honest.
+    fn fragment(&mut self, src: &str, base: usize) -> Vec<Node> {
+        let mut p = Parser { base, ..Parser::new(src) };
+        let nodes = p.run();
+        self.diags.append(&mut p.diags);
+        nodes
+    }
+
     fn peek(&self) -> Option<char> {
         self.c.get(self.i).copied()
     }
@@ -119,9 +181,10 @@ impl Parser {
                 self.seq(face).0
             }
             Some('\\') => {
+                let start = self.i;
                 self.i += 1;
                 let n = self.name();
-                vec![self.command(&n, face)]
+                vec![self.command(&n, face, start)]
             }
             Some(c) => {
                 self.i += 1;
@@ -197,6 +260,7 @@ impl Parser {
                     }
                 }
                 '\\' => {
+                    let start = self.i - 1;
                     let n = self.name();
                     match n.as_str() {
                         "\\" | "cr" => return (out, Term::Cr),
@@ -208,8 +272,18 @@ impl Parser {
                             let e = self.raw_group();
                             return (out, Term::EndEnv(e));
                         }
+                        "color" => {
+                            // A declaration: it colours the rest of the current group.
+                            let color = self.color_spec();
+                            let (rest, t) = self.seq(face);
+                            match color {
+                                Some(color) => out.push(Node::Color { color, body: rest }),
+                                None => out.extend(rest),
+                            }
+                            return (out, t);
+                        }
                         _ => {
-                            let node = self.command(&n, face);
+                            let node = self.command(&n, face, start);
                             out.push(node);
                         }
                     }
@@ -251,7 +325,12 @@ impl Parser {
         }
     }
 
-    fn command(&mut self, n: &str, face: Option<Face>) -> Node {
+    fn color_spec(&mut self) -> Option<Color> {
+        let raw = self.raw_group();
+        Color::parse(&raw)
+    }
+
+    fn command(&mut self, n: &str, face: Option<Face>, start: usize) -> Node {
         if let Some((s, kind)) = syms::lookup(n) {
             let f = if syms::is_greek_lower(s) { face.unwrap_or(Face::Italic) } else { Face::Roman };
             return atom(s, kind, f);
@@ -311,7 +390,8 @@ impl Parser {
                     }
                     let sub: String = self.c[s..self.i].iter().collect();
                     self.i += 1;
-                    Some(parse(&sub))
+                    let base = self.byte_at(s);
+                    Some(self.fragment(&sub, base))
                 } else {
                     None
                 };
@@ -358,9 +438,29 @@ impl Parser {
             "ddot" => Node::Accent { kind: "¨", body: self.arg(face) },
             "overline" => Node::Line { over: true, body: self.arg(face) },
             "underline" => Node::Line { over: false, body: self.arg(face) },
-            "begin" => self.environment(),
+            "underbrace" => Node::Brace { over: false, body: self.arg(face) },
+            "overbrace" => Node::Brace { over: true, body: self.arg(face) },
+            "overset" | "stackrel" => {
+                let small = self.arg(face);
+                let base = self.arg(face);
+                Node::Stack { over: true, small, base }
+            }
+            "underset" => {
+                let small = self.arg(face);
+                let base = self.arg(face);
+                Node::Stack { over: false, small, base }
+            }
+            "textcolor" => {
+                let color = self.color_spec();
+                let body = self.arg(face);
+                match color {
+                    Some(color) => Node::Color { color, body },
+                    None => Node::Group(body),
+                }
+            }
+            "begin" => self.environment(start),
             "mathbin" | "mathrel" | "mathop" | "mathord" => Node::Group(self.arg(face)),
-            _ => Node::Unknown(format!("\\{n}")),
+            _ => self.unknown(start, format!("\\{n}")),
         }
     }
 
@@ -374,7 +474,7 @@ impl Parser {
         Node::Delim { open, close, body }
     }
 
-    fn environment(&mut self) -> Node {
+    fn environment(&mut self, start: usize) -> Node {
         let env = self.raw_group();
         let (open, close, align) = match env.trim_end_matches('*') {
             "pmatrix" => ("(", ")", Align::Center),
@@ -398,6 +498,7 @@ impl Parser {
                         &rest[..]
                     }
                 };
+                self.note(start, format!("\\begin{{{env}}}"));
                 return Node::Unknown(format!("\\begin{{{env}}}{}\\end{{{env}}}", src.trim()));
             }
         };
