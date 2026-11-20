@@ -1,0 +1,19 @@
+[package]
+name = "excalidraw-core"
+description = "Excalidraw (.excalidraw) scene reader: tolerant model, display list and JSON Canvas export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+canvas-core = { path = "../canvas-core" }
+serde = { version = "1", features = ["derive"] }
+# `float_roundtrip`: without it serde_json is a unit in the last place off for some
+# 17-digit decimals, and a scene would change every time it is opened.
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+
+[dev-dependencies]
+proptest = "1"
