@@ -933,7 +933,7 @@ fn general_view(app: &App, dom: &mut Dom, parent: NodeId) {
 pub fn modal(app: &App, dom: &mut Dom) {
     let Some(ui) = &app.settings else { return };
     let t = app.anims.t("settings");
-    let mut backdrop = El::div().class("modal-container mod-dim").action("settings:close");
+    let backdrop = El::div().class("modal-container mod-dim").action("settings:close");
     let mut modal = El::div().class("modal mod-settings").action("settings:noop");
     if t < 1.0 {
         modal = modal.style(&format!("margin-top: {:.1}px", 14.0 * (1.0 - t)));

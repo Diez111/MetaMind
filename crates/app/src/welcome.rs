@@ -389,9 +389,8 @@ impl Welcome {
         let mut dom = Dom::new();
         dom.nodes[0].el.classes.push("theme-dark".to_string());
         let t = self.anims.t("intro");
-        let mut wrap = El::div().class("welcome");
-        if t < 1.0 {
-        }
+        let wrap = El::div().class("welcome");
+        
         let wrap = dom.add(0, wrap);
         let mut card = El::div().class("welcome-card");
         if t < 1.0 {
