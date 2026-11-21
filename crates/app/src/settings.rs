@@ -1,8 +1,9 @@
-//! Settings window: General, Editor, Files & links, Appearance, Interface, Hotkeys and Core
-//! plugins, with a search across all of them. Every control writes
-//! the same `.obsidian/*.json` key the vault format uses (other keys are left as they are) and takes
-//! effect at once.
+//! Settings window: appearance, editor, AI, plugins and advanced options, with a search across
+//! all of them. Every control writes the same `.obsidian/*.json` key the vault format uses (other
+//! keys are left as they are) and takes effect at once.
 
+use crate::icons;
+use crate::plugins::PluginInfo;
 use crate::shell::{default_keymap, load_theme, App, Key, COMMANDS};
 use rustsidian_ui::{Dom, El, NodeId};
 use serde_json::{json, Value};
@@ -11,24 +12,68 @@ use vault_core::fsio::TrashMode;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Section {
-    General,
-    Editor,
-    Files,
     Appearance,
-    Interface,
-    Hotkeys,
-    CorePlugins,
+    Editor,
+    Ai,
+    Plugins,
+    Advanced,
 }
 
-const SECTIONS: [(Section, &str, &str); 7] = [
-    (Section::General, "general", "General"),
-    (Section::Editor, "editor", "Editor"),
-    (Section::Files, "files", "Archivos y enlaces"),
-    (Section::Appearance, "appearance", "Apariencia"),
-    (Section::Interface, "interface", "Interfaz"),
-    (Section::Hotkeys, "hotkeys", "Atajos de teclado"),
-    (Section::CorePlugins, "core-plugins", "Plugins principales"),
+/// The settings categories, in the order they appear: (section, slug in commands, name, one-line
+/// description, icon).
+const SECTIONS: [(Section, &str, &str, &str, &str); 5] = [
+    (
+        Section::Appearance,
+        "appearance",
+        "Apariencia",
+        "Temas, tipografía, color de acento y fragmentos CSS.",
+        "sun",
+    ),
+    (
+        Section::Editor,
+        "editor",
+        "Editor",
+        "Escritura, sangría, propiedades y corrección ortográfica.",
+        "edit",
+    ),
+    (
+        Section::Ai,
+        "ai",
+        "IA",
+        "Asistente, proveedor y corrección con modelos de lenguaje.",
+        "sparkles",
+    ),
+    (
+        Section::Plugins,
+        "plugins",
+        "Plugins",
+        "Funciones integradas que puedes activar y configurar.",
+        "layout-dashboard",
+    ),
+    (
+        Section::Advanced,
+        "advanced",
+        "Avanzado",
+        "Bóveda, archivos y enlaces, atajos de teclado, rendimiento y actualizaciones.",
+        "settings",
+    ),
 ];
+
+fn section_for_slug(slug: &str) -> Option<Section> {
+    Some(match slug {
+        "appearance" => Section::Appearance,
+        "editor" => Section::Editor,
+        "ai" => Section::Ai,
+        "plugins" | "core-plugins" => Section::Plugins,
+        // The old tabs fold into Avanzado; keeping their slugs means old links still work.
+        "advanced" | "general" | "files" | "interface" | "hotkeys" => Section::Advanced,
+        _ => return None,
+    })
+}
+
+fn section_meta(section: Section) -> &'static (Section, &'static str, &'static str, &'static str, &'static str) {
+    SECTIONS.iter().find(|s| s.0 == section).unwrap_or(&SECTIONS[0])
+}
 
 /// Core plugins this app honors: (id in `core-plugins.json`, name, description, the commands
 /// that are blocked and hidden while it is off).
@@ -97,7 +142,8 @@ pub(crate) const CORE_PLUGINS: &[(&str, &str, &str, &[&str])] = &[
 
 pub struct SettingsUi {
     pub section: Section,
-    /// The text field being edited: (setting key, text so far).
+    /// The text field being edited: (setting key, text so far). Plugin settings use
+    /// `@<plugin id>:<key>` here.
     pub edit: Option<(String, String)>,
     /// The command whose hotkey is waiting for a key press.
     pub capture: Option<String>,
@@ -106,18 +152,24 @@ pub struct SettingsUi {
     pub search: String,
     pub themes: Vec<String>,
     pub snippets: Vec<String>,
+    /// The built-in plugin whose settings page is open, if any.
+    pub plugin: Option<&'static str>,
+    /// Keyboard focus ring on the category list: index into `SECTIONS`.
+    pub nav: Option<usize>,
 }
 
 impl SettingsUi {
     fn new(app: &App) -> SettingsUi {
         let mut s = SettingsUi {
-            section: Section::General,
+            section: Section::Appearance,
             edit: None,
             capture: None,
             filter: String::new(),
             search: String::new(),
             themes: Vec::new(),
             snippets: Vec::new(),
+            plugin: None,
+            nav: None,
         };
         s.scan(app);
         s
@@ -167,11 +219,54 @@ struct Item {
 }
 
 use Control::{Choice, Number, Text, Toggle};
-use Section::{Appearance, Editor, Files, Interface};
+use Section::{Advanced, Appearance, Editor};
 
 const ITEMS: &[Item] = &[
     Item {
-        section: Interface,
+        section: Appearance,
+        file: File::Appearance,
+        key: "theme",
+        name: "Esquema de color base",
+        desc: "Base clara u oscura para toda la interfaz. Los swatches la previsualizan.",
+        control: Choice(
+            "obsidian",
+            &[("obsidian", "Oscuro"), ("moonstone", "Claro"), ("system", "Adaptarse al sistema")],
+        ),
+    },
+    Item {
+        section: Appearance,
+        file: File::Appearance,
+        key: "baseFontSize",
+        name: "Tamaño de fuente",
+        desc: "Tamaño del texto de las notas, en píxeles.",
+        control: Number(16.0, 10.0, 30.0),
+    },
+    Item {
+        section: Appearance,
+        file: File::Appearance,
+        key: "textFontFamily",
+        name: "Fuente del texto",
+        desc: "Fuente de las notas, separada por comas; se usa la primera instalada.",
+        control: Text,
+    },
+    Item {
+        section: Appearance,
+        file: File::Appearance,
+        key: "accentColor",
+        name: "Color de acento",
+        desc: "Color de enlaces, etiquetas y resaltados, por ejemplo #8a5cf5. Vacío usa el predeterminado.",
+        control: Text,
+    },
+    Item {
+        section: Appearance,
+        file: File::Appearance,
+        key: "lineWidth",
+        name: "Ancho de línea",
+        desc: "Ancho máximo del texto cuando «Longitud de línea legible» está activado.",
+        control: Number(800.0, 400.0, 2400.0),
+    },
+    Item {
+        section: Appearance,
         file: File::Appearance,
         key: "showRibbon",
         name: "Mostrar barra de iconos",
@@ -179,11 +274,11 @@ const ITEMS: &[Item] = &[
         control: Toggle(true),
     },
     Item {
-        section: Interface,
+        section: Appearance,
         file: File::Appearance,
         key: "showViewHeader",
         name: "Mostrar barra de título de la pestaña",
-        desc: "Muestra la barra con el título de la nota y los botones de vista sobre cada nota.",
+        desc: "Muestra el título de la nota y los botones de vista sobre cada nota.",
         control: Toggle(true),
     },
     Item {
@@ -207,7 +302,7 @@ const ITEMS: &[Item] = &[
         file: File::App,
         key: "spellcheck",
         name: "Corrección ortográfica",
-        desc: "Subraya palabras mal escritas en inglés. Haz clic derecho en una para ver sugerencias.",
+        desc: "Subraya palabras mal escritas en inglés; clic derecho para ver sugerencias.",
         control: Toggle(false),
     },
     Item {
@@ -215,8 +310,11 @@ const ITEMS: &[Item] = &[
         file: File::App,
         key: "propertiesInDocument",
         name: "Propiedades en el documento",
-        desc: "Muestra el front matter como tabla de propiedades, como código fuente o no lo muestres.",
-        control: Choice("visible", &[("visible", "Visibles"), ("source", "Código fuente"), ("hidden", "Ocultas")]),
+        desc: "Muestra el front matter como tabla, como código fuente o no lo muestra.",
+        control: Choice(
+            "visible",
+            &[("visible", "Visibles"), ("source", "Código fuente"), ("hidden", "Ocultas")],
+        ),
     },
     Item {
         section: Editor,
@@ -259,10 +357,45 @@ const ITEMS: &[Item] = &[
         control: Toggle(true),
     },
     Item {
-        section: Files,
+        section: Section::Ai,
+        file: File::App,
+        key: "aiAssistant",
+        name: "Asistente de IA",
+        desc: "Activa las acciones de IA del editor cuando el módulo esté disponible.",
+        control: Toggle(false),
+    },
+    Item {
+        section: Section::Ai,
+        file: File::App,
+        key: "aiProvider",
+        name: "Proveedor de IA",
+        desc: "Dónde se ejecutan los modelos: en tu equipo o en un servicio externo.",
+        control: Choice(
+            "local",
+            &[("local", "Local (en tu equipo)"), ("openai", "OpenAI"), ("anthropic", "Anthropic")],
+        ),
+    },
+    Item {
+        section: Section::Ai,
+        file: File::App,
+        key: "aiModel",
+        name: "Modelo de IA",
+        desc: "Nombre del modelo que usará el asistente, tal como lo espera el proveedor.",
+        control: Text,
+    },
+    Item {
+        section: Section::Ai,
+        file: File::App,
+        key: "aiRewrite",
+        name: "Reescribir con IA",
+        desc: "Muestra la orden «Reescribir» al seleccionar texto en el editor.",
+        control: Toggle(false),
+    },
+    Item {
+        section: Advanced,
         file: File::App,
         key: "newFileLocation",
-        name: "Ubicación predeterminada de las notas nuevas",
+        name: "Ubicación de las notas nuevas",
         desc: "Dónde guarda el archivo la orden «Crear nota».",
         control: Choice(
             "root",
@@ -274,7 +407,7 @@ const ITEMS: &[Item] = &[
         ),
     },
     Item {
-        section: Files,
+        section: Advanced,
         file: File::App,
         key: "newFileFolderPath",
         name: "Carpeta para notas nuevas",
@@ -282,7 +415,7 @@ const ITEMS: &[Item] = &[
         control: Text,
     },
     Item {
-        section: Files,
+        section: Advanced,
         file: File::App,
         key: "newLinkFormat",
         name: "Formato de los enlaces nuevos",
@@ -297,7 +430,7 @@ const ITEMS: &[Item] = &[
         ),
     },
     Item {
-        section: Files,
+        section: Advanced,
         file: File::App,
         key: "trashOption",
         name: "Archivos eliminados",
@@ -310,49 +443,6 @@ const ITEMS: &[Item] = &[
                 ("none", "Eliminar permanentemente"),
             ],
         ),
-    },
-    Item {
-        section: Appearance,
-        file: File::Appearance,
-        key: "theme",
-        name: "Esquema de color base",
-        desc: "Base clara u oscura para la interfaz.",
-        control: Choice(
-            "obsidian",
-            &[("obsidian", "Oscuro"), ("moonstone", "Claro"), ("system", "Adaptarse al sistema")],
-        ),
-    },
-    Item {
-        section: Appearance,
-        file: File::Appearance,
-        key: "baseFontSize",
-        name: "Tamaño de fuente",
-        desc: "Tamaño del texto de las notas, en píxeles.",
-        control: Number(16.0, 10.0, 30.0),
-    },
-    Item {
-        section: Appearance,
-        file: File::Appearance,
-        key: "textFontFamily",
-        name: "Fuente del texto",
-        desc: "Fuente del texto de las notas, como lista separada por comas. Se usa la primera fuente instalada.",
-        control: Text,
-    },
-    Item {
-        section: Appearance,
-        file: File::Appearance,
-        key: "accentColor",
-        name: "Color de acento",
-        desc: "Color de enlaces, etiquetas y resaltados, por ejemplo #8a5cf5. Vacío usa el predeterminado.",
-        control: Text,
-    },
-    Item {
-        section: Appearance,
-        file: File::Appearance,
-        key: "lineWidth",
-        name: "Ancho de línea",
-        desc: "Ancho máximo del texto de las notas en píxeles cuando «Longitud de línea legible» está activado.",
-        control: Number(800.0, 400.0, 2400.0),
     },
 ];
 
@@ -427,7 +517,7 @@ impl App {
     }
 
     /// Make a changed setting take effect.
-    fn setting_changed(&mut self, key: &str) {
+    pub(crate) fn setting_changed(&mut self, key: &str) {
         match key {
             "vimMode" => {
                 let on = self.config.app.bool("vimMode", false);
@@ -514,6 +604,11 @@ impl App {
             }
             return;
         }
+        // Plugin settings keep their text under `@<plugin>:<key>`.
+        if let Some((plugin, setting)) = key.strip_prefix('@').and_then(|r| r.split_once(':')) {
+            self.set_plugin_setting(plugin, setting, json!(text.trim()));
+            return;
+        }
         let Some(it) = item(&key) else { return };
         let v = match it.control {
             Number(_, lo, hi) => match text.trim().parse::<f64>() {
@@ -564,12 +659,26 @@ impl App {
         match op {
             "close" => self.settings = None,
             "section" => {
-                if let Some(&(sec, ..)) = SECTIONS.iter().find(|s| s.1 == arg) {
+                if let Some(sec) = section_for_slug(arg) {
+                    let at = SECTIONS.iter().position(|s| s.0 == sec);
                     if let Some(s) = &mut self.settings {
                         s.section = sec;
                         s.capture = None;
+                        s.plugin = None;
+                        s.nav = at;
                     }
                     self.scrolls.remove("settings-content");
+                }
+            }
+            "set" => {
+                // `settings:set:<key>:<value>` writes a choice directly (the theme swatches).
+                let Some((key, value)) = arg.split_once(':') else { return true };
+                let Some((it, Choice(default, opts))) = item(key).map(|i| (i, &i.control)) else {
+                    return true;
+                };
+                let cur = self.setting_file(it.file).str(it.key).unwrap_or(default);
+                if cur == value || opts.iter().any(|o| o.0 == value) {
+                    self.save_setting(it.file, it.key, json!(value));
                 }
             }
             "toggle" => {
@@ -591,6 +700,11 @@ impl App {
                     self.settings.as_ref().map(|s| s.filter.clone()).unwrap_or_default()
                 } else if arg == "search" {
                     self.settings.as_ref().map(|s| s.search.clone()).unwrap_or_default()
+                } else if let Some((plugin, setting)) = arg.strip_prefix('@').and_then(|r| r.split_once(':')) {
+                    match self.plugin_registry().get(plugin).cloned() {
+                        Some(p) => self.plugin_setting(&p, setting).as_str().unwrap_or("").to_string(),
+                        None => return true,
+                    }
                 } else {
                     match item(arg) {
                         Some(it) => match self.setting_file(it.file).get(it.key) {
@@ -607,6 +721,60 @@ impl App {
                 if let Some(s) = &mut self.settings {
                     s.edit = Some((arg.to_string(), text));
                 }
+            }
+            "plugin" => {
+                if let Some(p) = self.plugin_registry().get(arg) {
+                    let id = p.id;
+                    if let Some(s) = &mut self.settings {
+                        s.plugin = Some(id);
+                    }
+                    self.scrolls.remove("settings-content");
+                }
+            }
+            "plugins" => {
+                if let Some(s) = &mut self.settings {
+                    s.plugin = None;
+                }
+                self.scrolls.remove("settings-content");
+            }
+            "penable" => {
+                let on = self.plugin_registry().get(arg).map(|p| p.enabled).unwrap_or(false);
+                self.set_builtin_plugin(arg, !on);
+            }
+            "ptoggle" => {
+                let Some((plugin, key)) = arg.split_once(':') else { return true };
+                let Some(p) = self.plugin_registry().get(plugin).cloned() else { return true };
+                let Some(setting) = p.settings.iter().find(|s| s.key == key) else { return true };
+                let crate::plugins::SettingKind::Toggle(default) = setting.kind else { return true };
+                let on = self.plugin_setting(&p, key).as_bool().unwrap_or(default);
+                self.set_plugin_setting(plugin, key, json!(!on));
+            }
+            "pcycle" => {
+                let Some((plugin, key)) = arg.split_once(':') else { return true };
+                let Some(p) = self.plugin_registry().get(plugin).cloned() else { return true };
+                let Some(setting) = p.settings.iter().find(|s| s.key == key) else { return true };
+                let crate::plugins::SettingKind::Choice(default, opts) = setting.kind else { return true };
+                let cur = self.plugin_setting(&p, key);
+                let cur = cur.as_str().unwrap_or(default);
+                let at = opts.iter().position(|o| o.0 == cur).map_or(0, |p| p + 1);
+                self.set_plugin_setting(plugin, key, json!(opts[at % opts.len()].0));
+            }
+            "pset" => {
+                let parts: Vec<&str> = arg.splitn(3, ':').collect();
+                if let [plugin, key, value] = parts.as_slice() {
+                    self.set_plugin_setting(plugin, key, json!(value));
+                }
+            }
+            "community" => {
+                let on = self.plugin_list().iter().find(|p| p.id == arg).is_some_and(|p| p.enabled);
+                if let Err(e) = self.set_plugin_enabled(arg, !on) {
+                    self.notice = Some(format!("No se pudo guardar community-plugins.json: {e}"));
+                } else {
+                    self.run("plugins:reload");
+                }
+            }
+            "reload-plugins" => {
+                self.run("plugins:reload");
             }
             "css-theme" => {
                 let mut opts = vec![String::new()];
@@ -718,6 +886,22 @@ impl App {
             }
             return Some(true);
         }
+        // Keyboard navigation: arrows and Tab move the focus ring through the categories.
+        if !key.ctrl && !key.alt {
+            let step = match key.key.as_str() {
+                "ArrowDown" => Some(1isize),
+                "ArrowUp" => Some(-1isize),
+                "Tab" => Some(if key.shift { -1 } else { 1 }),
+                _ => None,
+            };
+            if let Some(step) = step {
+                let n = SECTIONS.len() as isize;
+                let cur = s.nav.map_or(if step > 0 { -1 } else { 0 }, |i| i as isize);
+                let slug = SECTIONS[(cur + step).rem_euclid(n) as usize].1;
+                self.run_settings(&format!("settings:section:{slug}"));
+                return Some(true);
+            }
+        }
         if key.key == "Escape" {
             self.settings = None;
             return Some(true);
@@ -744,14 +928,17 @@ fn vault_core_num(n: f64) -> String {
     md_engine::frontmatter::fmt_number(n)
 }
 
+/// A setting row: name and control on one line, the one-line description below the whole row.
 fn row(dom: &mut Dom, parent: NodeId, name: &str, desc: &str) -> NodeId {
     let item = dom.add(parent, El::div().class("setting-item"));
-    let info = dom.add(item, El::div().class("setting-item-info"));
+    let main = dom.add(item, El::div().class("setting-item-main"));
+    let info = dom.add(main, El::div().class("setting-item-info"));
     dom.add(info, El::div().class("setting-item-name").text(name));
+    let ctl = dom.add(main, El::div().class("setting-item-control"));
     if !desc.is_empty() {
-        dom.add(info, El::div().class("setting-item-description").text(desc));
+        dom.add(item, El::div().class("setting-item-description").text(desc));
     }
-    dom.add(item, El::div().class("setting-item-control"))
+    ctl
 }
 
 fn toggle(dom: &mut Dom, ctl: NodeId, on: bool, action: String) {
@@ -763,10 +950,11 @@ fn button(dom: &mut Dom, ctl: NodeId, label: &str, action: String, cta: bool) {
     dom.add(ctl, El::div().class("setting-button").class_if(cta, "mod-cta").text(label).action(action));
 }
 
-fn input(dom: &mut Dom, ctl: NodeId, key: &str, shown: &str, edit: Option<&(String, String)>) {
+/// A text control. While it is the one being edited it gets the keyboard focus ring.
+fn input(dom: &mut Dom, ctl: NodeId, key: &str, shown: &str, edit: Option<&(String, String)>) -> NodeId {
     let editing = edit.filter(|e| e.0 == key);
     let text = editing.map_or_else(|| shown.to_string(), |e| format!("{}▏", e.1));
-    dom.add(
+    let id = dom.add(
         ctl,
         El::div()
             .class("setting-input")
@@ -774,10 +962,68 @@ fn input(dom: &mut Dom, ctl: NodeId, key: &str, shown: &str, edit: Option<&(Stri
             .text(text)
             .action(format!("settings:edit:{key}")),
     );
+    if editing.is_some() {
+        dom.nodes[id].focus = true;
+    }
+    id
 }
 
 fn heading(dom: &mut Dom, parent: NodeId, text: &str) {
     dom.add(parent, El::div().class("setting-item-heading").text(text));
+}
+
+/// The prominent header of a settings category: icon, title and a one-line description.
+fn section_header(dom: &mut Dom, parent: NodeId, section: Section) {
+    let (_, _, name, desc, icon) = *section_meta(section);
+    let header = dom.add(parent, El::div().class("settings-section-header"));
+    let box_ = dom.add(header, El::div().class("settings-section-icon"));
+    dom.add(box_, icons::el(icon));
+    let text = dom.add(header, El::div().class("settings-section-text"));
+    dom.add(text, El::div().class("settings-section-title").text(name));
+    dom.add(text, El::div().class("settings-section-desc").text(desc));
+}
+
+fn search_header(dom: &mut Dom, parent: NodeId, query: &str, results: usize) {
+    let header = dom.add(parent, El::div().class("settings-section-header"));
+    let box_ = dom.add(header, El::div().class("settings-section-icon"));
+    dom.add(box_, icons::el("search"));
+    let text = dom.add(header, El::div().class("settings-section-text"));
+    dom.add(text, El::div().class("settings-section-title").text("Resultados de búsqueda"));
+    let n = if results == 1 { "1 ajuste".to_string() } else { format!("{results} ajustes") };
+    dom.add(text, El::div().class("settings-section-desc").text(format!("{n} para «{query}».")));
+}
+
+/// The three theme swatches, each a mini window painted with that theme's colors.
+struct Swatch {
+    value: &'static str,
+    label: &'static str,
+    bg: &'static str,
+    bar: &'static str,
+    accent: &'static str,
+}
+
+const SWATCHES: [Swatch; 3] = [
+    Swatch { value: "obsidian", label: "Oscuro", bg: "#1e1e1e", bar: "#3a3a3a", accent: "#8a5cf5" },
+    Swatch { value: "moonstone", label: "Claro", bg: "#ffffff", bar: "#dcdcdc", accent: "#8a5cf5" },
+    Swatch { value: "system", label: "Sistema", bg: "#3c3c3c", bar: "#d8d8d8", accent: "#8a5cf5" },
+];
+
+fn theme_swatches(dom: &mut Dom, ctl: NodeId, current: &str) {
+    let wrap = dom.add(ctl, El::div().class("theme-swatches"));
+    for s in &SWATCHES {
+        let sw = dom.add(
+            wrap,
+            El::div()
+                .class("theme-swatch")
+                .class_if(s.value == current, "is-active")
+                .style(&format!("background-color: {}; border-color: {};", s.bg, s.bar))
+                .attr("data-value", s.value)
+                .action(format!("settings:set:theme:{}", s.value)),
+        );
+        dom.add(sw, El::div().class("theme-swatch-bar").style(&format!("background-color: {};", s.bar)));
+        dom.add(sw, El::div().class("theme-swatch-dot").style(&format!("background-color: {};", s.accent)));
+        dom.add(sw, El::div().class("theme-swatch-label").text(s.label));
+    }
 }
 
 fn items_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, section: Section, needle: &str) {
@@ -792,6 +1038,9 @@ fn items_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, section
             Choice(d, opts) => {
                 let cur = file.str(it.key).unwrap_or(d);
                 let label = opts.iter().find(|o| o.0 == cur).map_or(cur, |o| o.1);
+                if it.key == "theme" {
+                    theme_swatches(dom, ctl, cur);
+                }
                 dom.add(
                     ctl,
                     El::div()
@@ -800,7 +1049,32 @@ fn items_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, section
                         .action(format!("settings:cycle:{}", it.key)),
                 );
             }
-            Text => input(dom, ctl, it.key, file.str(it.key).unwrap_or(""), ui.edit.as_ref()),
+            Text => {
+                input(dom, ctl, it.key, file.str(it.key).unwrap_or(""), ui.edit.as_ref());
+                match it.key {
+                    "accentColor" => {
+                        let color = file.str(it.key).filter(|c| !c.trim().is_empty()).unwrap_or("var(--interactive-accent)");
+                        dom.add(
+                            ctl,
+                            El::div()
+                                .class("color-chip")
+                                .style(&format!("background-color: {};", color.trim())),
+                        );
+                    }
+                    "textFontFamily" => {
+                        if let Some(font) = file.str(it.key).filter(|f| !f.trim().is_empty()) {
+                            dom.add(
+                                ctl,
+                                El::div()
+                                    .class("font-sample")
+                                    .style(&format!("font-family: {};", font.trim()))
+                                    .text("Aa"),
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
             Number(d, ..) => {
                 let n = file.get(it.key).and_then(Value::as_f64).unwrap_or(*d);
                 input(dom, ctl, it.key, &vault_core_num(n), ui.edit.as_ref());
@@ -811,8 +1085,9 @@ fn items_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, section
 
 fn appearance_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     items_view(app, dom, parent, ui, Section::Appearance, "");
+    heading(dom, parent, "Tema de la comunidad");
     let theme = app.config.css_theme().unwrap_or("");
-    let ctl = row(dom, parent, "Tema", "Tema de la comunidad en .obsidian/themes. Haz clic para cambiar.");
+    let ctl = row(dom, parent, "Tema", "Lee los temas de .obsidian/themes; haz clic para cambiar.");
     let label = if theme.is_empty() { "Predeterminado" } else { theme };
     dom.add(ctl, El::div().class("dropdown").text(format!("{label} ▾")).action("settings:css-theme"));
     heading(dom, parent, "Fragmentos CSS");
@@ -821,12 +1096,12 @@ fn appearance_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     if ui.snippets.is_empty() {
         dom.add(
             parent,
-            El::div().class("setting-item-description").text("No hay fragmentos en .obsidian/snippets."),
+            El::div().class("settings-note").text("No hay fragmentos en .obsidian/snippets."),
         );
     }
     let enabled = app.config.enabled_snippets();
     for s in &ui.snippets {
-        let ctl = row(dom, parent, &format!("{s}.css"), "");
+        let ctl = row(dom, parent, &format!("{s}.css"), "Activa este fragmento al instante.");
         toggle(dom, ctl, enabled.contains(&s.as_str()), format!("settings:snippet:{s}"));
     }
 }
@@ -848,7 +1123,7 @@ fn hotkeys_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
         } else {
             bound
         };
-        dom.add(
+        let key = dom.add(
             ctl,
             El::div()
                 .class("setting-hotkey")
@@ -857,6 +1132,9 @@ fn hotkeys_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
                 .text(label)
                 .action(format!("settings:hk:{id}")),
         );
+        if capturing {
+            dom.nodes[key].focus = true;
+        }
         if custom.is_some_and(|o| o.contains_key(*id)) {
             dom.add(
                 ctl,
@@ -866,9 +1144,10 @@ fn hotkeys_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     }
 }
 
-fn core_plugins_view(app: &App, dom: &mut Dom, parent: NodeId, needle: &str) {
+/// Core plugins not promoted to a card in the built-in registry.
+fn core_plugins_view(app: &App, dom: &mut Dom, parent: NodeId, needle: &str, skip: &[&str]) {
     for (id, name, desc, _) in CORE_PLUGINS {
-        if !needle.is_empty() && !matches(needle, name, desc) {
+        if skip.contains(id) || (!needle.is_empty() && !matches(needle, name, desc)) {
             continue;
         }
         let ctl = row(dom, parent, name, desc);
@@ -876,38 +1155,216 @@ fn core_plugins_view(app: &App, dom: &mut Dom, parent: NodeId, needle: &str) {
     }
 }
 
+fn kind_label(kind: ext_api::PluginKind) -> &'static str {
+    match kind {
+        ext_api::PluginKind::Wasm => "WASM",
+        ext_api::PluginKind::Js => "JavaScript",
+        ext_api::PluginKind::Script => "Script",
+    }
+}
+
+fn community_plugins_view(app: &App, dom: &mut Dom, parent: NodeId) {
+    let list = app.plugin_list();
+    heading(dom, parent, "Plugins de la comunidad");
+    let ctl = row(dom, parent, "Recargar plugins", "Vuelve a leer .obsidian/plugins y .obsidian/scripts.");
+    button(dom, ctl, "Recargar", "settings:reload-plugins".into(), false);
+    if list.is_empty() {
+        dom.add(
+            parent,
+            El::div().class("settings-note")
+                .text("No hay plugins ni scripts en esta bóveda. Añádelos en .obsidian/plugins."),
+        );
+        return;
+    }
+    for p in &list {
+        let state = match (&p.error, p.loaded, p.enabled) {
+            (Some(e), _, _) => format!("Error: {e}"),
+            (_, true, _) => format!("v{} · {} · en ejecución", p.version, kind_label(p.kind)),
+            (_, _, true) => format!("v{} · {} · se cargará al recargar", p.version, kind_label(p.kind)),
+            _ => format!("v{} · {} · desactivado", p.version, kind_label(p.kind)),
+        };
+        let ctl = row(dom, parent, &p.name, &state);
+        toggle(dom, ctl, p.enabled, format!("settings:community:{}", p.id));
+    }
+}
+
+fn plugin_matches(needle: &str, p: &PluginInfo) -> bool {
+    matches(needle, p.name, p.description)
+        || p.settings.iter().any(|s| matches(needle, s.label, s.description))
+}
+
+fn plugin_card(app: &App, dom: &mut Dom, parent: NodeId, p: &PluginInfo) {
+    let card = dom.add(
+        parent,
+        El::div().class("plugin-card").class_if(p.enabled, "is-enabled").action(format!("settings:plugin:{}", p.id)),
+    );
+    let head = dom.add(card, El::div().class("plugin-card-head"));
+    let icon = dom.add(head, El::div().class("plugin-icon"));
+    dom.add(icon, icons::el(p.icon));
+    let info = dom.add(head, El::div().class("plugin-card-info"));
+    let title = dom.add(info, El::div().class("plugin-card-title"));
+    dom.add(title, El::div().class("plugin-card-name").text(p.name));
+    dom.add(title, El::div().class("plugin-card-version").text(format!("v{}", p.version)));
+    dom.add(info, El::div().class("plugin-card-desc").text(p.description));
+    let ctl = dom.add(head, El::div().class("setting-item-control"));
+    toggle(dom, ctl, p.enabled, format!("settings:penable:{}", p.id));
+    button(dom, ctl, "Configurar", format!("settings:plugin:{}", p.id), false);
+    if !p.settings.is_empty() {
+        dom.add(
+            card,
+            El::div().class("plugin-card-meta")
+                .text(format!("{} ajustes", p.settings.len())),
+        );
+    }
+    let _ = app;
+}
+
+fn plugin_list_view(app: &App, dom: &mut Dom, parent: NodeId, needle: &str) {
+    let reg = app.plugin_registry();
+    let active = reg.enabled_count();
+    let summary = dom.add(parent, El::div().class("plugin-summary"));
+    dom.add(
+        summary,
+        El::div().class("plugin-summary-text").text(format!(
+            "{active} de {} plugins integrados activos",
+            reg.plugins.len()
+        )),
+    );
+    for p in reg.plugins.iter().filter(|p| needle.is_empty() || plugin_matches(needle, p)) {
+        plugin_card(app, dom, parent, p);
+    }
+    if !needle.is_empty() {
+        if !reg.plugins.iter().any(|p| plugin_matches(needle, p)) {
+            dom.add(parent, El::div().class("settings-note").text("Ningún plugin coincide."));
+        }
+        return;
+    }
+    community_plugins_view(app, dom, parent);
+    heading(dom, parent, "Otros complementos principales");
+    core_plugins_view(app, dom, parent, "", &["daily-notes", "templates", "bookmarks"]);
+}
+
+fn plugin_detail_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, p: &PluginInfo) {
+    let back = dom.add(parent, El::div().class("plugin-back").action("settings:plugins"));
+    dom.add(back, icons::el("arrow-left"));
+    dom.add(back, El::div().class("plugin-back-label").text("Plugins"));
+    let head = dom.add(parent, El::div().class("plugin-detail-head"));
+    let icon = dom.add(head, El::div().class("plugin-icon mod-large"));
+    dom.add(icon, icons::el(p.icon));
+    let info = dom.add(head, El::div().class("plugin-detail-info"));
+    let title = dom.add(info, El::div().class("plugin-card-title"));
+    dom.add(title, El::div().class("plugin-detail-name").text(p.name));
+    dom.add(title, El::div().class("plugin-card-version").text(format!("v{}", p.version)));
+    dom.add(info, El::div().class("plugin-detail-desc").text(p.description));
+    let ctl = dom.add(head, El::div().class("setting-item-control"));
+    toggle(dom, ctl, p.enabled, format!("settings:penable:{}", p.id));
+    heading(dom, parent, "Ajustes del plugin");
+    if p.settings.is_empty() {
+        dom.add(
+            parent,
+            El::div().class("settings-note")
+                .text("Este plugin no tiene ajustes propios: se activa y se desactiva con el interruptor."),
+        );
+        return;
+    }
+    for s in &p.settings {
+        let ctl = row(dom, parent, s.label, s.description);
+        let current = app.plugin_setting(p, s.key);
+        match s.kind {
+            crate::plugins::SettingKind::Toggle(default) => {
+                let on = current.as_bool().unwrap_or(default);
+                toggle(dom, ctl, on, format!("settings:ptoggle:{}:{}", p.id, s.key));
+            }
+            crate::plugins::SettingKind::Choice(default, opts) => {
+                let cur = current.as_str().unwrap_or(default);
+                let label = opts.iter().find(|o| o.0 == cur).map_or(cur, |o| o.1);
+                dom.add(
+                    ctl,
+                    El::div()
+                        .class("dropdown")
+                        .text(format!("{label} ▾"))
+                        .action(format!("settings:pcycle:{}:{}", p.id, s.key)),
+                );
+            }
+            crate::plugins::SettingKind::Text(_) => {
+                let shown = current.as_str().unwrap_or("");
+                input(dom, ctl, &format!("@{}:{}", p.id, s.key), shown, ui.edit.as_ref());
+            }
+        }
+    }
+}
+
+fn plugins_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, needle: &str) {
+    if let Some(id) = ui.plugin {
+        if let Some(p) = app.plugin_registry().get(id) {
+            return plugin_detail_view(app, dom, parent, ui, p);
+        }
+    }
+    plugin_list_view(app, dom, parent, needle);
+}
+
 fn matches(needle: &str, name: &str, desc: &str) -> bool {
     name.to_lowercase().contains(needle) || desc.to_lowercase().contains(needle)
 }
 
-/// Settings from every section whose name or description contains the search text.
+/// Whether the needle names the category itself (its title or its description).
+fn category_matches(needle: &str, section: Section) -> bool {
+    let (_, _, name, desc, _) = *section_meta(section);
+    matches(needle, name, desc)
+}
+
+fn search_empty(dom: &mut Dom, parent: NodeId, needle: &str) {
+    let empty = dom.add(parent, El::div().class("settings-empty"));
+    dom.add(empty, icons::el("search").class("settings-empty-icon"));
+    dom.add(empty, El::div().class("settings-empty-title").text("Ningún ajuste coincide"));
+    dom.add(empty, El::div().class("settings-empty-text").text(format!("No hay ajustes para «{needle}».")));
+}
+
+/// Settings from every category whose name or description contains the search text.
 fn search_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, needle: &str) {
-    let mut found = false;
-    for (sec, _, title) in SECTIONS {
-        let hits = ITEMS.iter().any(|i| i.section == sec && matches(needle, i.name, i.desc));
-        let core = sec == Section::CorePlugins && CORE_PLUGINS.iter().any(|c| matches(needle, c.1, c.2));
-        if !hits && !core {
+    let reg = app.plugin_registry();
+    let mut found = 0usize;
+    for (sec, ..) in SECTIONS {
+        let whole = category_matches(needle, sec);
+        let hits = if whole {
+            usize::MAX
+        } else {
+            match sec {
+                Section::Plugins => reg.plugins.iter().filter(|p| plugin_matches(needle, p)).count()
+                    + CORE_PLUGINS.iter().filter(|c| matches(needle, c.1, c.2)).count(),
+                _ => ITEMS.iter().filter(|i| i.section == sec && matches(needle, i.name, i.desc)).count(),
+            }
+        };
+        if hits == 0 {
             continue;
         }
-        found = true;
-        heading(dom, parent, title);
-        if core {
-            core_plugins_view(app, dom, parent, needle);
-        } else {
-            items_view(app, dom, parent, ui, sec, needle);
+        found += 1;
+        section_header(dom, parent, sec);
+        match sec {
+            Section::Plugins => plugins_view(app, dom, parent, ui, if whole { "" } else { needle }),
+            Section::Appearance if whole => appearance_view(app, dom, parent, ui),
+            Section::Advanced => advanced_view(app, dom, parent, ui, if whole { "" } else { needle }),
+            _ => items_view(app, dom, parent, ui, sec, if whole { "" } else { needle }),
         }
     }
-    if !found {
-        dom.add(parent, El::div().class("setting-item-description").text("Ningún ajuste coincide."));
+    if found == 0 {
+        search_empty(dom, parent, needle);
+    } else {
+        dom.add(
+            parent,
+            El::div().class("settings-note")
+                .text("Se muestran los ajustes que coinciden con la búsqueda en todas las categorías."),
+        );
     }
 }
 
 fn general_view(app: &App, dom: &mut Dom, parent: NodeId) {
     let ctl = row(dom, parent, "Rustsidian", "Base de conocimiento Markdown nativa y rápida.");
     dom.add(ctl, El::div().class("setting-value").text(format!("v{}", env!("CARGO_PKG_VERSION"))));
-    // The path goes in the description, which wraps; a long one does not fit beside the name.
-    row(dom, parent, "Bóveda", &app.store.root.display().to_string());
-    let ctl = row(dom, parent, "Notas", "");
+    // The path is data, not a tooltip, so it wraps under its row instead of being shortened.
+    let ctl = row(dom, parent, "Bóveda", "");
+    dom.add(ctl, El::div().class("setting-value").text(app.store.root.display().to_string()));
+    let ctl = row(dom, parent, "Notas", "Notas que el índice conoce ahora mismo.");
     dom.add(ctl, El::div().class("setting-value").text(app.store.index.notes().count().to_string()));
     let ctl = row(
         dom,
@@ -929,6 +1386,28 @@ fn general_view(app: &App, dom: &mut Dom, parent: NodeId) {
     toggle(dom, ctl, crate::update::auto_check(), "settings:auto-update".into());
 }
 
+fn advanced_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, needle: &str) {
+    if needle.is_empty() {
+        heading(dom, parent, "Bóveda y actualizaciones");
+        general_view(app, dom, parent);
+        heading(dom, parent, "Archivos y enlaces");
+    }
+    items_view(app, dom, parent, ui, Section::Advanced, needle);
+    if needle.is_empty() {
+        heading(dom, parent, "Atajos de teclado");
+        hotkeys_view(app, dom, parent, ui);
+    }
+}
+
+fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
+    dom.add(
+        parent,
+        El::div().class("settings-note")
+            .text("El módulo de IA todavía no está conectado: estos ajustes se guardan para cuando llegue."),
+    );
+    items_view(app, dom, parent, ui, Section::Ai, "");
+}
+
 /// The settings window, drawn over everything else.
 pub fn modal(app: &App, dom: &mut Dom) {
     let Some(ui) = &app.settings else { return };
@@ -940,42 +1419,65 @@ pub fn modal(app: &App, dom: &mut Dom) {
     }
     let backdrop = dom.add(0, backdrop);
     let modal = dom.add(backdrop, modal);
-    let tabs = dom.add(modal, El::div().class("vertical-tab-header"));
+
+    let bar = dom.add(modal, El::div().class("settings-topbar"));
+    dom.add(bar, El::div().class("settings-topbar-title").text("Ajustes"));
+    let search_box = dom.add(bar, El::div().class("settings-search"));
+    dom.add(search_box, icons::el("search").class("settings-search-icon"));
     let search = ui.edit.as_ref().filter(|e| e.0 == "search").map_or(ui.search.as_str(), |e| e.1.as_str());
     let shown = if ui.search.is_empty() { "Buscar ajustes…" } else { &ui.search };
-    input(dom, tabs, "search", shown, ui.edit.as_ref());
-    dom.add(tabs, El::div().class("vertical-tab-header-group-title").text("Opciones"));
-    for (sec, slug, name) in SECTIONS {
-        dom.add(
+    input(dom, search_box, "search", shown, ui.edit.as_ref());
+    dom.add(bar, El::div().class("settings-topbar-hint").text("Ctrl+, · Esc cierra"));
+
+    let body = dom.add(modal, El::div().class("settings-body"));
+    let tabs = dom.add(body, El::div().class("vertical-tab-header"));
+    dom.add(tabs, El::div().class("vertical-tab-header-group-title").text("Categorías"));
+    for (i, (sec, slug, name, _, icon)) in SECTIONS.iter().enumerate() {
+        let item = dom.add(
             tabs,
             El::div()
                 .class("vertical-tab-nav-item")
-                .class_if(sec == ui.section, "is-active")
-                .text(name)
+                .class_if(*sec == ui.section, "is-active")
+                .class_if(ui.nav == Some(i), "is-focused")
                 .action(format!("settings:section:{slug}")),
         );
+        dom.add(item, icons::el(icon).class("vertical-tab-nav-icon"));
+        dom.add(item, El::div().class("vertical-tab-nav-label").text(*name));
+        if *sec == Section::Plugins {
+            let n = app.plugin_registry().enabled_count();
+            dom.add(item, El::div().class("vertical-tab-nav-badge").text(n.to_string()));
+        }
+        if ui.nav == Some(i) {
+            dom.nodes[item].focus = true;
+        }
     }
-    let container = dom.add(modal, El::div().class("vertical-tab-content-container"));
-    let content = dom.add(container, El::div().class("vertical-tab-content").id("settings-content"));
+    dom.add(tabs, El::div().class("settings-nav-note").text("Los cambios se guardan al instante."));
+
+    let container = dom.add(body, El::div().class("vertical-tab-content-container"));
     let needle = search.trim().to_lowercase();
+    if !needle.is_empty() {
+        let results = ITEMS.iter().filter(|i| matches(&needle, i.name, i.desc)).count();
+        search_header(dom, container, search.trim(), results);
+    } else if !(ui.section == Section::Plugins && ui.plugin.is_some()) {
+        section_header(dom, container, ui.section);
+    }
+    let content = dom.add(container, El::div().class("vertical-tab-content").id("settings-content"));
     if !needle.is_empty() {
         search_view(app, dom, content, ui, &needle);
     } else {
-        let title = SECTIONS.iter().find(|s| s.0 == ui.section).map_or("", |s| s.2);
-        heading(dom, content, title);
         match ui.section {
-            Section::General => general_view(app, dom, content),
             Section::Appearance => appearance_view(app, dom, content, ui),
-            Section::Hotkeys => hotkeys_view(app, dom, content, ui),
-            Section::CorePlugins => core_plugins_view(app, dom, content, ""),
-            s => items_view(app, dom, content, ui, s, ""),
+            Section::Editor => items_view(app, dom, content, ui, Section::Editor, ""),
+            Section::Ai => ai_view(app, dom, content, ui),
+            Section::Plugins => plugins_view(app, dom, content, ui, ""),
+            Section::Advanced => advanced_view(app, dom, content, ui, ""),
         }
     }
     dom.add(
         container,
         El::div()
             .class("setting-footer")
-            .text("Los cambios se guardan en .obsidian a medida que los haces.  Esc cierra."),
+            .text("Los cambios se guardan en .obsidian a medida que los haces."),
     );
     let _ = TrashMode::Vault;
 }

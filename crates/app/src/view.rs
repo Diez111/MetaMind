@@ -1023,7 +1023,14 @@ fn split_layout(
     let at = path.iter().map(usize::to_string).collect::<Vec<_>>().join(".");
     for (k, (kid, ratio)) in kids.iter().enumerate() {
         if k > 0 {
-            let el = El::div().class("workspace-leaf-resize-handle").class(handle);
+            // The divider being dragged turns accent-colored, so the drag has visible feedback.
+            let dragging = app.pane_drag.as_ref().is_some_and(|d| {
+                d.k == k - 1 && d.path.iter().map(usize::to_string).collect::<Vec<_>>().join(".") == at
+            });
+            let el = El::div()
+                .class("workspace-leaf-resize-handle")
+                .class(handle)
+                .class_if(dragging, "is-dragging");
             dom.add(split, el.action(format!("pane-resize:{}:{at}", k - 1)));
         }
         let cell = El::div().class("workspace-split-cell").style(&format!("{dim}: {:.3}%", ratio * 100.0));
@@ -2210,6 +2217,11 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
         Some(if key.is_empty() { name } else { format!("{name}  ({key})") })
     });
     dom.add(status, El::div().class("status-bar-item status-bar-hint").text(hint.unwrap_or_default()));
+    if let Some(b) = &app.busy {
+        let item = dom.add(status, El::div().class("status-bar-item status-bar-busy"));
+        dom.add(item, El::div().class("status-bar-spinner").text(b.glyph()));
+        dom.add(item, El::div().class("status-bar-busy-label").text(&b.label));
+    }
     if let Some(t) = app.tab() {
         let words = t.meta.as_ref().map_or(0, |(_, m)| m.words);
         let backlinks = app

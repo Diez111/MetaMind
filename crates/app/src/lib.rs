@@ -70,6 +70,7 @@ pub fn render_window(
     app.pump_plugins();
     app.refresh_derived();
     app.animate_changes();
+    app.busy_tick();
     app.video_tick(std::time::Instant::now());
     app.scale = scale;
     app.step_scrolls();

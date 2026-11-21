@@ -499,6 +499,8 @@ pub struct App {
     pub(crate) seen: Option<crate::anim::Seen>,
     pub(crate) notice_since: Option<std::time::Instant>,
     pub update: crate::update::State,
+    /// A long operation shown with a spinner in the status bar.
+    pub busy: Option<crate::anim::Busy>,
     /// Paths of closed tabs, most recent last, for "Reopen closed tab".
     closed_tabs: Vec<String>,
     /// Set by "Open another vault"; the window shows the vault chooser when it sees this.
@@ -713,6 +715,7 @@ impl App {
             seen: None,
             notice_since: None,
             update: crate::update::State::Idle,
+            busy: None,
             closed_tabs: Vec::new(),
             switch_vault: false,
             menu: None,
@@ -1046,6 +1049,10 @@ pub fn close_tab(&mut self, i: usize) {
 
     /// React to files changed on disk by another program.
     pub fn files_changed(&mut self, paths: &[String]) {
+        // A batch of external changes means the index is being rebuilt; show it in the status bar.
+        if paths.len() >= 8 {
+            self.start_busy(format!("Indexando {} archivos…", paths.len()));
+        }
         self.tree = None;
         self.canvas_files_changed(paths);
         self.base_files_changed(paths);
@@ -1289,7 +1296,7 @@ pub fn close_tab(&mut self, i: usize) {
     pub fn run(&mut self, command: &str) {
         let now = fsio::now_ms();
         if let Some(name) = self.disabled_by(command) {
-            self.notice = Some(format!("{name} está desactivado en Ajustes → Plugins principales"));
+            self.notice = Some(format!("{name} está desactivado en Ajustes → Plugins"));
             return;
         }
         if matches!(command.split(':').next(), Some("create" | "file-explorer" | "daily-notes" | "app")) {
