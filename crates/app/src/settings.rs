@@ -18,9 +18,10 @@ pub enum Section {
     Interface,
     Hotkeys,
     CorePlugins,
+    Ai,
 }
 
-const SECTIONS: [(Section, &str, &str); 7] = [
+const SECTIONS: [(Section, &str, &str); 8] = [
     (Section::General, "general", "General"),
     (Section::Editor, "editor", "Editor"),
     (Section::Files, "files", "Archivos y enlaces"),
@@ -28,6 +29,7 @@ const SECTIONS: [(Section, &str, &str); 7] = [
     (Section::Interface, "interface", "Interfaz"),
     (Section::Hotkeys, "hotkeys", "Atajos de teclado"),
     (Section::CorePlugins, "core-plugins", "Plugins principales"),
+    (Section::Ai, "ai", "IA"),
 ];
 
 /// Core plugins this app honors: (id in `core-plugins.json`, name, description, the commands
@@ -86,6 +88,12 @@ pub(crate) const CORE_PLUGINS: &[(&str, &str, &str, &[&str])] = &[
         "Vista de etiquetas",
         "Lista las etiquetas de la bóveda con sus recuentos.",
         &["tag-pane:open"],
+    ),
+    (
+        "ai",
+        "Copiloto de IA",
+        "Pregunta a un modelo compatible con OpenAI sobre la nota abierta.",
+        &["ai:open"],
     ),
     (
         "templates",
@@ -354,7 +362,57 @@ const ITEMS: &[Item] = &[
         desc: "Ancho máximo del texto de las notas en píxeles cuando «Longitud de línea legible» está activado.",
         control: Number(800.0, 400.0, 2400.0),
     },
+    Item {
+        section: Section::Ai,
+        file: File::App,
+        key: crate::ai::KEY_BASE_URL,
+        name: "URL de la API",
+        desc: "Servicio compatible con OpenAI: DeepSeek, OpenRouter, opencode-go… Se le añade /v1/chat/completions. Vacío usa api.deepseek.com.",
+        control: Text,
+    },
+    Item {
+        section: Section::Ai,
+        file: File::App,
+        key: crate::ai::KEY_API_KEY,
+        name: "Clave de API",
+        desc: "Se envía como Bearer y se guarda en claro en .obsidian/app.json. Sin clave el panel no envía nada.",
+        control: Text,
+    },
+    Item {
+        section: Section::Ai,
+        file: File::App,
+        key: crate::ai::KEY_MODEL,
+        name: "Modelo",
+        desc: "Nombre del modelo que se pide. Vacío usa deepseek-v4.1-flash, barato y suficiente para dudas de estudio.",
+        control: Text,
+    },
+    Item {
+        section: Section::Ai,
+        file: File::App,
+        key: crate::ai::KEY_SYSTEM_PROMPT,
+        name: "Instrucciones del sistema",
+        desc: "Cómo debe responder: brevedad, LaTeX, tablas y Mermaid. Vacío usa el prompt pedagógico en español.",
+        control: Text,
+    },
+    Item {
+        section: Section::Ai,
+        file: File::App,
+        key: crate::ai::KEY_TIMEOUT,
+        name: "Tiempo de espera",
+        desc: "Segundos para conectar, recibir las cabeceras y esperar entre trozos del flujo.",
+        control: Number(30.0, 5.0, 300.0),
+    },
 ];
+
+/// The text a setting shows, and uses, while it is unset.
+fn default_text(key: &str) -> &'static str {
+    match key {
+        crate::ai::KEY_BASE_URL => crate::ai::DEFAULT_BASE_URL,
+        crate::ai::KEY_MODEL => crate::ai::DEFAULT_MODEL,
+        crate::ai::KEY_SYSTEM_PROMPT => crate::ai::DEFAULT_SYSTEM_PROMPT,
+        _ => "",
+    }
+}
 
 fn item(key: &str) -> Option<&'static Item> {
     ITEMS.iter().find(|i| i.key == key)
@@ -688,6 +746,9 @@ impl App {
         if let Some(r) = self.backlinks_key(key) {
             return Some(r);
         }
+        if let Some(r) = self.ai_key(key) {
+            return Some(r);
+        }
         let s = self.settings.as_mut()?;
         let plain = !key.ctrl && !key.alt && !key.shift;
         if let Some(cmd) = s.capture.clone() {
@@ -729,6 +790,9 @@ impl App {
     }
 
     pub(crate) fn modal_text(&mut self, text: &str) -> bool {
+        if self.ai_text(text) {
+            return true;
+        }
         if self.prop_text(text) || self.graph_text(text) || self.backlinks_text(text) {
             return true;
         }
@@ -800,7 +864,7 @@ fn items_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, section
                         .action(format!("settings:cycle:{}", it.key)),
                 );
             }
-            Text => input(dom, ctl, it.key, file.str(it.key).unwrap_or(""), ui.edit.as_ref()),
+            Text => input(dom, ctl, it.key, file.str(it.key).unwrap_or_else(|| default_text(it.key)), ui.edit.as_ref()),
             Number(d, ..) => {
                 let n = file.get(it.key).and_then(Value::as_f64).unwrap_or(*d);
                 input(dom, ctl, it.key, &vault_core_num(n), ui.edit.as_ref());

@@ -42,6 +42,7 @@ scripting = { path = "../scripting", optional = true }
 krilla = { version = "0.8", default-features = false, features = ["raster-images"] }
 spellbook = "0.4"
 serde_json = { version = "1", features = ["preserve_order"] }
+ureq = { version = "3", features = ["json"] }
 winit = { version = "0.30", optional = true, default-features = false, features = ["x11", "wayland", "wayland-dlopen", "rwh_06"] }
 softbuffer = { version = "0.4", optional = true, default-features = false, features = ["x11", "x11-dlopen", "wayland", "wayland-dlopen"] }
 accesskit = { version = "0.25", optional = true }

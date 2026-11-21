@@ -825,10 +825,15 @@ impl Win {
             app.notice = Some(msg);
             redraw = true;
         }
+        // The AI answer arrives piece by piece; the lit waiting dot also needs frames.
+        if app.ai.poll() || app.ai.busy() {
+            redraw = true;
+        }
         let now = now_ms();
         // A background update job is polled until it reports back.
         let update = app.update.busy().then_some(250);
-        let next = [app.derived_due_in(now), app.autosave_due_in(now), app.notice_due_in(), update]
+        let ai = app.ai.busy().then_some(60);
+        let next = [app.derived_due_in(now), app.autosave_due_in(now), app.notice_due_in(), update, ai]
             .into_iter()
             .flatten()
             .filter(|&ms| ms > 0)

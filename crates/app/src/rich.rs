@@ -131,25 +131,60 @@ pub fn inline(tree: &Tree, block_text: &str, scale: f32) -> Vec<Inline> {
             _ => None,
         })
         .filter(|(_, _, src)| !src.is_empty())
-        .map(|(start, end, src)| {
-            let size = TEXT_SIZE * scale;
-            let l = math_core::render_full(src, size, false, &INLINE_METRICS, &mut math_core::Approx).layout;
-            // The blanks are counted in a character's advance, and the face that draws them is
-            // not the one the box was measured with: keep air, so the formula can never run
-            // under what follows it. `paint` shrinks it if the guess was too small anyway.
-            let want = l.width * 1.05 + 3.0;
-            let count = ((want / (NBSP_EM * size).max(0.5)).round() as usize).max(1);
-            // A line of prose is `LINE_EM` tall; a formula taller than that pushes the line down
-            // instead of running over the line above and below. The height comes from the plain
-            // box, not from the one with inline padding: `Approx` reports the padded box shorter
-            // than the formula the fonts really set (26 px against 27 for a sum with limits, 17
-            // against 24 for a fraction), and a line that under-measures its formula draws it
-            // over the line below.
-            let tall = math_core::render(src, size, false, &mut math_core::Approx).height();
-            let lh = ((tall / TEXT_SIZE) / LINE_EM).max(1.0);
-            Inline { start, end, src: src.to_string(), filler: "\u{a0}".repeat(count), scale, lh }
-        })
+        .map(|(start, end, src)| slot(start, end, src, scale))
         .collect()
+}
+
+/// The place one formula keeps in the text it sits in: its blanks, and how tall it makes the
+/// line. `start` and `end` are the formula's byte range in the drawn text, for the callers that
+/// track it; drawing only needs the order of the blanks.
+fn slot(start: usize, end: usize, src: &str, scale: f32) -> Inline {
+    let size = TEXT_SIZE * scale;
+    let l = math_core::render_full(src, size, false, &INLINE_METRICS, &mut math_core::Approx).layout;
+    // The blanks are counted in a character's advance, and the face that draws them is
+    // not the one the box was measured with: keep air, so the formula can never run
+    // under what follows it. `paint` shrinks it if the guess was too small anyway.
+    let want = l.width * 1.05 + 3.0;
+    let count = ((want / (NBSP_EM * size).max(0.5)).round() as usize).max(1);
+    // A line of prose is `LINE_EM` tall; a formula taller than that pushes the line down
+    // instead of running over the line above and below. The height comes from the plain
+    // box, not from the one with inline padding: `Approx` reports the padded box shorter
+    // than the formula the fonts really set (26 px against 27 for a sum with limits, 17
+    // against 24 for a fraction), and a line that under-measures its formula draws it
+    // over the line below.
+    let tall = math_core::render(src, size, false, &mut math_core::Approx).height();
+    let lh = ((tall / TEXT_SIZE) / LINE_EM).max(1.0);
+    Inline { start, end, src: src.to_string(), filler: "\u{a0}".repeat(count), scale, lh }
+}
+
+/// The inline formulas of a plain text, such as an AI reply, with the blanks that hold their
+/// place in it. A `$` that never closes, a `$$` and a formula split over two lines are left as
+/// text: only the formulas a reader would call inline are typeset.
+pub fn inline_text(text: &str, scale: f32) -> (String, Vec<Inline>) {
+    let scale = if scale > 0.0 { scale } else { 1.0 };
+    let mut display = String::with_capacity(text.len());
+    let mut slots: Vec<Inline> = Vec::new();
+    let mut i = 0;
+    while i < text.len() {
+        let rest = &text[i..];
+        if rest.starts_with('$') && !rest.starts_with("$$") && !text[..i].ends_with('\\') {
+            if let Some(len) = rest[1..].find('$').map(|p| p + 1).filter(|&len| len > 1) {
+                let src = rest[1..len].trim();
+                if !src.is_empty() && !rest[1..len].contains('\n') {
+                    let start = display.len();
+                    let s = slot(start, start, src, scale);
+                    display.push_str(&s.filler);
+                    slots.push(Inline { end: display.len(), ..s });
+                    i += len + 1;
+                    continue;
+                }
+            }
+        }
+        let c = rest.chars().next().unwrap_or('$');
+        display.push(c);
+        i += c.len_utf8();
+    }
+    (display, slots)
 }
 
 /// How many formulas a text node holds, read from the blanks left for them.

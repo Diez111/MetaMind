@@ -134,6 +134,7 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("backlinks:open", "Retroenlaces: Mostrar retroenlaces", ""),
     ("outgoing-links:open", "Enlaces salientes: Mostrar enlaces salientes", ""),
     ("outline:open", "Esquema: Mostrar esquema", ""),
+    ("ai:open", "Copiloto de IA: Mostrar panel", "Ctrl+Shift+A"),
     ("markdown:toggle-preview", "Alternar vista de lectura", "Ctrl+E"),
     ("editor:toggle-source", "Alternar vista previa en vivo / código fuente", ""),
     ("editor:toggle-bold", "Alternar negrita", "Ctrl+B"),
@@ -241,6 +242,7 @@ pub enum RightPanel {
     Backlinks,
     Outgoing,
     Outline,
+    Ai,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -493,6 +495,8 @@ pub struct App {
     pub anims: crate::anim::Anims,
     /// The in-app video player, while a note's video card is playing.
     pub video: crate::video::VideoPlayer,
+    /// The AI copilot of the right sidebar.
+    pub ai: crate::ai::AiPanel,
     /// UI scale factor (window scale).
     pub scale: f32,
     pub video_waker: Option<Box<dyn Fn() + Send>>,
@@ -648,6 +652,7 @@ impl App {
             show_base: false,
             dataview: Default::default(),
             video: Default::default(),
+            ai: Default::default(),
             scale: 1.0,
             video_waker: None,
             recovery: Recovery::new(root),
@@ -1594,13 +1599,30 @@ if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
                 self.backlinks_editing = self.backlinks_filter.is_some();
             }
             "backlinks:edit-filter" => self.backlinks_editing = self.backlinks_filter.is_some(),
-            "backlinks:open" | "outgoing-links:open" | "outline:open" => {
+            "backlinks:open" | "outgoing-links:open" | "outline:open" | "ai:open" => {
                 self.right_open = true;
                 self.right_panel = match command {
                     "backlinks:open" => RightPanel::Backlinks,
                     "outgoing-links:open" => RightPanel::Outgoing,
+                    "ai:open" => RightPanel::Ai,
                     _ => RightPanel::Outline,
                 };
+                if command == "ai:open" {
+                    self.ai.scroll_to_end = true;
+                }
+            }
+            "ai:focus-input" => {
+                self.ai.editing = true;
+            }
+            "ai:send" => self.ai_send(),
+            "ai:clear" => self.ai.clear(),
+            "ai:settings" => {
+                if self.settings.is_none() {
+                    self.run("app:open-settings");
+                }
+                if let Some(s) = &mut self.settings {
+                    s.section = crate::settings::Section::Ai;
+                }
             }
             "markdown:toggle-preview" => {
                 if let Some(t) = self.tab_mut() {

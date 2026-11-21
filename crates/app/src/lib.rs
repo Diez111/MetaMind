@@ -1,5 +1,6 @@
 //! Rustsidian application library: state, commands, view construction and headless rendering.
 
+pub mod ai;
 pub mod anim;
 pub mod attach;
 pub mod bases;
@@ -179,6 +180,9 @@ impl App {
             if action != "backlinks:edit-filter" {
                 self.backlinks_editing = false;
             }
+            if action != "ai:focus-input" {
+                self.ai.editing = false;
+            }
             if action == "file-explorer:sort-menu" {
                 let r = frame.dom.nodes[node].rect;
                 return self.sort_menu(r.x, r.y + r.h);
@@ -207,6 +211,7 @@ impl App {
         }
         self.graph_end_edit();
         self.backlinks_editing = false;
+        self.ai.editing = false;
         if self.prompt.is_some() {
             return self.run("prompt:dismiss");
         }
