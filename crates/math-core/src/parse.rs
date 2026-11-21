@@ -41,6 +41,15 @@ pub enum Node {
     // `\xrightarrow[below]{above}` and `\xleftarrow[below]{above}`: an extensible arrow with an
     // optional label on each side of the shaft.
     ExtArrow { left: bool, above: Vec<Node>, below: Option<Vec<Node>> },
+    // `\pmod{n}`: the `(mod n)` that closes a congruence. `\bmod` is the bare operator and is an
+    // ordinary Bin atom.
+    Pmod(Vec<Node>),
+    // `\phantom{..}`: the body's box, with no ink in it.
+    Phantom(Vec<Node>),
+    // `\middle<delim>`: a delimiter inside `\left..\right` that stretches with the fence.
+    Middle(String),
+    // `\hline` inside a matrix/aligned row: a rule above the row. Zero-width elsewhere.
+    Hline,
     // `\not` puts a slash through the symbol that follows it (`\not=`, `\not\equiv`).
     Not(Box<Node>),
     // `\tag{..}`: the equation number of a display line. `star` is `\tag*{..}`, which drops the
@@ -428,10 +437,17 @@ impl Parser {
                 Node::Space(0.0)
             }
             "big" | "Big" | "bigg" | "Bigg" | "bigl" | "bigr" | "Bigl" | "Bigr" | "biggl" | "biggr"
-            | "bigm" => {
+            | "bigm" | "Bigm" | "biggm" | "Biggm" => {
                 let d = self.delim();
-                atom(d, Kind::Ord, Face::Roman)
+                // The `m` variants are relations: they get relation spacing, like `\Bigm|`.
+                let kind = if n.ends_with('m') { Kind::Rel } else { Kind::Ord };
+                atom(d, kind, Face::Roman)
             }
+            "middle" => Node::Middle(self.delim()),
+            "hline" => Node::Hline,
+            "phantom" => Node::Phantom(self.arg(face)),
+            "pmod" => Node::Pmod(self.arg(face)),
+            "bmod" => atom("mod", Kind::Bin, Face::Mono),
             "frac" | "dfrac" | "tfrac" | "cfrac" => {
                 let num = self.arg(face);
                 let den = self.arg(face);
@@ -470,13 +486,17 @@ impl Parser {
             }
             "text" | "textrm" | "mbox" | "textnormal" | "textit" | "textbf" | "operatorname" | "mathrm"
             | "mathit" | "mathbf" | "boldsymbol" | "bm" | "mathbb" | "mathcal" | "mathscr" | "mathfrak"
-            | "mathsf" | "mathtt" => {
+            | "mathsf" | "mathtt" | "texttt" => {
                 let f = match n {
                     "mathbf" | "boldsymbol" | "bm" | "textbf" => Face::Bold,
                     "mathit" | "textit" => Face::Italic,
                     "mathtt" => Face::Mono,
                     _ => Face::Roman,
                 };
+                // `\texttt` keeps its spaces and its monospace face; it is a run, not plain text.
+                if n == "texttt" {
+                    return atom(self.raw_group(), Kind::Ord, Face::Mono);
+                }
                 if matches!(
                     n,
                     "text" | "textrm" | "mbox" | "textnormal" | "textit" | "textbf" | "operatorname"
@@ -507,6 +527,7 @@ impl Parser {
             "vec" => Node::Accent { kind: "→", body: self.arg(face) },
             "dot" => Node::Accent { kind: "˙", body: self.arg(face) },
             "ddot" => Node::Accent { kind: "¨", body: self.arg(face) },
+            "check" => Node::Accent { kind: "ˇ", body: self.arg(face) },
             "overline" => Node::Line { over: true, body: self.arg(face) },
             "underline" => Node::Line { over: false, body: self.arg(face) },
             "underbrace" => Node::Brace { over: false, body: self.arg(face) },

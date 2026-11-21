@@ -223,6 +223,8 @@ fn kind_of(n: &Node) -> Kind {
         Node::Not(base) => kind_of(base),
         // An extensible arrow is a relation, whatever its labels are.
         Node::ExtArrow { .. } => Kind::Rel,
+        // `\pmod` closes a congruence: it spaces like a relation.
+        Node::Pmod(_) => Kind::Rel,
         _ => Kind::Ord,
     }
 }
@@ -346,10 +348,15 @@ impl Ctx<'_> {
                 self.frac(num, den, *rule, display, st)
             }
             Node::Sqrt { body, index } => self.sqrt(body, index.as_deref(), st),
-            Node::Delim { open, close, body } => {
+            Node::Delim { open, close, body } => self.delimited(open, close, body, st),
+            Node::Middle(d) => self.text(d, s, Face::Roman),
+            Node::Pmod(body) => self.pmod(body, st),
+            Node::Phantom(body) => {
+                // Measure the body, keep its box, drop its ink.
                 let b = self.list(body, st);
-                self.fenced(b, open, close, st)
+                B { w: b.w, a: b.a, d: b.d, ..B::default() }
             }
+            Node::Hline => B::default(),
             Node::Matrix { rows, open, close, align } => {
                 let m = self.matrix(rows, *align, open, st);
                 self.fenced_h(m, open, close, st)
@@ -398,6 +405,34 @@ impl Ctx<'_> {
     fn tag_run(&mut self, text: &str, star: bool, st: St) -> B {
         let label = Tag { text: text.to_string(), star, ..Tag::default() }.label();
         self.text(&label, st.size, Face::Roman)
+    }
+
+    /// `\pmod{n}`: `(mod n)`. amsmath sets the word in roman; the vault's style budget for mod
+    /// runs is the monospace face (`\bmod` and `\pmod` share it), so the word is `Face::Mono` and
+    /// the argument keeps its own math face.
+    fn pmod(&mut self, body: &[Node], st: St) -> B {
+        let s = st.size;
+        let open = self.text("(", s, Face::Roman);
+        let word = self.text("mod", s, Face::Mono);
+        let body = self.list(body, st);
+        let close = self.text(")", s, Face::Roman);
+        let space = 0.25 * s;
+        let w = open.w + word.w + space + body.w + close.w;
+        let a = open.a.max(word.a).max(body.a).max(close.a);
+        let d = open.d.max(word.d).max(body.d).max(close.d);
+        let mut out = B { w, a, d, ..B::default() };
+        let mut x = 0.0;
+        for part in [open, word] {
+            let pw = part.w;
+            out.put(part, x, 0.0);
+            x += pw;
+        }
+        x += space;
+        let bw = body.w;
+        out.put(body, x, 0.0);
+        x += bw;
+        out.put(close, x, 0.0);
+        out
     }
 
     /// `\boxed{..}`: a rectangular frame around the body, drawn edge to edge of the box it returns.
@@ -755,6 +790,11 @@ impl Ctx<'_> {
                     b.seg(cx + dx * s, top - 0.06 * s, cx + dx * s + 0.01, top - 0.06 * s, 0.08 * s);
                 }
             }
+            "ˇ" => {
+                // A caron: the same V as the hat, opened downwards.
+                b.seg(cx - 0.18 * s, top - 0.14 * s, cx, top - 0.02 * s, t);
+                b.seg(cx, top - 0.02 * s, cx + 0.18 * s, top - 0.14 * s, t);
+            }
             _ => b.seg(cx, top - 0.06 * s, cx + 0.01, top - 0.06 * s, 0.08 * s),
         }
         b.a = -top + 0.22 * s;
@@ -764,7 +804,24 @@ impl Ctx<'_> {
     fn matrix(&mut self, rows: &[Vec<Vec<Node>>], align: Align, open: &str, st: St) -> B {
         let s = st.size;
         let cst = St { size: s, display: false, script: false };
-        let cells: Vec<Vec<B>> = rows
+        // `\hline` is a row separator that LaTeX writes at the start of the row it rules. Pull it
+        // out of the cell and remember the row, so the rule can be drawn over the whole width.
+        let mut rules = vec![false; rows.len()];
+        let clean: Vec<Vec<Vec<Node>>> = rows
+            .iter()
+            .enumerate()
+            .map(|(i, row)| {
+                let mut row = row.clone();
+                if let Some(cell) = row.first_mut() {
+                    while cell.first().is_some_and(|n| matches!(n, Node::Hline)) {
+                        cell.remove(0);
+                        rules[i] = true;
+                    }
+                }
+                row
+            })
+            .collect();
+        let cells: Vec<Vec<B>> = clean
             .iter()
             .map(|r| {
                 r.iter()
@@ -820,8 +877,15 @@ impl Ctx<'_> {
         let mut y = -AXIS * s - total / 2.0;
         out.a = AXIS * s + total / 2.0;
         out.d = total / 2.0 - AXIS * s;
-        for (r, (a, d)) in cells.into_iter().zip(heights) {
+        for (i, (r, (a, d))) in cells.into_iter().zip(heights).enumerate() {
             let base = y + a;
+            if rules[i] {
+                // First row: the rule is the top edge of the matrix, so the box grows by half a
+                // stroke to hold it. Later rows: it sits in the middle of the row gap.
+                let ry = if i == 0 { y } else { y - rg * 0.5 };
+                out.seg(0.0, ry, x, ry, 0.04 * s);
+                out.a = out.a.max(-ry + 0.02 * s);
+            }
             for (j, c) in r.into_iter().enumerate() {
                 let dx = match align {
                     Align::Center => (cw[j] - c.w) / 2.0,
@@ -852,6 +916,51 @@ impl Ctx<'_> {
         let rw = self.delim_box(&mut out, close, lw + bw, top, bot, s, true);
         out.w = lw + bw + rw;
         let _ = h;
+        out
+    }
+
+    /// `\left..\right` with any number of `\middle` delimiters: every delimiter stretches to the
+    /// tallest chunk, so the middle bars divide the fence at the same height instead of at their
+    /// natural size.
+    fn delimited(&mut self, open: &str, close: &str, body: &[Node], st: St) -> B {
+        if !body.iter().any(|n| matches!(n, Node::Middle(_))) {
+            let b = self.list(body, st);
+            return self.fenced(b, open, close, st);
+        }
+        let mut chunks: Vec<Vec<Node>> = vec![Vec::new()];
+        let mut middles: Vec<String> = Vec::new();
+        for n in body {
+            match n {
+                Node::Middle(d) => {
+                    middles.push(d.clone());
+                    chunks.push(Vec::new());
+                }
+                other => chunks.last_mut().unwrap().push(other.clone()),
+            }
+        }
+        let bs: Vec<B> = chunks.iter().map(|c| self.list(c, st)).collect();
+        self.fenced_split(bs, &middles, open, close, st)
+    }
+
+    /// A fence whose body is already split into the chunks between `\middle`s.
+    fn fenced_split(&mut self, chunks: Vec<B>, middles: &[String], open: &str, close: &str, st: St) -> B {
+        let s = st.size;
+        let ax = AXIS * s;
+        let (a, d) = chunks.iter().fold((0.0f32, 0.0f32), |(a, d), b| (a.max(b.a), d.max(b.d)));
+        let half = (a - ax).max(d + ax).max(0.5 * s);
+        let (top, bot) = (-(ax + half), half - ax);
+        let mut out = B { a: -top, d: bot, ..B::default() };
+        let mut x = self.delim_box(&mut out, open, 0.0, top, bot, s, false);
+        for (i, chunk) in chunks.into_iter().enumerate() {
+            let w = chunk.w;
+            out.put(chunk, x, 0.0);
+            x += w;
+            if let Some(m) = middles.get(i) {
+                x += self.delim_box(&mut out, m, x, top, bot, s, false);
+            }
+        }
+        let rw = self.delim_box(&mut out, close, x, top, bot, s, true);
+        out.w = x + rw;
         out
     }
 
