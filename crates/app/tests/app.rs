@@ -1,6 +1,6 @@
 use rustsidian_app::shell::{Focus, ViewMode};
 use rustsidian_app::{render, App, Key};
-use rustsidian_ui::{Fonts, Pixmap};
+use rustsidian_ui::{Cmd, Fonts, Pixmap};
 use std::fs;
 
 fn vault() -> tempfile::TempDir {
@@ -334,6 +334,39 @@ fn math_blocks_are_typeset_and_editable() {
     assert!(frame.info.blocks.iter().any(|b| b.display.contains("\\frac{a}{b}")));
     assert!(frame.info.rich.is_empty());
     assert_eq!(frame.info.inline.len(), 1);
+}
+
+#[test]
+fn a_display_formula_wider_than_its_block_is_shrunk_to_fit() {
+    // 90-plus characters of amsmath with a nested fraction, a radical and a sum: at 20px it is
+    // twice as wide as the reading column.
+    let src = r"$$\int_1^{x^3}\frac{\ln t}{t}dt+3\ln(x^3)+\frac{2x(x-1)(x+1)}{-2(1-x)}+\sqrt[3]{x^2+1}+\sum_{n=1}^{\infty}\frac{1}{n^2}=\frac{\pi^2}{6}$$";
+    let (_d, mut app) = note(&format!("intro\n\n{src}\n"), "{}");
+    cursor_at(&mut app, "intro");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(900, 700).unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let node = frame.info.rich[0].node;
+    let r = frame.dom.content_rect(node);
+    let ink = |frame: &rustsidian_app::Frame, node: rustsidian_ui::NodeId| {
+        let mut max_x = f32::MIN;
+        let mut max_size = 0.0f32;
+        for cmd in &frame.dom.nodes[node].draw {
+            if let Cmd::Text { x, style, .. } = cmd {
+                max_x = max_x.max(*x);
+                max_size = max_size.max(style.size);
+            }
+        }
+        (max_x, max_size)
+    };
+    let (max_x, size) = ink(&frame, node);
+    assert!(max_x <= r.x + r.w, "the formula is drawn inside its block: {max_x} vs {}", r.x + r.w);
+    // A wider window has room for the formula at full size: the narrow one is smaller, so it was
+    // shrunk to fit instead of being clipped.
+    let mut wide = Pixmap::new(2400, 700).unwrap();
+    let frame = render(&mut app, &mut fonts, &mut wide, 1.0);
+    let (_, wide_size) = ink(&frame, frame.info.rich[0].node);
+    assert!(size < wide_size, "shrunk: {size} vs {wide_size}");
 }
 
 #[test]

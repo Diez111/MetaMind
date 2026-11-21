@@ -62,6 +62,9 @@ const INLINE_METRICS: math_core::Metrics =
     math_core::Metrics { padding_x: 3.0, padding_y: 1.0, run_gap: 0.0 };
 /// A display block's tag sits against the right margin, this far in.
 const TAG_INSET: f32 = 6.0;
+/// Smallest fraction of [`BLOCK_SIZE`] a display formula is shrunk to before it is allowed to
+/// overflow: past this the formula stops being readable, so the block scrolls instead.
+const MATH_MIN_SCALE: f32 = 0.55;
 
 /// The widget a top-level block is drawn as, if it is one. `src` is the text of the block's
 /// root node and `root_start` that node's start within its top-level block.
@@ -488,10 +491,27 @@ pub fn paint(dom: &mut Dom, items: &[Item], inline: &[InlineItem], fonts: &mut F
             dom.nodes[it.node].draw = cmds;
             continue;
         }
-        if let Kind::Math { src, display } = &it.kind {
-            let metrics = math_core::Metrics::default();
-            let rendered = math_core::render_full(src, BLOCK_SIZE, *display, &metrics, &mut fm);
-            emit_math(r, &rendered, &base, color, &mut fm, &mut cmds);
+        match &it.kind {
+            Kind::Mermaid(_) => {}
+            Kind::Math { src, display } => {
+                let avail = r.w.max(1.0);
+                let mut size = BLOCK_SIZE;
+                let mut l = math_core::render_full(src, size, *display, &math_core::Metrics::default(), &mut fm).layout;
+                if l.width > avail {
+                    // A display formula wider than its block is shrunk to fit rather than clipped:
+                    // clipping loses the end of the line, which is where the result of the
+                    // formula usually is. The floor keeps a pathological formula readable
+                    // instead of turning it into a smudge, and it is re-rendered at the smaller
+                    // size so the real font metrics are the ones that decide the new width.
+                    let sc = (avail / l.width).clamp(MATH_MIN_SCALE, 1.0);
+                    size = BLOCK_SIZE * sc;
+                    l = math_core::render_full(src, size, *display, &math_core::Metrics::default(), &mut fm).layout;
+                }
+                let x = r.x + ((r.w - l.width) / 2.0).max(0.0);
+                let y = r.y + ((r.h - l.height()) / 2.0).max(0.0);
+                emit(&l, x, y, 1.0, &base, color, &mut cmds);
+            }
+
         }
         dom.nodes[it.node].draw = cmds;
     }

@@ -23,7 +23,12 @@ pub enum Node {
     Script { base: Box<Node>, sup: Option<Vec<Node>>, sub: Option<Vec<Node>> },
     Frac { num: Vec<Node>, den: Vec<Node>, rule: bool, forced: Option<bool> },
     Sqrt { body: Vec<Node>, index: Option<Vec<Node>> },
+    // `\left<delim>`/`\right<delim>`: a fence that stretches with its body.
     Delim { open: String, close: String, body: Vec<Node> },
+    // A delimiter of a fixed, larger-than-text size: `\bigl\{`, `\Bigm|`, `\Biggr\rangle`.
+    // `scale` is the multiple of the size TeX uses for each command, and `kind` is the spacing
+    // class the suffix picks (`l` Open, `r` Close, `m` Rel, plain Ord).
+    Big { delim: String, scale: f32, kind: Kind },
     Text(String),
     Space(f32),
     Matrix { rows: Vec<Vec<Vec<Node>>>, open: String, close: String, align: Align },
@@ -439,9 +444,26 @@ impl Parser {
             "big" | "Big" | "bigg" | "Bigg" | "bigl" | "bigr" | "Bigl" | "Bigr" | "biggl" | "biggr"
             | "bigm" | "Bigm" | "biggm" | "Biggm" => {
                 let d = self.delim();
-                // The `m` variants are relations: they get relation spacing, like `\Bigm|`.
-                let kind = if n.ends_with('m') { Kind::Rel } else { Kind::Ord };
-                atom(d, kind, Face::Roman)
+                // TeX sets these at 1.2, 1.8, 2.4 and 3 times the size of the surrounding text:
+                // the capital doubles the step again, and each extra `g` adds half a step.
+                let scale = match (n.starts_with('B'), n.matches('g').count()) {
+                    (false, 1) => 1.2,
+                    (true, 1) => 1.8,
+                    (false, _) => 2.4,
+                    (true, _) => 3.0,
+                };
+                // The suffix is the spacing class: `\bigl(` opens, `\Bigr)` closes, `\Bigm|` is a
+                // relation, and a plain `\big(` is an ordinary atom.
+                let kind = if n.ends_with('l') {
+                    Kind::Open
+                } else if n.ends_with('r') {
+                    Kind::Close
+                } else if n.ends_with('m') {
+                    Kind::Rel
+                } else {
+                    Kind::Ord
+                };
+                Node::Big { delim: d, scale, kind }
             }
             "middle" => Node::Middle(self.delim()),
             "hline" => Node::Hline,

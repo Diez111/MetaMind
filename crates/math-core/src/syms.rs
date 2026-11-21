@@ -7,6 +7,10 @@ pub enum Kind {
     Close,
     Punct,
     Op,
+    /// An `Inner` atom: a fraction, a `\left..\right` group, a matrix. TeX spaces these as one
+    /// unit against their neighbours (Table 18.4's last row and column), which is why `= \frac`
+    /// gets a thick space and `a \frac` a thin one.
+    Inner,
 }
 
 const GREEK: &[(&str, &str)] = &[

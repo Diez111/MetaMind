@@ -190,7 +190,27 @@ offset into it (`cache::Meta::Cached`); new or changed notes hold decoded metada
 - Not handled: on Windows a mapped file cannot be replaced by rename, so saving the index while
   it is mapped will need the entries re-pointed first. There is no Windows build yet.
 
-## 10. Known misses
+## 10. Math: shrink a wide display formula instead of clipping it
+
+**Situation.** A `$$` block is laid out at a fixed 20px and centred in its block. A formula as long
+as the ones the calculus vault writes (an integral plus a long fraction plus a sum runs to about
+twice the reading column) ran off the right edge of the pane: the end of the line, where the result
+of the formula usually is, was not drawn at all.
+
+**Decision.** When the laid-out width exceeds the block, the app re-renders the formula at
+`avail / width` of the base size, with a floor of 0.55, rather than clipping it or wrapping it:
+clipping loses content, and wrapping a formula mid-line has no correct place to break. The second
+pass matters: it is the real font metrics at the smaller size that decide the new width, not a
+scale factor applied to the box. Below the floor the formula overflows on purpose, because past
+that point shrinking stops being readable.
+
+**Consequence.** Long display lines stay complete at the cost of being smaller than their
+neighbours. Inline formulas and the inline row (`Kind::MathRow`) are untouched: they were never
+clipped, and their own row already has room. The block height is still reserved with the
+font-independent estimate before real fonts exist, so a shrunk formula has some air above and
+below it.
+
+## 11. Known misses
 
 - **Search uses a native scan, not tantivy** (§6).
 - **The default renderer is the CPU, not wgpu** (§2). No wgpu code exists yet.

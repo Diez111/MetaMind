@@ -664,12 +664,29 @@ fn phantom_keeps_the_box_and_drops_the_ink() {
 }
 
 #[test]
-fn bigm_variants_are_fixed_size_delimiters_with_relation_spacing() {
-    for big in [r"\bigm", r"\Bigm", r"\biggm", r"\Biggm"] {
-        let plain = lay("a|b", false).width;
-        let spaced = lay(&format!("a{big}|b"), false).width;
-        assert!((spaced - plain - 2.0 * 0.278 * 16.0).abs() < 0.01, "{big}: {spaced} vs {plain}");
-        assert!(parse_full(&format!("a{big}|b")).diagnostics.is_empty());
+fn bigm_variants_are_relations_and_the_plain_ones_ordinary() {
+    // Same glyph, same size: the only difference between `\Bigm|` and `\Big|` is the spacing
+    // class the suffix asks for, so the two thick spaces around a relation are the whole delta.
+    for (m, plain) in [(r"\bigm", r"\big"), (r"\Bigm", r"\Big"), (r"\biggm", r"\bigg"), (r"\Biggm", r"\Bigg")]
+    {
+        let rel = lay(&format!("a{m}|b"), false).width;
+        let ord = lay(&format!("a{plain}|b"), false).width;
+        assert!((rel - ord - 2.0 * THICK * 16.0).abs() < 0.01, "{m}: {rel} vs {ord}");
+        assert!(parse_full(&format!("a{m}|b")).diagnostics.is_empty());
+    }
+}
+
+#[test]
+fn sized_delimiters_are_drawn_at_the_texbook_sizes_on_the_axis() {
+    for (cmd, scale) in [(r"\big", 1.2), (r"\Big", 1.8), (r"\bigg", 2.4), (r"\Bigg", 3.0)] {
+        let l = lay(&format!(r"{cmd}(x"), false);
+        let paren = l.glyphs.iter().find(|g| g.text == "(").unwrap();
+        assert!((paren.size - 16.0 * scale).abs() < 0.01, "{cmd}: {} at {}", paren.text, paren.size);
+        // Centred on the math axis, which is a quarter of an em above the baseline.
+        let tight = render_full(&format!(r"{cmd}("), 16.0, false, &Metrics::ZERO, &mut Approx).layout;
+        let axis = (tight.ascent - tight.descent) / 2.0;
+        assert!((axis - 0.25 * 16.0).abs() < 0.01, "{cmd} is on the axis: {axis}");
+        assert!(parse_full(&format!(r"{cmd}(")).diagnostics.is_empty());
     }
 }
 
@@ -687,4 +704,109 @@ fn the_other_subjects_have_no_unknown_commands_left() {
     ] {
         assert!(parse_full(src).diagnostics.is_empty(), "{src}: {:?}", parse_full(src).diagnostics);
     }
+}
+
+/// A measure where every character is exactly half an em, so a test can read the space the layout
+/// put between two atoms off their positions without knowing any font.
+struct Fixed;
+
+impl Measure for Fixed {
+    fn width(&mut self, text: &str, size: f32, _face: Face) -> f32 {
+        0.5 * size * text.chars().count() as f32
+    }
+}
+
+/// Distance in pixels from the start of the first item of `src` to the start of the second, laid
+/// out tight at 16px with [`Fixed`]: half an em (8px) for the first item, the rest is spacing.
+fn item_gap(src: &str) -> f32 {
+    let l = layout_nodes_with(&parse(src), 16.0, false, &Metrics::ZERO, &mut Fixed);
+    l.glyphs[1].x - l.glyphs[0].x
+}
+
+const THIN: f32 = 3.0 / 18.0;
+const MEDIUM: f32 = 4.0 / 18.0;
+const THICK: f32 = 5.0 / 18.0;
+
+#[test]
+fn inter_atom_spaces_follow_the_texbook_table() {
+    // TeXbook, Chapter 18: thin 3mu, medium 4mu, thick 5mu, and nothing where the table says so.
+    for (src, want) in [
+        ("ab", 0.0),     // Ord + Ord
+        ("a(", 0.0),     // Ord + Open
+        ("(a", 0.0),     // Open + Ord
+        (")+a", MEDIUM), // Close + Bin; the `a` keeps the `+` a Bin
+        (",a", THIN),    // Punct + Ord
+        (",,", THIN),    // Punct + Punct (was dropped as if it were Punct + Close)
+        ("a+b", MEDIUM), // Ord + Bin
+        ("a=b", THICK),  // Ord + Rel
+        ("=a", THICK),   // Rel + Ord
+        ("+a", 0.0),     // a leading Bin is an Ord, and Ord + Ord is no space
+        (")+", 0.0),     // a trailing Bin is an Ord as well
+    ] {
+        let got = item_gap(src) / 16.0 - 0.5;
+        assert!((got - want).abs() < 0.001, "{src}: {got} em, want {want}");
+    }
+}
+
+#[test]
+fn fractions_fences_and_matrices_space_like_inner_atoms() {
+    // Table 18.4's Inner row and column: a fraction beside an ordinary atom takes a thin space,
+    // which Ord + Ord would not have. The 0.1em is the fraction's own numerator centring.
+    assert!((item_gap(r"a\frac{1}{2}") / 16.0 - 0.5 - (THIN + 0.1)).abs() < 0.001);
+    assert!((item_gap(r")\frac{1}{2}") / 16.0 - 0.5 - (THIN + 0.1)).abs() < 0.001);
+    // A `\left..\right` group and a matrix are Inner too: Ord + Inner is thin, the extra 0.025em
+    // being the air the fence puts around its own delimiter.
+    assert!((item_gap(r"a\left(1\right)") / 16.0 - 0.5 - (THIN + 0.025)).abs() < 0.001);
+    assert!((item_gap(r"a\begin{pmatrix}1\end{pmatrix}") / 16.0 - 0.5 - (THIN + 0.025)).abs() < 0.001);
+}
+
+#[test]
+fn script_style_takes_no_inter_atom_space() {
+    let l = layout_nodes_with(&parse("a^{b+c}"), 16.0, false, &Metrics::ZERO, &mut Fixed);
+    let b = l.glyphs.iter().find(|g| g.text == "b").unwrap();
+    let plus = l.glyphs.iter().find(|g| g.text == "+").unwrap();
+    // The scripts are laid out at 0.7 of the size, so a half em there is 5.6px, not 8: the two
+    // atoms are adjacent, with no medium space between them.
+    assert!((plus.x - b.x - 5.6).abs() < 0.001, "no medium space in a superscript: {}", plus.x - b.x);
+}
+
+#[test]
+fn sqrt_index_stands_on_the_vinculum_inside_the_box() {
+    let l = lay(r"\sqrt[3]{x^2+1}", false);
+    let idx = l.glyphs.iter().find(|g| g.text == "3").unwrap();
+    let body = l.glyphs.iter().find(|g| g.text == "x").unwrap();
+    let bar = l.segs.iter().min_by(|a, b| a.y0.total_cmp(&b.y0)).unwrap();
+    assert!(idx.size < body.size, "scriptscript size: {} vs {}", idx.size, body.size);
+    assert!((idx.y - bar.y0).abs() < 0.01, "the index stands on the bar: {} vs {}", idx.y, bar.y0);
+    assert!(idx.x < body.x, "the index is left of the body: {} vs {}", idx.x, body.x);
+    assert!(idx.y - idx.size * 0.72 > 0.0, "the index's ink is inside the box, not above it");
+    // The box grows for the index: without it there is nothing above the vinculum.
+    let without = render_full(r"\sqrt{x^2+1}", 16.0, false, &Metrics::ZERO, &mut Approx).layout;
+    assert!(l.ascent > without.ascent, "{} vs {}", l.ascent, without.ascent);
+}
+
+/// A measure that reports ink the way a real font's metrics do: 1.4em up, 0.6em down.
+struct Tall;
+
+impl Measure for Tall {
+    fn width(&mut self, text: &str, size: f32, face: Face) -> f32 {
+        Approx.width(text, size, face)
+    }
+
+    fn extents(&mut self, _text: &str, size: f32, _face: Face) -> (f32, f32) {
+        (1.4 * size, 0.6 * size)
+    }
+}
+
+#[test]
+fn extents_come_from_the_measure_when_it_has_them() {
+    let est = render_full("x", 16.0, false, &Metrics::ZERO, &mut Approx).layout;
+    let real = render_full("x", 16.0, false, &Metrics::ZERO, &mut Tall).layout;
+    assert!((real.ascent - 1.4 * 16.0).abs() < 0.01, "{}", real.ascent);
+    assert!((real.descent - 0.6 * 16.0).abs() < 0.01, "{}", real.descent);
+    assert!(real.ascent > est.ascent && real.descent > est.descent);
+    // Scripts stack off the measured extents, so the box follows the font and not the table.
+    let tall = render_full("x^2", 16.0, false, &Metrics::ZERO, &mut Tall).layout;
+    let approx = render_full("x^2", 16.0, false, &Metrics::ZERO, &mut Approx).layout;
+    assert!(tall.height() > approx.height(), "{} vs {}", tall.height(), approx.height());
 }
