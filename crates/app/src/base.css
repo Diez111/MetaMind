@@ -311,6 +311,11 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .markdown-source-view.is-readable-line-width, .markdown-reading-view.is-readable-line-width { display: flex; flex-direction: column; align-items: center }
 .is-readable-line-width > * { width: 100%; max-width: var(--file-line-width) }
 .modal-container { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center; background-color: rgba(0, 0, 0, 0.5) }
+/* A Mermaid diagram opened by a click: drawn at the width of the window, so the labels of a
+   wide diagram are readable. The whole diagram is the click target that closes it. */
+.modal.mod-diagram { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 18px; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow: hidden }
+.diagram-zoom-hint { color: var(--text-faint); font-size: var(--font-ui-smaller) }
+.mermaid-block:hover { background-color: var(--background-modifier-hover) }
 .modal.mod-settings { width: 860px; height: 580px; display: flex; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow: hidden }
 .vertical-tab-header { width: 190px; background-color: var(--background-secondary); border-right: 1px solid var(--background-modifier-border); padding: 12px 8px }
 .vertical-tab-header .setting-input { margin-bottom: 8px }

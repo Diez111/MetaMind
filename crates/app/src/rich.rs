@@ -47,7 +47,15 @@ pub struct Item {
 const BLOCK_SIZE: f32 = 20.0;
 const PAD: f32 = 8.0;
 const BASELINE: f32 = 0.99;
-const DIAGRAM_MAX_W: f32 = 760.0;
+/// Width a diagram is fitted to before layout: the note column (`--file-line-width` 700) minus
+/// the 28 px of padding the reading view puts on each side. The whole width is used, not a
+/// fixed 760 px: percentages in the column resolve against it, and a diagram that can grow is
+/// drawn as large as its column allows.
+const DIAGRAM_MAX_W: f32 = 644.0;
+/// Smallest text size a diagram is scaled to. Shrinking below this turns node labels into an
+/// unreadable smudge; a diagram that would need less keeps this size (running past the right
+/// edge of its column) and is opened full screen when clicked.
+const MIN_FONT_SIZE: f32 = 8.0;
 /// Text size of a block of prose (`--font-text-size`), to size a formula's place in the flow
 /// before the real font metrics are known.
 const TEXT_SIZE: f32 = 16.0;
@@ -168,10 +176,19 @@ fn approx_height(kind: &Kind) -> f32 {
             math_core::render(src, BLOCK_SIZE, *display, &mut math_core::Approx).height() + 2.0 * PAD
         }
         Kind::Mermaid(src) => match mermaid_core::render(src, &mut mermaid_core::Approx) {
-            Ok(d) => d.height * (DIAGRAM_MAX_W / d.width).min(1.0) + 2.0 * PAD,
+            Ok(d) => d.height * diagram_scale(&d, DIAGRAM_MAX_W) + 2.0 * PAD,
             Err(_) => 0.0,
         },
     }
+}
+
+/// Scale a diagram is drawn at in a block `w` wide: fill the width, never enlarge past its
+/// natural size, and never shrink the text below [`MIN_FONT_SIZE`]. Past that floor the drawing
+/// is wider than the block (the column cannot scroll sideways), which is what the full-screen
+/// view opened by a click is for.
+pub(crate) fn diagram_scale(d: &mermaid_core::Diagram, w: f32) -> f32 {
+    let fit = (w / d.width.max(1.0)).min(1.0);
+    fit.max((MIN_FONT_SIZE / mermaid_core::TEXT_SIZE).min(1.0))
 }
 
 pub fn add(dom: &mut Dom, parent: NodeId, kind: Kind, info: &mut Vec<Item>) -> NodeId {
@@ -179,8 +196,23 @@ pub fn add(dom: &mut Dom, parent: NodeId, kind: Kind, info: &mut Vec<Item>) -> N
     // is always above what they need (see `inline` for the numbers). A block is never thinner
     // than a line of prose, though, so a formula cannot come out as a band a few pixels tall.
     let h = approx_height(&kind).max(TEXT_SIZE * LINE_EM).ceil();
-    let node = dom.add(parent, El::div().class("cm-line rich-block").style(&format!("height: {h}px")));
+    let mut el = El::div().class("cm-line rich-block").style(&format!("height: {h}px"));
+    if matches!(kind, Kind::Mermaid(_)) {
+        // A click opens the diagram on its own, at the width of the window.
+        el = el.class("mermaid-block").action("mermaid:zoom");
+    }
+    let node = dom.add(parent, el);
     info.push(Item { node, kind });
+    node
+}
+
+/// A diagram on its own, full screen: `w` x `h` of room for the painter to fit it to. It is not
+/// a `cm-line` and does not clip, so a diagram that does not fit the note column is drawn as
+/// large as the window allows.
+pub fn add_zoom(dom: &mut Dom, parent: NodeId, src: &str, info: &mut Vec<Item>, w: f32, h: f32) -> NodeId {
+    let el = El::div().class("rich-block diagram-zoom").style(&format!("width: {w:.0}px; height: {h:.0}px"));
+    let node = dom.add(parent, el);
+    info.push(Item { node, kind: Kind::Mermaid(src.to_string()) });
     node
 }
 
@@ -500,9 +532,10 @@ pub fn paint(dom: &mut Dom, items: &[Item], inline: &[InlineItem], fonts: &mut F
         if let Kind::Mermaid(src) = &it.kind {
             let mut dm = Dm(fm);
             if let Ok(d) = mermaid_core::render(src, &mut dm) {
-                let sc = (DIAGRAM_MAX_W / d.width).min(1.0);
+                let sc = diagram_scale(&d, r.w);
                 let ox = r.x + ((r.w - d.width * sc) / 2.0).max(0.0);
-                let pen = Pen { bg, fg: color, s: sc, ox, oy: r.y + PAD };
+                let oy = r.y + ((r.h - d.height * sc) / 2.0).max(0.0);
+                let pen = Pen { bg, fg: color, s: sc, ox, oy };
                 emit_diagram(&d, &pen, &base, &mut dm, &mut cmds);
             }
             dom.nodes[it.node].draw = cmds;

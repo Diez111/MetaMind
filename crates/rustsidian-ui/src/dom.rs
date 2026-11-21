@@ -463,8 +463,10 @@ impl Dom {
             let mut preferred: Vec<(f32, f32)> = Vec::with_capacity(kids.len());
             for &c in &kids {
                 let m = &self.nodes[c].style.margin;
-                let (cw, ch) =
+                let size =
                     self.intrinsic(fonts, c, if s.row { f32::INFINITY } else { avail - m[1] - m[3] });
+                let size = self.row_child_size(fonts, c, if s.row && avail.is_finite() { Some(avail) } else { None }, size);
+                let (cw, ch) = size;
                 preferred.push((cw, ch));
                 let (cw, ch) = (cw + m[1] + m[3], ch + m[0] + m[2]);
                 if s.row {
@@ -493,6 +495,37 @@ impl Dom {
         (w, h)
     }
 
+    /// Height a node takes once it is laid out at exactly `w`. `w` already had its percentage
+    /// width resolved by the caller, and `intrinsic` would resolve that percentage again against
+    /// it: a table cell with `width: 30%` would measure its text at 30% of its own column.
+    fn height_at(&self, fonts: &mut Fonts, id: NodeId, w: f32) -> f32 {
+        let n = &self.nodes[id];
+        if let Some(text) = &n.el.text {
+            let avail = (w - Self::h_extra(&n.style)).max(0.0);
+            let wrap = n.style.text.wrap.then_some(avail);
+            return fonts.measure(text, &n.el.spans, &n.style.text, wrap).1 + Self::v_extra(&n.style);
+        }
+        self.intrinsic(fonts, id, w).1
+    }
+
+    /// Preferred size of a child of a flex row, at the row's inner width. A percentage width is
+    /// a commitment, not a suggestion: the row measures that child at the width its percentage
+    /// names, so its height is the height its text will really take once it wraps there. Without
+    /// this a table cell was measured at the width of its unwrapped text and its row came out the
+    /// wrong height.
+    fn row_child_size(
+        &self,
+        fonts: &mut Fonts,
+        id: NodeId,
+        avail: Option<f32>,
+        (w, h): (f32, f32),
+    ) -> (f32, f32) {
+        let (Some(avail), Dim::Pct(p)) = (avail, self.nodes[id].style.width) else { return (w, h) };
+        let cs = &self.nodes[id].style;
+        let w = (avail * p / 100.0).clamp(cs.min_w, cs.max_w);
+        (w, self.height_at(fonts, id, w))
+    }
+
     /// Height of a flex row that is narrower than its children's preferred sizes. `place`
     /// squeezes those that can give up width, and wrapped text needs another line at the width
     /// it finally gets; without measuring again the row stays one line tall and the next block
@@ -513,7 +546,7 @@ impl Dom {
             if self.nodes[c].el.text.is_some() && cs.text.wrap && cs.shrink > 0.0 {
                 let squeezed = if total > 0.0 { cw + (avail - total) * cw / total } else { cw };
                 if squeezed < cw {
-                    ch = self.intrinsic(fonts, c, squeezed.max(0.0)).1;
+                    ch = self.height_at(fonts, c, squeezed.max(0.0));
                 }
             }
             h = h.max(ch + m[0] + m[2]);
@@ -672,7 +705,7 @@ impl Dom {
             let r = if s.row {
                 // Text that was squeezed needs its height recomputed at the new width.
                 if self.nodes[c].el.text.is_some() || cw < sizes[i].0 {
-                    ch = ch.max(self.intrinsic(fonts, c, cw).1);
+                    ch = ch.max(self.height_at(fonts, c, cw));
                 }
                 let cross = inner.h - m[0] - m[2];
                 let y = match s.align {

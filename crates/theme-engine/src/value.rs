@@ -72,15 +72,55 @@ const NAMED: &[(&str, u32)] = &[
     ("beige", 0xf5f5dc),
 ];
 
+/// Arguments of a color function, split at top-level commas, slashes and spaces.
+///
+/// A split inside `calc()` would tear an expression apart: `hsl(240 10% calc(60% - 5%))` has
+/// three arguments, not six. Parentheses always nest, so a depth count is enough to tell a
+/// separator from part of an expression.
 fn args(inner: &str) -> Vec<&str> {
-    inner.split([',', '/', ' ']).map(str::trim).filter(|s| !s.is_empty()).collect()
+    let mut out = Vec::new();
+    let mut depth = 0usize;
+    let mut start: Option<usize> = None;
+    for (i, c) in inner.char_indices() {
+        if c == '(' {
+            depth += 1;
+        } else if c == ')' {
+            depth = depth.saturating_sub(1);
+        }
+        if depth == 0 && matches!(c, ',' | '/' | ' ' | '\t' | '\n') {
+            if let Some(s) = start.take() {
+                out.push(inner[s..i].trim());
+            }
+        } else if start.is_none() {
+            start = Some(i);
+        }
+    }
+    if let Some(s) = start {
+        out.push(inner[s..].trim());
+    }
+    out.retain(|s| !s.is_empty());
+    out
 }
 
+/// One color channel: a plain number, a percentage, or a `calc()`/`min()`/`max()`/`clamp()`
+/// expression. Inside an expression `%` is relative to `scale` (1 for HSL saturation and
+/// lightness, 255 for RGB, 360 for a hue), which is what `calc(60% - 5%)` means there.
 fn channel(s: &str, scale: f32) -> Option<f32> {
-    match s.strip_suffix('%') {
-        Some(p) => p.trim().parse::<f32>().ok().map(|v| v / 100.0 * scale),
-        None => s.parse::<f32>().ok(),
+    let s = s.trim();
+    if let Some(p) = s.strip_suffix('%') {
+        return p.trim().parse::<f32>().ok().map(|v| v / 100.0 * scale);
     }
+    if let Ok(v) = s.parse::<f32>() {
+        return Some(v);
+    }
+    let cx = LengthCx { percent_base: scale, ..LengthCx::default() };
+    parse_length(s, &cx)
+}
+
+/// Hue of an `hsl()`/`hsla()` color, in degrees. `deg` is optional in CSS and a percentage is
+/// a fraction of the full circle; both plain numbers and `calc()` turn into degrees here.
+fn hue(s: &str) -> Option<f32> {
+    channel(s.trim().trim_end_matches("deg"), 360.0)
 }
 
 fn hsl(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
@@ -147,7 +187,7 @@ pub fn parse_color(s: &str) -> Option<Color> {
         if a.len() < 3 {
             return None;
         }
-        let h: f32 = a[0].trim_end_matches("deg").parse().ok()?;
+        let h = hue(a[0])?;
         let (r, g, b) = hsl(h, channel(a[1], 1.0)?, channel(a[2], 1.0)?);
         let alpha = a.get(3).map_or(Some(1.0), |x| channel(x, 1.0))?;
         return Some(Color { r, g, b, a: (alpha.clamp(0.0, 1.0) * 255.0).round() as u8 });
@@ -451,9 +491,17 @@ mod tests {
         assert_eq!(c("rgba(10,20,30,0.5)"), Color { r: 10, g: 20, b: 30, a: 128 });
         assert_eq!(c("rgb(10 20 30 / 50%)"), Color { r: 10, g: 20, b: 30, a: 128 });
         assert_eq!(c("rgb(100%, 0%, 50%)"), Color::rgb(255, 0, 128));
+        assert_eq!(c("rgb(255 0 0 / 50%)"), Color { r: 255, g: 0, b: 0, a: 128 });
         assert_eq!(c("hsl(0, 100%, 50%)"), Color::rgb(255, 0, 0));
         assert_eq!(c("hsl(258, 88%, 66%)"), Color::rgb(138, 92, 245));
         assert_eq!(c("hsla(120deg 100% 25% / 0.2)"), Color { r: 0, g: 128, b: 0, a: 51 });
+        // The Minimal theme computes a channel: `calc()` must survive the argument split.
+        assert_eq!(c("hsl(258, 88%, calc(66% - 10%))"), c("hsl(258, 88%, 56%)"));
+        assert_eq!(c("hsl(calc(240 + 18) 88% 66%)"), c("hsl(258, 88%, 66%)"));
+        assert_eq!(c("rgb(calc(100% - 5%), 0, 50%)"), c("rgb(95%, 0%, 50%)"));
+        assert_eq!(c("rgba(10, 20, 30, calc(50% / 2))"), Color { r: 10, g: 20, b: 30, a: 64 });
+        assert_eq!(args("calc(60% - 5%)"), ["calc(60% - 5%)"]);
+        assert_eq!(args("10% 20% / 30%"), ["10%", "20%", "30%"]);
         assert_eq!(c("RebeccaPurple"), Color::rgb(102, 51, 153));
         assert_eq!(c("transparent").a, 0);
         for bad in ["", "#12", "#ggg", "rgb(1,2)", "notacolor", "rgb(a,b,c)"] {

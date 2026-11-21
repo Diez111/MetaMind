@@ -477,6 +477,16 @@ fn has_list_lines(display: &str) -> bool {
     display.split('\n').any(|l| list_marker(l).is_some())
 }
 
+/// Whether a rendered block is drawn as a list: one of its lines opens with a bullet or a number.
+///
+/// A heading is never a list, even when its text starts with `10.`. Its live preview hides the
+/// `## ` marker, so the number comes first in the display, and drawing it as a gutter marker put
+/// it in a different text run: regular weight, body size and a baseline a few pixels above the
+/// heading's. The number is part of the heading and keeps the heading's style.
+fn draws_list_lines(root: &NodeKind, display: &str) -> bool {
+    !matches!(root, NodeKind::Heading { .. }) && has_list_lines(display)
+}
+
 /// Markdown wraps its paragraphs where the writer's editor wrapped them. On screen a paragraph is
 /// one run of text, so those breaks are single spaces and the layout wraps at the width it really
 /// has — otherwise a hard-wrapped sentence shows as three short, ragged lines. A blank line, a
@@ -1416,7 +1426,7 @@ pub(crate) fn note_blocks(
         }
         // A rendered list is drawn item by item: a single text run cannot hang the wrapped
         // lines under the item's text, and the bullet would be the source's own `-`.
-        if rendered && !folded_here && has_list_lines(&display) {
+        if rendered && !folded_here && draws_list_lines(&root.kind, &display) {
             let mut callout_lines = cut_lines(&display, &spans, &map);
             // A closed callout shows its title and nothing else: `list_block` gives every line
             // its own child node, which the block's hide decorations would not reach.
@@ -1510,6 +1520,31 @@ fn callout_color(kind: &str) -> Color {
     Color { r, g, b, a: 255 }
 }
 
+/// Width of the note column a table is laid out in: `--file-line-width` (700 px) minus the
+/// table's own left and right padding (28 px each), which is what its percentages resolve
+/// against.
+const TABLE_W: f32 = 644.0;
+/// A table column narrower than this cannot show a header like "Duración" on one line: the
+/// header wraps in the middle of the word. Every column gets this much before width is shared
+/// by weight.
+const MIN_COL_W: f32 = 80.0;
+
+/// Width in pixels of each column of a grid `usable` wide, given the preferred width of every
+/// column (the longest cell). A column never falls below [`MIN_COL_W`] while there is room for
+/// every column to have it; the rest of the width is shared by weight. A table with more columns
+/// than that allows shares the width equally, since honouring the minimum would overflow.
+fn column_widths(weights: &[f32], usable: f32) -> Vec<f32> {
+    let total: f32 = weights.iter().sum();
+    let cols = weights.len() as f32;
+    if total <= 0.0 || cols == 0.0 {
+        return Vec::new();
+    }
+    if cols * MIN_COL_W >= usable {
+        return vec![usable / cols; weights.len()];
+    }
+    weights.iter().map(|w| MIN_COL_W + (usable - cols * MIN_COL_W) * w / total).collect()
+}
+
 /// A table drawn as a grid. Every cell is its own text block, so clicks map to the cell's source.
 #[allow(clippy::too_many_arguments)]
 fn table(
@@ -1572,7 +1607,8 @@ fn table(
             chars.unwrap_or(0).clamp(3, 40) as f32 * 7.6 + 36.0
         })
         .collect();
-    let total: f32 = weights.iter().sum();
+    let widths = column_widths(&weights, TABLE_W);
+    let total: f32 = widths.iter().sum();
     let grid = dom.add(view, El::div().class("markdown-table"));
     let mut band = false;
     for (header, cells) in rows {
@@ -1590,7 +1626,7 @@ fn table(
                 El::div()
                     .class("table-cell")
                     .class_if(cell.center, "is-center")
-                    .style(&format!("width: {:.3}%", weights[c] / total * 100.0))
+                    .style(&format!("width: {:.3}%", widths[c] / total * 100.0))
                     .text(cell.display.clone())
                     .spans(cell.spans),
             );
@@ -2205,7 +2241,9 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
                 a.strip_prefix("close-tab:")
                     .map(|_| "Cerrar pestaña (el clic central también cierra)".to_string())
             })
-            .or_else(|| a.strip_prefix("toggle-pin:").map(|_| "Desanclar pestaña".to_string()))?;
+            .or_else(|| a.strip_prefix("toggle-pin:").map(|_| "Desanclar pestaña".to_string()))
+            .or_else(|| (a == "mermaid:zoom").then(|| "Ampliar el diagrama a pantalla completa".to_string()))
+            .or_else(|| (a == "mermaid:zoom-close").then(|| "Cerrar el diagrama (Esc)".to_string()))?;
         let key = app.hotkey_for(a);
         Some(if key.is_empty() { name } else { format!("{name}  ({key})") })
     });
@@ -2255,8 +2293,28 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
     );
 }
 
+/// A Mermaid diagram opened full screen by a click on its block: the window behind it dims and
+/// the diagram gets the width of the window, so the labels of a wide diagram can be read. A
+/// click anywhere, or Escape, closes it.
+fn diagram_zoom(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate::rich::Item>) {
+    let Some(src) = &app.diagram_zoom else { return };
+    let w = (app.window_w - 120.0).max(160.0);
+    let h = (viewport_h - 120.0).max(120.0);
+    let backdrop = dom.add(0, El::div().class("modal-container mod-dim").action("mermaid:zoom-close"));
+    let modal = dom.add(
+        backdrop,
+        El::div()
+            .class("modal mod-diagram")
+            .action("mermaid:zoom-close")
+            .style(&format!("width: {w:.0}px; height: {h:.0}px")),
+    );
+    crate::rich::add_zoom(dom, modal, src, rich, w - 36.0, h - 64.0);
+    dom.add(modal, El::div().class("diagram-zoom-hint").text("Clic o Esc para cerrar"));
+}
+
 /// Prompts, the hover preview, settings, menus and notices, over the window.
-fn overlays(app: &App, dom: &mut Dom, viewport_h: f32) {
+fn overlays(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate::rich::Item>) {
+    diagram_zoom(app, dom, viewport_h, rich);
     if let Some(p) = &app.prompt {
         let t = app.anims.t("prompt");
         let mut el = El::div().class("prompt");
@@ -2384,7 +2442,7 @@ pub fn build(app: &App, viewport_h: f32, solo: Option<usize>) -> (Dom, ViewInfo)
         None => !app.is_popped(app.pane),
     };
     if here {
-        overlays(app, &mut dom, viewport_h);
+        overlays(app, &mut dom, viewport_h, &mut info.rich);
     }
     for (id, y) in &app.scrolls {
         if let Some(n) = dom.by_id(id) {
@@ -2657,6 +2715,19 @@ mod tests {
         // A callout's title is its own line even when the body starts on the next one.
         assert_eq!(join_soft_breaks("Title\nbody", true).map(|(s, _)| s), None);
         assert_eq!(join_soft_breaks("Title\nbody", false).map(|(s, _)| s), Some("Title body".into()));
+    }
+
+    #[test]
+    fn a_table_column_is_never_below_the_minimum_width() {
+        // 96 px is what an 8-character header such as "Duración" weighs, and sharing the column
+        // by weight alone left it at 77 px, where the word broke in two.
+        let w = column_widths(&[500.0, 96.0, 420.0, 60.0], TABLE_W);
+        assert!(w.iter().all(|x| *x >= MIN_COL_W - 0.01), "{w:?}");
+        assert!((w.iter().sum::<f32>() - TABLE_W).abs() < 0.1, "{w:?}");
+        assert!(w[0] > w[3], "width is still shared by weight: {w:?}");
+        // More columns than the minimum allows share the width equally instead of overflowing.
+        let many = column_widths(&[1.0; 12], TABLE_W);
+        assert!((many[0] - TABLE_W / 12.0).abs() < 0.1, "{many:?}");
     }
 
     #[test]
