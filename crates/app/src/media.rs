@@ -1,6 +1,7 @@
-//! Content shown inside notes that lives in other files: images and embedded notes.
-//! Entries are keyed by vault path and reloaded when the file's modification time changes.
+//! Content shown inside notes that lives in other files: images, embedded notes and `.excalidraw`
+//! boards. Entries are keyed by vault path and reloaded when the file's modification time changes.
 
+use crate::excalidraw::{Board, Loaded};
 use rustsidian_ui::Image;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -11,11 +12,15 @@ const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
 /// Decoded images are scaled down so that neither side exceeds this.
 const MAX_IMAGE_SIDE: u32 = 2000;
 const MAX_EMBED_BYTES: u64 = 4 * 1024 * 1024;
+/// A board with embedded images is mostly base64 data; it is parsed, never decoded.
+const MAX_BOARD_BYTES: u64 = 32 * 1024 * 1024;
 
 #[derive(Default)]
 pub struct Media {
     images: HashMap<String, (i64, Option<Image>)>,
     notes: HashMap<String, (i64, Option<Arc<str>>)>,
+    /// The board, or why it could not be read: an embed shows the reason instead of a picture.
+    boards: HashMap<String, (i64, Arc<Loaded>)>,
 }
 
 impl Media {
@@ -50,6 +55,30 @@ impl Media {
             .map(Arc::from);
         self.notes.insert(rel.to_string(), (f.mtime, text.clone()));
         text
+    }
+
+    /// The `.excalidraw` board at a vault path, read into a display list. `None` only when the
+    /// vault has no such file; a board that cannot be read or parsed comes back as the reason.
+    pub fn board(&mut self, store: &VaultStore, rel: &str) -> Option<Arc<Loaded>> {
+        let f = store.index.get(rel)?;
+        if let Some((mtime, board)) = self.boards.get(rel) {
+            if *mtime == f.mtime {
+                return Some(board.clone());
+            }
+        }
+        let board = Arc::new(if f.size > MAX_BOARD_BYTES {
+            Loaded::Failed("the board is too large to show here".to_string())
+        } else {
+            match std::fs::read_to_string(store.abs(&f.path)) {
+                Ok(text) => match Board::parse(&text) {
+                    Ok(b) => Loaded::Board(Arc::new(b)),
+                    Err(e) => Loaded::Failed(e),
+                },
+                Err(e) => Loaded::Failed(e.to_string()),
+            }
+        });
+        self.boards.insert(rel.to_string(), (f.mtime, board.clone()));
+        Some(board)
     }
 }
 

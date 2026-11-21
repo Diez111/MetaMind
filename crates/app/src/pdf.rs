@@ -78,6 +78,7 @@ fn write(app: &App, fonts: &mut Fonts, dest: &Path) -> Result<usize, String> {
     dom.layout(fonts, LAYOUT_W, LAYOUT_H);
     view::add_decorations(&mut dom, &info, fonts);
     crate::rich::paint(&mut dom, &info.rich, fonts);
+    crate::excalidraw::paint(&mut dom, &info.exc, fonts);
     let cmds = dom.paint().cmds;
 
     let scale = PAGE_W / LAYOUT_W;

@@ -30,6 +30,7 @@ dataview-core = { path = "../dataview-core" }
 graph-core = { path = "../graph-core" }
 canvas-core = { path = "../canvas-core" }
 editor-core = { path = "../editor-core" }
+excalidraw-core = { path = "../excalidraw-core" }
 highlight-core = { path = "../highlight-core" }
 math-core = { path = "../math-core" }
 mermaid-core = { path = "../mermaid-core" }
