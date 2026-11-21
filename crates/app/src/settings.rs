@@ -178,7 +178,7 @@ const ITEMS: &[Item] = &[
         key: "spellcheck",
         name: "Spellcheck",
         desc: "Underline misspelled English words. Right-click one for suggestions.",
-        control: Toggle(true),
+        control: Toggle(false),
     },
     Item {
         section: Editor,
