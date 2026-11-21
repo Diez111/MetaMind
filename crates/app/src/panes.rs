@@ -43,7 +43,7 @@ fn rows_of(items: &[Value], depth: usize, prefix: &str, out: &mut Vec<BookmarkRo
             }
             "folder" => ("folder", title(s("path")), format!("bookmarks:reveal:{}", s("path"))),
             "search" => ("search", title(s("query")), format!("bookmarks:search:{}", s("query"))),
-            "group" => ("bookmark", title("Group"), String::new()),
+            "group" => ("bookmark", title("Grupo"), String::new()),
             // Kinds this app does not open (graph, url) are listed but inert.
             other => ("bookmark", title(other), String::new()),
         };
@@ -89,7 +89,7 @@ impl App {
 
     fn save_bookmarks(&mut self) {
         if let Err(e) = self.config.bookmarks.save() {
-            self.notice = Some(format!("Cannot save bookmarks: {e}"));
+            self.notice = Some(format!("No se pudo guardar los marcadores: {e}"));
         }
     }
 
@@ -98,12 +98,12 @@ impl App {
         match self.bookmark_of(p) {
             Some(i) => {
                 self.bookmark_items().remove(i);
-                self.notice = Some(format!("Removed bookmark for {}", path::strip_md(p)));
+                self.notice = Some(format!("Se quitó el marcador de {}", path::strip_md(p)));
             }
             None => {
                 let item = json!({"type": "file", "ctime": fsio::now_ms(), "path": p});
                 self.bookmark_items().push(item);
-                self.notice = Some(format!("Bookmarked {}", path::strip_md(p)));
+                self.notice = Some(format!("Marcador añadido a {}", path::strip_md(p)));
             }
         }
         self.save_bookmarks();
@@ -199,17 +199,17 @@ impl App {
                 }
                 "bookmarks:bookmark-current-view" => match self.tab().map(|t| t.path.clone()) {
                     Some(p) => self.toggle_bookmark(&p),
-                    None => self.notice = Some("Open a note to bookmark it".into()),
+                    None => self.notice = Some("Abre una nota para añadirla a marcadores".into()),
                 },
                 "bookmarks:bookmark-current-search" => {
                     let q = self.search_query.trim().to_string();
                     if q.is_empty() {
-                        self.notice = Some("Type a search first".into());
+                        self.notice = Some("Escribe primero una búsqueda".into());
                     } else {
                         let item = json!({"type": "search", "ctime": fsio::now_ms(), "query": q});
                         self.bookmark_items().push(item);
                         self.save_bookmarks();
-                        self.notice = Some(format!("Bookmarked search {q}"));
+                        self.notice = Some(format!("Búsqueda marcada: {q}"));
                     }
                 }
                 _ => return false,
@@ -222,7 +222,7 @@ impl App {
 pub fn bookmarks(app: &App, dom: &mut Dom, parent: NodeId) {
     let header = dom.add(parent, El::div().class("nav-header"));
     dom.add(header, icons::el("bookmark"));
-    dom.add(header, El::div().class("nav-header-title").text("Bookmarks"));
+    dom.add(header, El::div().class("nav-header-title").text("Marcadores"));
     let b = dom.add(header, El::div().class("clickable-icon").action("bookmarks:bookmark-current-view"));
     dom.add(b, icons::el("plus"));
     let list = dom.add(parent, El::div().class("nav-files-container").id("bookmarks"));
@@ -230,7 +230,9 @@ pub fn bookmarks(app: &App, dom: &mut Dom, parent: NodeId) {
     if rows.is_empty() {
         dom.add(
             list,
-            El::div().class("pane-empty").text("No bookmarks yet. Bookmark a note from its menu or with +."),
+            El::div()
+                .class("pane-empty")
+                .text("Aún no hay marcadores. Añade una nota desde su menú o con +."),
         );
     }
     for r in rows {
@@ -253,11 +255,11 @@ pub fn bookmarks(app: &App, dom: &mut Dom, parent: NodeId) {
 pub fn tags(app: &App, dom: &mut Dom, parent: NodeId) {
     let header = dom.add(parent, El::div().class("nav-header"));
     dom.add(header, icons::el("tag"));
-    dom.add(header, El::div().class("nav-header-title").text("Tags"));
+    dom.add(header, El::div().class("nav-header-title").text("Etiquetas"));
     let list = dom.add(parent, El::div().class("nav-files-container").id("tags"));
     let tags = app.tags.as_ref().map(|t| t.tags.as_slice()).unwrap_or(&[]);
     if tags.is_empty() {
-        dom.add(list, El::div().class("pane-empty").text("No tags in this vault."));
+        dom.add(list, El::div().class("pane-empty").text("No hay etiquetas en esta bóveda."));
     }
     for (tag, n) in tags {
         // Nested tags (`a/b`) are indented under their parent's name.

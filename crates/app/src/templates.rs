@@ -65,8 +65,8 @@ impl App {
         paths.sort_unstable();
         if paths.is_empty() {
             return vec![PromptItem {
-                label: format!("No templates in {folder}/"),
-                aux: "Set the folder in templates.json".into(),
+                label: format!("No hay plantillas en {folder}/"),
+                aux: "Configura la carpeta en templates.json".into(),
                 action: "prompt:dismiss".into(),
             }];
         }
@@ -86,7 +86,7 @@ impl App {
         match self.store.read(rel) {
             Ok((text, _)) => Some(fill(&text, title, &date_fmt, &time_fmt, fsio::now_ms() / 1000)),
             Err(e) => {
-                self.notice = Some(format!("Cannot read template {rel}: {e}"));
+                self.notice = Some(format!("No se pudo leer la plantilla {rel}: {e}"));
                 None
             }
         }
@@ -95,7 +95,7 @@ impl App {
     /// Insert a template at the cursor of the active note.
     fn insert_template(&mut self, rel: &str) {
         let Some(title) = self.tab().map(|t| t.title().to_string()) else {
-            self.notice = Some("Open a note to insert a template".into());
+            self.notice = Some("Abre una nota para insertar una plantilla".into());
             return;
         };
         let Some(text) = self.template_text(rel, &title) else { return };
@@ -137,7 +137,7 @@ impl App {
         let Some(cur) = self.tab().map(|t| t.path.clone()) else { return };
         let Some(at) = (-SPAN..=SPAN).find(|&k| name_of(k).is_some_and(|n| n.eq_ignore_ascii_case(&cur)))
         else {
-            self.notice = Some("The active note is not a daily note".to_string());
+            self.notice = Some("La nota activa no es una nota diaria".to_string());
             return;
         };
         let mut days: Box<dyn Iterator<Item = i64>> =
@@ -145,7 +145,8 @@ impl App {
         match days.find_map(|k| name_of(k).filter(|n| self.store.index.id(n).is_some())) {
             Some(rel) => self.open_note(&rel),
             None => {
-                self.notice = Some(format!("No {} daily note", if forward { "later" } else { "earlier" }))
+                self.notice =
+                    Some(format!("No hay nota diaria {}", if forward { "posterior" } else { "anterior" }))
             }
         }
     }
@@ -185,12 +186,12 @@ impl App {
         };
         if let Some(dir) = Some(path::parent(rel)).filter(|d| !d.is_empty()) {
             if let Err(e) = std::fs::create_dir_all(self.store.abs(dir)) {
-                self.notice = Some(format!("Cannot create {dir}: {e}"));
+                self.notice = Some(format!("No se pudo crear {dir}: {e}"));
                 return false;
             }
         }
         if let Err(e) = self.store.create(rel, &text) {
-            self.notice = Some(format!("Cannot create {rel}: {e}"));
+            self.notice = Some(format!("No se pudo crear {rel}: {e}"));
             return false;
         }
         self.tree = None;

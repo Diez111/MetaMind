@@ -67,7 +67,7 @@ impl Media {
             }
         }
         let board = Arc::new(if f.size > MAX_BOARD_BYTES {
-            Loaded::Failed("the board is too large to show here".to_string())
+            Loaded::Failed("el tablero es demasiado grande para mostrarlo aquí".to_string())
         } else {
             match std::fs::read_to_string(store.abs(&f.path)) {
                 Ok(text) => match Board::parse(&text) {

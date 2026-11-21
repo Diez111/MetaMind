@@ -45,7 +45,7 @@ impl App {
                     })
                 }
                 Err(e) => {
-                    self.notice = Some(format!("Cannot open {rel}: {e}"));
+                    self.notice = Some(format!("No se pudo abrir {rel}: {e}"));
                     return;
                 }
             }
@@ -117,7 +117,7 @@ impl App {
         let key = bases::canonical(col);
         let value = query.trim();
         let set = |v: &str| PromptItem {
-            label: format!("Set \u{201c}{key}\u{201d} to \u{201c}{v}\u{201d}"),
+            label: format!("Establecer \u{201c}{key}\u{201d} en \u{201c}{v}\u{201d}"),
             aux: String::new(),
             action: format!("base:set:{target}|{v}"),
         };
@@ -130,7 +130,7 @@ impl App {
             .collect();
         if value.is_empty() {
             items.push(PromptItem {
-                label: format!("Remove \u{201c}{key}\u{201d} from {}", path::stem(rel)),
+                label: format!("Quitar \u{201c}{key}\u{201d} de {}", path::stem(rel)),
                 aux: String::new(),
                 action: format!("base:set:{target}|"),
             });
@@ -170,13 +170,13 @@ impl App {
         // Unsaved edits in an open tab would be overwritten by the rewrite below.
         self.save_all();
         if self.all_tabs().any(|t| t.path.eq_ignore_ascii_case(rel) && t.editor.buf.is_modified()) {
-            self.notice = Some(format!("Cannot change {rel}: its edits could not be saved"));
+            self.notice = Some(format!("No se pudo cambiar {rel}: sus cambios no se pudieron guardar"));
             return;
         }
         let (text, stamp) = match self.store.read(rel) {
             Ok(r) => r,
             Err(e) => {
-                self.notice = Some(format!("Cannot read {rel}: {e}"));
+                self.notice = Some(format!("No se pudo leer {rel}: {e}"));
                 return;
             }
         };
@@ -197,9 +197,9 @@ impl App {
                 self.files_changed(&[rel.to_string()]);
             }
             Err(WriteError::Conflict { .. }) => {
-                self.notice = Some(format!("{rel} changed on disk; try again"))
+                self.notice = Some(format!("{rel} cambió en el disco; inténtalo de nuevo"))
             }
-            Err(WriteError::Io(e)) => self.notice = Some(format!("Cannot update {rel}: {e}")),
+            Err(WriteError::Io(e)) => self.notice = Some(format!("No se pudo actualizar {rel}: {e}")),
         }
     }
 
@@ -274,21 +274,21 @@ pub fn with_property(text: &str, key: &str, input: &str) -> Result<String, Strin
             ),
             Kind::Number => match input.parse::<f64>() {
                 Ok(n) if n.is_finite() => Value::Number(n),
-                _ => return Err(format!("\"{input}\" is not a number")),
+                _ => return Err(format!("\"{input}\" no es un número")),
             },
             Kind::Checkbox => match input.to_ascii_lowercase().as_str() {
                 "true" | "yes" => Value::Bool(true),
                 "false" | "no" => Value::Bool(false),
-                _ => return Err(format!("\"{key}\" is a checkbox: enter true or false")),
+                _ => return Err(format!("\"{key}\" es una casilla: escribe true o false")),
             },
-            Kind::Other => return Err(format!("\"{key}\" holds nested values; edit it in the note")),
+            Kind::Other => return Err(format!("\"{key}\" contiene valores anidados; edítalo en la nota")),
             Kind::Text | Kind::Date => Value::String(input.to_string()),
         };
         match (&front, at) {
             (Some(f), Some(i)) => f.set_value(i, &value),
             (Some(f), None) => f.add(key, &value),
             (None, _) if text.starts_with("---") => {
-                return Err("The note's front matter cannot be read; edit it in the note".to_string())
+                return Err("No se puede leer el front matter de la nota; edítalo en la nota".to_string())
             }
             (None, _) => properties::create(key, &value),
         }
@@ -314,7 +314,7 @@ pub fn pane(v: &BaseView, dom: &mut Dom, parent: NodeId) {
         Ok(b) => b,
         Err(e) => {
             dom.add(header, El::div().class("graph-count").text(v.path.clone()));
-            dom.add(content, El::div().class("bases-error").text(format!("This base cannot be read: {e}")));
+            dom.add(content, El::div().class("bases-error").text(format!("No se puede leer esta base: {e}")));
             return;
         }
     };
@@ -330,7 +330,8 @@ pub fn pane(v: &BaseView, dom: &mut Dom, parent: NodeId) {
         );
     }
     let Some((cols, items)) = &v.items else { return };
-    let count = if items.len() == 1 { "1 result".to_string() } else { format!("{} results", items.len()) };
+    let count =
+        if items.len() == 1 { "1 resultado".to_string() } else { format!("{} resultados", items.len()) };
     dom.add(header, El::div().class("graph-count bases-count").text(count));
     let view = &base.views[v.view.min(base.views.len() - 1)];
     let shown = &items[..items.len().min(MAX_SHOWN)];
@@ -342,7 +343,7 @@ pub fn pane(v: &BaseView, dom: &mut Dom, parent: NodeId) {
     if items.len() > MAX_SHOWN {
         dom.add(
             content,
-            El::div().class("bases-more").text(format!("{} more not shown", items.len() - MAX_SHOWN)),
+            El::div().class("bases-more").text(format!("{} más sin mostrar", items.len() - MAX_SHOWN)),
         );
     }
 }
@@ -357,7 +358,7 @@ fn groups(base: &Base, view: &View, cols: &[String], shown: &[Item], dom: &mut D
             shown.len()
         };
         if view.group_by.is_some() {
-            let label = if group.to_string().is_empty() { "None".to_string() } else { group.to_string() };
+            let label = if group.to_string().is_empty() { "Ninguno".to_string() } else { group.to_string() };
             dom.add(
                 content,
                 El::div().class("bases-group-heading").text(format!("{label} ({})", end - start)),
@@ -377,7 +378,10 @@ fn groups(base: &Base, view: &View, cols: &[String], shown: &[Item], dom: &mut D
 /// A column per value of the group property, each holding its notes as cards.
 fn kanban(base: &Base, view: &View, cols: &[String], shown: &[Item], dom: &mut Dom, content: NodeId) {
     let Some((group, _)) = &view.group_by else {
-        dom.add(content, El::div().class("bases-error").text("A kanban view needs a groupBy property"));
+        dom.add(
+            content,
+            El::div().class("bases-error").text("Una vista kanban necesita una propiedad groupBy"),
+        );
         return;
     };
     let movable = editable(group);
@@ -392,7 +396,7 @@ fn kanban(base: &Base, view: &View, cols: &[String], shown: &[Item], dom: &mut D
     let board = dom.add(content, El::div().class("bases-kanban"));
     for run in runs {
         let label = run[0].group.to_string();
-        let label = if label.is_empty() { "None".to_string() } else { label };
+        let label = if label.is_empty() { "Ninguno".to_string() } else { label };
         let column = dom.add(board, El::div().class("bases-kanban-column"));
         dom.add(column, El::div().class("bases-kanban-heading").text(format!("{label} ({})", run.len())));
         for item in run {
@@ -402,7 +406,7 @@ fn kanban(base: &Base, view: &View, cols: &[String], shown: &[Item], dom: &mut D
                     c,
                     El::div()
                         .class("bases-card-move")
-                        .text("Move…")
+                        .text("Mover…")
                         .action(format!("base:move:{}|{group}", item.path)),
                 );
             }

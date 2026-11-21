@@ -91,13 +91,13 @@ impl App {
                 tab_items(&mut b, i);
             }
             Some("graph:focus") => {
-                b.item("x", "Close", "graph:close");
+                b.item("x", "Cerrar", "graph:close");
             }
             Some("canvas:focus") => {
-                b.item("x", "Close", "canvas:close");
+                b.item("x", "Cerrar", "canvas:close");
             }
             Some("base:focus") => {
-                b.item("x", "Close", "base:close");
+                b.item("x", "Cerrar", "base:close");
             }
             Some(_) => return,
             None => {
@@ -145,12 +145,12 @@ impl App {
         let current = self.sort_order().to_string();
         let mut b = Builder { app: self, items: Vec::new() };
         for (i, (order, label)) in [
-            ("alphabetical", "File name (A to Z)"),
-            ("alphabeticalReverse", "File name (Z to A)"),
-            ("byModifiedTime", "Modified time (new to old)"),
-            ("byModifiedTimeReverse", "Modified time (old to new)"),
-            ("byCreatedTime", "Created time (new to old)"),
-            ("byCreatedTimeReverse", "Created time (old to new)"),
+            ("alphabetical", "Nombre de archivo (A a Z)"),
+            ("alphabeticalReverse", "Nombre de archivo (Z a A)"),
+            ("byModifiedTime", "Fecha de modificación (reciente a antigua)"),
+            ("byModifiedTimeReverse", "Fecha de modificación (antigua a reciente)"),
+            ("byCreatedTime", "Fecha de creación (reciente a antigua)"),
+            ("byCreatedTimeReverse", "Fecha de creación (antigua a reciente)"),
         ]
         .into_iter()
         .enumerate()
@@ -300,7 +300,7 @@ impl App {
     fn rename_path(&mut self, from: &str, name: &str) {
         let clean = path::sanitize_file_name(name.trim(), path::SanitizePolicy::Strip);
         if clean.is_empty() {
-            self.notice = Some("A name is needed".into());
+            self.notice = Some("Falta un nombre".into());
             return;
         }
         let folder = self.is_folder(from);
@@ -314,18 +314,18 @@ impl App {
         if to == from {
             return;
         }
-        if let Some(links) = self.move_path(from, &to, "rename") {
-            self.notice = Some(format!("Renamed to {file}{links}"));
+        if let Some(links) = self.move_path(from, &to, "renombrar") {
+            self.notice = Some(format!("Renombrado a {file}{links}"));
         }
     }
 
     /// Move a file or folder into `folder` ("" is the vault root), as an explorer drag does.
     pub(crate) fn move_into(&mut self, from: &str, folder: &str) {
         let to = path::join(folder, path::file_name(from));
-        if let Some(links) = self.move_path(from, &to, "move") {
+        if let Some(links) = self.move_path(from, &to, "mover") {
             self.collapsed.remove(folder);
-            let place = if folder.is_empty() { "the vault root" } else { folder };
-            self.notice = Some(format!("Moved {} to {place}{links}", path::file_name(from)));
+            let place = if folder.is_empty() { "la raíz de la bóveda" } else { folder };
+            self.notice = Some(format!("Se movió {} a {place}{links}", path::file_name(from)));
         }
     }
 
@@ -348,12 +348,12 @@ impl App {
                 self.files_changed(&[]);
                 Some(match edited.len() {
                     0 => String::new(),
-                    1 => "; updated links in 1 file".into(),
-                    n => format!("; updated links in {n} files"),
+                    1 => "; se actualizaron los enlaces de 1 archivo".into(),
+                    n => format!("; se actualizaron los enlaces de {n} archivos"),
                 })
             }
             Err(e) => {
-                self.notice = Some(format!("Cannot {verb} {from}: {e}"));
+                self.notice = Some(format!("No se pudo {verb} {from}: {e}"));
                 None
             }
         }
@@ -377,16 +377,16 @@ impl App {
     fn make_folder(&mut self, parent: &str, name: &str) {
         let clean = path::sanitize_file_name(name.trim(), path::SanitizePolicy::Strip);
         if clean.is_empty() {
-            self.notice = Some("A name is needed".into());
+            self.notice = Some("Falta un nombre".into());
             return;
         }
         let dir = path::join(parent, &clean);
         if self.store.abs(&dir).exists() {
-            self.notice = Some(format!("{dir} already exists"));
+            self.notice = Some(format!("{dir} ya existe"));
             return;
         }
         if let Err(e) = std::fs::create_dir_all(self.store.abs(&dir)) {
-            self.notice = Some(format!("Cannot create {dir}: {e}"));
+            self.notice = Some(format!("No se pudo crear {dir}: {e}"));
             return;
         }
         self.collapsed.remove(&dir);
@@ -408,7 +408,7 @@ impl App {
                 self.files_changed(&[]);
                 self.open_note(&rel);
             }
-            Err(e) => self.notice = Some(format!("Cannot create note: {e}")),
+            Err(e) => self.notice = Some(format!("No se pudo crear la nota: {e}")),
         }
     }
 
@@ -417,7 +417,7 @@ impl App {
         let text = match self.store.read(rel) {
             Ok((t, _)) => t,
             Err(e) => {
-                self.notice = Some(format!("Cannot read {rel}: {e}"));
+                self.notice = Some(format!("No se pudo leer {rel}: {e}"));
                 return;
             }
         };
@@ -432,7 +432,7 @@ impl App {
                 self.files_changed(&[]);
                 self.open_note(&copy);
             }
-            Err(e) => self.notice = Some(format!("Cannot copy {rel}: {e}")),
+            Err(e) => self.notice = Some(format!("No se pudo copiar {rel}: {e}")),
         }
     }
 
@@ -445,11 +445,11 @@ impl App {
                 self.plugins.push(ext_api::Event::Delete { path: rel.to_string() });
                 self.files_changed(&[]);
                 self.notice = Some(match dest {
-                    Some(_) => format!("Moved {rel} to trash"),
-                    None => format!("Deleted {rel}"),
+                    Some(_) => format!("Se movió {rel} a la papelera"),
+                    None => format!("Se eliminó {rel}"),
                 });
             }
-            Err(e) => self.notice = Some(format!("Cannot delete {rel}: {e}")),
+            Err(e) => self.notice = Some(format!("No se pudo eliminar {rel}: {e}")),
         }
     }
 
@@ -472,7 +472,7 @@ impl App {
             std::process::Command::new("xdg-open").arg(dir).spawn()
         };
         if let Err(e) = result {
-            self.notice = Some(format!("Cannot open the file manager: {e}"));
+            self.notice = Some(format!("No se pudo abrir el gestor de archivos: {e}"));
         }
     }
 
@@ -511,7 +511,7 @@ impl App {
     fn put_clip(&mut self, text: String) {
         if self.system_clipboard {
             if let Err(e) = clipboard::set(&text) {
-                self.notice = Some(format!("Copied inside Rustsidian only: {e}"));
+                self.notice = Some(format!("Copiado solo dentro de Rustsidian: {e}"));
             }
         }
         self.clip = text;
@@ -521,7 +521,7 @@ impl App {
         if self.system_clipboard {
             match clipboard::get() {
                 Ok(t) => return t,
-                Err(e) => self.notice = Some(format!("Cannot read the system clipboard: {e}")),
+                Err(e) => self.notice = Some(format!("No se pudo leer el portapapeles del sistema: {e}")),
             }
         }
         self.clip.clone()
@@ -583,7 +583,7 @@ impl App {
                     return;
                 }
                 Err(e) => {
-                    self.notice = Some(format!("Cannot read the system clipboard: {e}"));
+                    self.notice = Some(format!("No se pudo leer el portapapeles del sistema: {e}"));
                     self.clip.clone()
                 }
             }
@@ -639,35 +639,35 @@ fn buf_slice(buf: &editor_core::Buffer, start: usize, end: usize) -> String {
 }
 
 fn file_items(b: &mut Builder<'_>, p: &str) {
-    b.item("note", "Open", format!("open:{p}"));
-    let mark = if b.app.is_bookmarked(p) { "Remove bookmark" } else { "Bookmark" };
+    b.item("note", "Abrir", format!("open:{p}"));
+    let mark = if b.app.is_bookmarked(p) { "Quitar marcador" } else { "Añadir marcador" };
     b.item("bookmark", mark, format!("bookmark:{p}"));
     b.separator();
-    b.item("copy", "Make a copy", format!("duplicate:{p}"));
-    b.item("edit", "Rename…", format!("rename-file:{p}"));
+    b.item("copy", "Hacer una copia", format!("duplicate:{p}"));
+    b.item("edit", "Renombrar…", format!("rename-file:{p}"));
     b.separator();
-    b.item("link", "Copy link", format!("copy-link:{p}"));
-    b.item("clipboard", "Copy path", format!("copy-path:{p}"));
-    b.item("folder", "Show in system explorer", format!("reveal:{p}"));
+    b.item("link", "Copiar enlace", format!("copy-link:{p}"));
+    b.item("clipboard", "Copiar ruta", format!("copy-path:{p}"));
+    b.item("folder", "Mostrar en el explorador del sistema", format!("reveal:{p}"));
     b.separator();
-    b.warning("trash", "Delete", format!("delete:{p}"));
+    b.warning("trash", "Eliminar", format!("delete:{p}"));
 }
 
 fn folder_items(b: &mut Builder<'_>, dir: &str) {
-    b.item("note-plus", "New note", format!("new-note-in:{dir}"));
-    b.item("folder-plus", "New folder", format!("new-folder-in:{dir}"));
+    b.item("note-plus", "Nota nueva", format!("new-note-in:{dir}"));
+    b.item("folder-plus", "Carpeta nueva", format!("new-folder-in:{dir}"));
     if dir.is_empty() {
         b.separator();
-        b.item("collapse", "Collapse all", "file-explorer:collapse-all");
-        b.item("folder", "Show in system explorer", "reveal:");
+        b.item("collapse", "Contraer todo", "file-explorer:collapse-all");
+        b.item("folder", "Mostrar en el explorador del sistema", "reveal:");
         return;
     }
     b.separator();
-    b.item("edit", "Rename…", format!("rename-file:{dir}"));
-    b.item("clipboard", "Copy path", format!("copy-path:{dir}"));
-    b.item("folder", "Show in system explorer", format!("reveal:{dir}"));
+    b.item("edit", "Renombrar…", format!("rename-file:{dir}"));
+    b.item("clipboard", "Copiar ruta", format!("copy-path:{dir}"));
+    b.item("folder", "Mostrar en el explorador del sistema", format!("reveal:{dir}"));
     b.separator();
-    b.warning("trash", "Delete", format!("delete:{dir}"));
+    b.warning("trash", "Eliminar", format!("delete:{dir}"));
 }
 
 fn tab_items(b: &mut Builder<'_>, i: usize) {
@@ -675,21 +675,22 @@ fn tab_items(b: &mut Builder<'_>, i: usize) {
     let p = b.app.tabs.get(i).map(|t| t.path.clone()).unwrap_or_default();
     let pinned = b.app.tabs.get(i).is_some_and(|t| t.pinned);
     if !pinned {
-        b.item("x", "Close", format!("close-tab:{i}"));
+        b.item("x", "Cerrar", format!("close-tab:{i}"));
     }
     if count > 1 {
-        b.item("x", "Close others", format!("close-others:{i}"));
+        b.item("x", "Cerrar las demás", format!("close-others:{i}"));
     }
     if i + 1 < count {
-        b.item("arrow-right", "Close tabs to the right", format!("close-right:{i}"));
+        b.item("arrow-right", "Cerrar las pestañas a la derecha", format!("close-right:{i}"));
     }
-    b.item("x", "Close all", "workspace:close-all");
+    b.item("x", "Cerrar todas", "workspace:close-all");
     b.separator();
     if i == b.app.active && !p.is_empty() {
-        b.item("separator-vertical", "Split right", "workspace:split-vertical");
-        b.item("separator-horizontal", "Split down", "workspace:split-horizontal");
-        b.item("arrow-up-right", "Move to new window", "workspace:move-to-new-window");
-        let stacked = if b.app.panes[b.app.pane].stacked { "Unstack tabs" } else { "Stack tabs" };
+        b.item("separator-vertical", "Dividir a la derecha", "workspace:split-vertical");
+        b.item("separator-horizontal", "Dividir abajo", "workspace:split-horizontal");
+        b.item("arrow-up-right", "Mover a una ventana nueva", "workspace:move-to-new-window");
+        let stacked =
+            if b.app.panes[b.app.pane].stacked { "Desapilar pestañas" } else { "Apilar pestañas" };
         b.item("list", stacked, "workspace:toggle-stacked-tabs");
         let app = b.app;
         let group = app.panes[app.pane].link;
@@ -701,33 +702,33 @@ fn tab_items(b: &mut Builder<'_>, i: usize) {
             })
             .collect();
         for (j, title) in others {
-            b.item("link", &format!("Link with “{title}”"), format!("link-pane:{j}"));
+            b.item("link", &format!("Vincular con “{title}”"), format!("link-pane:{j}"));
         }
         if group.is_some() {
-            b.item("unlink", "Unlink tab", "workspace:unlink-pane");
+            b.item("unlink", "Desvincular pestaña", "workspace:unlink-pane");
         }
         b.separator();
     }
-    b.item("pin", if pinned { "Unpin" } else { "Pin" }, format!("toggle-pin:{i}"));
+    b.item("pin", if pinned { "Desanclar" } else { "Anclar" }, format!("toggle-pin:{i}"));
     if !p.is_empty() {
-        let mark = if b.app.is_bookmarked(&p) { "Remove bookmark" } else { "Bookmark" };
+        let mark = if b.app.is_bookmarked(&p) { "Quitar marcador" } else { "Añadir marcador" };
         b.item("bookmark", mark, format!("bookmark:{p}"));
     }
     b.separator();
     if !p.is_empty() {
-        b.item("edit", "Rename…", format!("rename-file:{p}"));
-        b.item("link", "Copy link", format!("copy-link:{p}"));
-        b.item("clipboard", "Copy path", format!("copy-path:{p}"));
-        b.item("folder", "Show in system explorer", format!("reveal:{p}"));
+        b.item("edit", "Renombrar…", format!("rename-file:{p}"));
+        b.item("link", "Copiar enlace", format!("copy-link:{p}"));
+        b.item("clipboard", "Copiar ruta", format!("copy-path:{p}"));
+        b.item("folder", "Mostrar en el explorador del sistema", format!("reveal:{p}"));
         if i == b.app.active {
-            b.item("book", "Export to PDF", "workspace:export-pdf");
+            b.item("book", "Exportar a PDF", "workspace:export-pdf");
             if !b.app.show_graph && !b.app.canvas_active() && !b.app.base_active() {
-                b.item("image", "Copy screenshot", "workspace:copy-screenshot");
+                b.item("image", "Copiar captura de pantalla", "workspace:copy-screenshot");
             }
         }
         b.separator();
     }
-    b.item("arrow-up", "Reopen closed tab", "workspace:undo-close-pane");
+    b.item("arrow-up", "Reabrir pestaña cerrada", "workspace:undo-close-pane");
 }
 
 fn editor_items(b: &mut Builder<'_>, typo: Option<(usize, usize)>) {
@@ -737,35 +738,35 @@ fn editor_items(b: &mut Builder<'_>, typo: Option<(usize, usize)>) {
         for s in crate::spell::suggest(&word) {
             b.item("blank", &s, format!("spell:replace:{start}:{end}:{s}"));
         }
-        b.item("plus", "Add to dictionary", format!("spell:add:{word}"));
+        b.item("plus", "Añadir al diccionario", format!("spell:add:{word}"));
         b.separator();
     }
     if b.app.link_under_cursor().is_some() {
-        b.item("link", "Open link", "editor:follow-link");
+        b.item("link", "Abrir enlace", "editor:follow-link");
         b.separator();
     }
     if !reading {
-        b.item("scissors", "Cut", "editor:cut");
+        b.item("scissors", "Cortar", "editor:cut");
     }
-    b.item("copy", "Copy", "editor:copy");
+    b.item("copy", "Copiar", "editor:copy");
     if !reading {
-        b.item("clipboard", "Paste", "editor:paste");
+        b.item("clipboard", "Pegar", "editor:paste");
         b.separator();
-        b.item("link", "Add internal link", "editor:insert-wikilink");
-        b.item("bold", "Bold", "editor:toggle-bold");
-        b.item("italic", "Italic", "editor:toggle-italics");
-        b.item("strikethrough", "Strikethrough", "editor:toggle-strikethrough");
-        b.item("highlight", "Highlight", "editor:toggle-highlight");
-        b.item("code", "Code", "editor:toggle-code");
+        b.item("link", "Añadir enlace interno", "editor:insert-wikilink");
+        b.item("bold", "Negrita", "editor:toggle-bold");
+        b.item("italic", "Cursiva", "editor:toggle-italics");
+        b.item("strikethrough", "Tachado", "editor:toggle-strikethrough");
+        b.item("highlight", "Resaltado", "editor:toggle-highlight");
+        b.item("code", "Código", "editor:toggle-code");
         b.separator();
-        b.item("check", "Toggle checkbox", "editor:toggle-checklist-status");
-        b.item("table", "Insert table", "editor:insert-table");
+        b.item("check", "Alternar casilla", "editor:toggle-checklist-status");
+        b.item("table", "Insertar tabla", "editor:insert-table");
     }
     b.separator();
-    b.item("select", "Select all", "editor:select-all");
+    b.item("select", "Seleccionar todo", "editor:select-all");
     b.item(
         if reading { "edit" } else { "book" },
-        if reading { "Edit" } else { "Reading view" },
+        if reading { "Editar" } else { "Vista de lectura" },
         "markdown:toggle-preview",
     );
 }

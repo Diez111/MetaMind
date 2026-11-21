@@ -77,7 +77,7 @@ impl App {
         let text = match serde_json::to_string_pretty(&self.session()) {
             Ok(t) => t,
             Err(e) => {
-                self.notice = Some(format!("Cannot save the session: {e}"));
+                self.notice = Some(format!("No se pudo guardar la sesión: {e}"));
                 return;
             }
         };
@@ -87,7 +87,7 @@ impl App {
         }
         let res = std::fs::create_dir_all(&self.config.dir).and_then(|_| std::fs::write(&path, text));
         if let Err(e) = res {
-            self.notice = Some(format!("Cannot save the session: {e}"));
+            self.notice = Some(format!("No se pudo guardar la sesión: {e}"));
         }
     }
 
@@ -98,7 +98,7 @@ impl App {
         let v: Value = match serde_json::from_str(&text) {
             Ok(v) => v,
             Err(e) => {
-                self.notice = Some(format!("Ignoring the saved session: {e}"));
+                self.notice = Some(format!("Se ignoró la sesión guardada: {e}"));
                 return;
             }
         };

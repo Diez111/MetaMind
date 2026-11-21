@@ -154,7 +154,7 @@ mod tests {
         assert_eq!(
             summary,
             [
-                (Role::Button, Some("Export to PDF")),
+                (Role::Button, Some("Exportar a PDF")),
                 (Role::Button, Some("Open")),
                 (Role::Button, Some("Note")),
                 (Role::Heading, Some("Title")),
@@ -193,8 +193,8 @@ mod tests {
             .collect();
         // The caret sits on the heading, so live preview shows its markup.
         assert!(find(Role::Heading, "# Alpha").is_some(), "{all:?}");
-        assert!(find(Role::Button, "Change sort order").is_some(), "{all:?}");
-        assert!(find(Role::Button, "Fold heading").is_some(), "{all:?}");
+        assert!(find(Role::Button, "Cambiar orden").is_some(), "{all:?}");
+        assert!(find(Role::Button, "Plegar encabezado").is_some(), "{all:?}");
         assert!(find(Role::Label, "Some prose.").is_some());
         let b = find(Role::Button, "B").expect("file explorer row");
         let r = frame.dom.nodes[dom_node(b).unwrap()].rect;

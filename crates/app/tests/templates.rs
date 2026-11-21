@@ -78,7 +78,7 @@ fn previous_and_next_daily_notes_skip_missing_days() {
     app.run("daily-notes:goto-prev");
     assert_eq!(path(&app), "Daily/2020-01-01.md");
     app.run("daily-notes:goto-prev");
-    assert_eq!(app.notice.as_deref(), Some("No earlier daily note"));
+    assert_eq!(app.notice.as_deref(), Some("No hay nota diaria anterior"));
     assert_eq!(path(&app), "Daily/2020-01-01.md");
     app.run("daily-notes:goto-next");
     assert_eq!(path(&app), "Daily/2020-01-05.md");

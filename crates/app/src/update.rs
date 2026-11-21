@@ -48,11 +48,11 @@ pub fn is_newer(tag: &str, current: &str) -> bool {
 
 /// Read the GitHub "latest release" response for the archive matching `suffix`.
 pub fn parse_release(json: &str, suffix: &str) -> Result<Release, String> {
-    let v: Value = serde_json::from_str(json).map_err(|e| format!("unexpected response: {e}"))?;
+    let v: Value = serde_json::from_str(json).map_err(|e| format!("respuesta inesperada: {e}"))?;
     if let Some(msg) = v.get("message").and_then(Value::as_str) {
         return Err(format!("GitHub: {msg}"));
     }
-    let tag = v.get("tag_name").and_then(Value::as_str).ok_or("response has no tag_name")?.to_string();
+    let tag = v.get("tag_name").and_then(Value::as_str).ok_or("la respuesta no tiene tag_name")?.to_string();
     let assets = v.get("assets").and_then(Value::as_array).cloned().unwrap_or_default();
     let find = |pred: &dyn Fn(&str) -> bool| {
         assets.iter().find_map(|a| {
@@ -62,8 +62,9 @@ pub fn parse_release(json: &str, suffix: &str) -> Result<Release, String> {
         })
     };
     let (asset, asset_url) =
-        find(&|n| n.ends_with(suffix)).ok_or_else(|| format!("{tag} has no {suffix} download"))?;
-    let (_, sums_url) = find(&|n| n == "SHA256SUMS.txt").ok_or_else(|| format!("{tag} has no checksums"))?;
+        find(&|n| n.ends_with(suffix)).ok_or_else(|| format!("{tag} no tiene descarga para {suffix}"))?;
+    let (_, sums_url) =
+        find(&|n| n == "SHA256SUMS.txt").ok_or_else(|| format!("{tag} no tiene sumas de verificación"))?;
     let page = v.get("html_url").and_then(Value::as_str).unwrap_or_default().to_string();
     Ok(Release { tag, page, asset, asset_url, sums_url })
 }
@@ -88,17 +89,17 @@ fn curl(url: &str, out: Option<&Path>) -> Result<Vec<u8>, String> {
     if let Some(p) = out {
         cmd.arg("-o").arg(p);
     }
-    let o = cmd.arg(url).output().map_err(|e| format!("cannot run curl: {e}"))?;
+    let o = cmd.arg(url).output().map_err(|e| format!("no se pudo ejecutar curl: {e}"))?;
     if !o.status.success() {
         let err = String::from_utf8_lossy(&o.stderr);
-        return Err(format!("download failed: {}", err.trim()));
+        return Err(format!("falló la descarga: {}", err.trim()));
     }
     Ok(o.stdout)
 }
 
 /// Ask GitHub for the latest release. `Ok(None)` means this build is up to date.
 pub fn check() -> Result<Option<Release>, String> {
-    let suffix = platform().ok_or("no release builds exist for this system")?;
+    let suffix = platform().ok_or("no hay compilaciones publicadas para este sistema")?;
     let body = curl(LATEST_URL, None)?;
     let r = parse_release(&String::from_utf8_lossy(&body), suffix)?;
     Ok(is_newer(&r.tag, CURRENT).then_some(r))
@@ -117,7 +118,7 @@ pub fn expected_sum(sums: &str, name: &str) -> Option<String> {
 pub fn install(r: &Release, exe: &Path) -> Result<(), String> {
     let work = std::env::temp_dir().join(format!("rustsidian-update-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&work);
-    std::fs::create_dir_all(&work).map_err(|e| format!("cannot create {}: {e}", work.display()))?;
+    std::fs::create_dir_all(&work).map_err(|e| format!("no se pudo crear {}: {e}", work.display()))?;
     let result = install_in(r, exe, &work);
     // Leftovers in the temp folder are harmless, so a failed cleanup is not reported.
     let _ = std::fs::remove_dir_all(&work);
@@ -129,11 +130,14 @@ fn install_in(r: &Release, exe: &Path, work: &Path) -> Result<(), String> {
     curl(&r.asset_url, Some(&archive))?;
     let sums = String::from_utf8_lossy(&curl(&r.sums_url, None)?).into_owned();
     let want =
-        expected_sum(&sums, &r.asset).ok_or_else(|| format!("{} is not in SHA256SUMS.txt", r.asset))?;
-    let bytes = std::fs::read(&archive).map_err(|e| format!("cannot read download: {e}"))?;
+        expected_sum(&sums, &r.asset).ok_or_else(|| format!("{} no está en SHA256SUMS.txt", r.asset))?;
+    let bytes = std::fs::read(&archive).map_err(|e| format!("no se pudo leer la descarga: {e}"))?;
     let got = hex(&sha256(&bytes));
     if got != want {
-        return Err(format!("checksum mismatch for {} (expected {want}, got {got})", r.asset));
+        return Err(format!(
+            "suma de verificación incorrecta para {} (se esperaba {want}, se obtuvo {got})",
+            r.asset
+        ));
     }
     let o = tool("tar")
         .arg("-xf")
@@ -141,15 +145,19 @@ fn install_in(r: &Release, exe: &Path, work: &Path) -> Result<(), String> {
         .arg("-C")
         .arg(work)
         .output()
-        .map_err(|e| format!("cannot run tar: {e}"))?;
+        .map_err(|e| format!("no se pudo ejecutar tar: {e}"))?;
     if !o.status.success() {
-        return Err(format!("cannot unpack {}: {}", r.asset, String::from_utf8_lossy(&o.stderr).trim()));
+        return Err(format!(
+            "no se pudo descomprimir {}: {}",
+            r.asset,
+            String::from_utf8_lossy(&o.stderr).trim()
+        ));
     }
-    let name = exe.file_name().ok_or("bad program path")?;
+    let name = exe.file_name().ok_or("ruta del programa no válida")?;
     let dir = r.asset.trim_end_matches(".zip").trim_end_matches(".tar.gz");
     let new = work.join(dir).join(name);
     if !new.is_file() {
-        return Err(format!("{} does not contain {}", r.asset, Path::new(dir).join(name).display()));
+        return Err(format!("{} no contiene {}", r.asset, Path::new(dir).join(name).display()));
     }
     replace(&new, exe)
 }
@@ -167,20 +175,20 @@ fn replace(new: &Path, exe: &Path) -> Result<(), String> {
         s.push(".new");
         PathBuf::from(s)
     };
-    let err = |what: &str, e: std::io::Error| format!("cannot {what} in {}: {e}", exe.display());
-    std::fs::copy(new, &staged).map_err(|e| err("write the new version", e))?;
+    let err = |what: &str, e: std::io::Error| format!("no se pudo {what} en {}: {e}", exe.display());
+    std::fs::copy(new, &staged).map_err(|e| err("escribir la versión nueva", e))?;
     // Windows allows renaming a running executable but not replacing it, so the old one is
     // moved aside first and deleted on the next start.
     if cfg!(windows) {
         let old = old_path(exe);
         let _ = std::fs::remove_file(&old);
-        std::fs::rename(exe, &old).map_err(|e| err("move the old version", e))?;
+        std::fs::rename(exe, &old).map_err(|e| err("mover la versión anterior", e))?;
         if let Err(e) = std::fs::rename(&staged, exe) {
             let _ = std::fs::rename(&old, exe);
-            return Err(err("install the new version", e));
+            return Err(err("instalar la versión nueva", e));
         }
     } else {
-        std::fs::rename(&staged, exe).map_err(|e| err("install the new version", e))?;
+        std::fs::rename(&staged, exe).map_err(|e| err("instalar la versión nueva", e))?;
     }
     Ok(())
 }
@@ -210,11 +218,11 @@ fn prefs() -> Value {
 }
 
 fn write_prefs(v: &Value) -> Result<(), String> {
-    let f = prefs_file().ok_or("no configuration folder")?;
+    let f = prefs_file().ok_or("no hay carpeta de configuración")?;
     if let Some(d) = f.parent() {
-        std::fs::create_dir_all(d).map_err(|e| format!("cannot create {}: {e}", d.display()))?;
+        std::fs::create_dir_all(d).map_err(|e| format!("no se pudo crear {}: {e}", d.display()))?;
     }
-    std::fs::write(&f, v.to_string()).map_err(|e| format!("cannot write {}: {e}", f.display()))
+    std::fs::write(&f, v.to_string()).map_err(|e| format!("no se pudo escribir {}: {e}", f.display()))
 }
 
 pub fn auto_check() -> bool {
@@ -278,8 +286,11 @@ impl State {
     }
 
     pub fn start_install(&mut self) -> Result<(), String> {
-        let State::Available(r) = self else { return Err("no update to install".into()) };
-        let exe = std::env::current_exe().map_err(|e| format!("cannot find the program file: {e}"))?;
+        let State::Available(r) = self else {
+            return Err("no hay ninguna actualización para instalar".into());
+        };
+        let exe = std::env::current_exe()
+            .map_err(|e| format!("no se pudo encontrar el archivo del programa: {e}"))?;
         let (tx, rx) = channel();
         let r = r.clone();
         let tag = r.tag.clone();
@@ -295,25 +306,26 @@ impl State {
         let (next, msg) = match self {
             State::Checking { manual, rx } => match rx.try_recv().ok()? {
                 Ok(Some(r)) => {
-                    let msg = format!("Rustsidian {} is available. Install it from Settings → About.", r.tag);
+                    let msg =
+                        format!("Rustsidian {} está disponible. Instálala desde Ajustes → Acerca de.", r.tag);
                     (State::Available(r), Some(msg))
                 }
                 Ok(None) => {
-                    let msg = manual.then(|| format!("Rustsidian v{CURRENT} is the latest version."));
+                    let msg = manual.then(|| format!("Rustsidian v{CURRENT} es la última versión."));
                     (State::UpToDate, msg)
                 }
                 // Automatic checks fail quietly offline; the error is still in Settings.
                 Err(e) => {
-                    let msg = manual.then(|| format!("Update check failed: {e}"));
+                    let msg = manual.then(|| format!("No se pudo comprobar si hay actualizaciones: {e}"));
                     (State::Failed(e), msg)
                 }
             },
             State::Installing { tag, rx } => match rx.try_recv().ok()? {
                 Ok(()) => {
-                    let msg = format!("Rustsidian {tag} is installed. Restart to use it.");
+                    let msg = format!("Rustsidian {tag} está instalada. Reinicia para usarla.");
                     (State::Installed(tag.clone()), Some(msg))
                 }
-                Err(e) => (State::Failed(e.clone()), Some(format!("Update failed: {e}"))),
+                Err(e) => (State::Failed(e.clone()), Some(format!("Falló la actualización: {e}"))),
             },
             _ => return None,
         };
@@ -324,12 +336,12 @@ impl State {
     /// One line for the About section.
     pub fn describe(&self) -> String {
         match self {
-            State::Idle => "Not checked yet.".into(),
-            State::Checking { .. } => "Checking…".into(),
-            State::UpToDate => "You have the latest version.".into(),
-            State::Available(r) => format!("{} is available.", r.tag),
-            State::Installing { tag, .. } => format!("Installing {tag}…"),
-            State::Installed(tag) => format!("{tag} is installed. Restart Rustsidian to use it."),
+            State::Idle => "Aún no se ha comprobado.".into(),
+            State::Checking { .. } => "Comprobando…".into(),
+            State::UpToDate => "Tienes la última versión.".into(),
+            State::Available(r) => format!("{} está disponible.", r.tag),
+            State::Installing { tag, .. } => format!("Instalando {tag}…"),
+            State::Installed(tag) => format!("{tag} está instalada. Reinicia Rustsidian para usarla."),
             State::Failed(e) => e.clone(),
         }
     }
@@ -428,7 +440,9 @@ mod tests {
             {"name":"SHA256SUMS.txt","browser_download_url":"u3"}]}"#;
         let r = parse_release(json, "windows-x86_64.zip").unwrap();
         assert_eq!((r.tag.as_str(), r.asset_url.as_str(), r.sums_url.as_str()), ("v0.3.0", "u2", "u3"));
-        assert!(parse_release(json, "macos-arm64.tar.gz").unwrap_err().contains("no macos-arm64"));
+        assert!(parse_release(json, "macos-arm64.tar.gz")
+            .unwrap_err()
+            .contains("no tiene descarga para macos-arm64"));
         assert!(parse_release(r#"{"message":"Not Found"}"#, "x").unwrap_err().contains("Not Found"));
         let sums = "abc  rustsidian-v0.3.0-windows-x86_64.zip\nDEF *other.tar.gz\n";
         assert_eq!(expected_sum(sums, "rustsidian-v0.3.0-windows-x86_64.zip").as_deref(), Some("abc"));
@@ -471,7 +485,7 @@ mod tests {
         std::fs::write(&exe, b"old build").unwrap();
         std::fs::write(d.path().join("bad.txt"), format!("{}  {asset}\n", "0".repeat(64))).unwrap();
         r.sums_url = url("bad.txt");
-        assert!(install(&r, &exe).unwrap_err().contains("checksum mismatch"));
+        assert!(install(&r, &exe).unwrap_err().contains("suma de verificación incorrecta"));
         assert_eq!(std::fs::read(&exe).unwrap(), b"old build");
     }
 }

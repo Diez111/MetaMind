@@ -47,15 +47,15 @@ impl App {
             Ok(n) => {
                 self.store.refresh(&pdf);
                 self.tree = None;
-                format!("Exported {pdf} ({n} page{})", if n == 1 { "" } else { "s" })
+                format!("Se exportó {pdf} ({n} página{})", if n == 1 { "" } else { "s" })
             }
-            Err(e) => format!("Cannot export to PDF: {e}"),
+            Err(e) => format!("No se pudo exportar a PDF: {e}"),
         });
     }
 }
 
 fn write(app: &App, fonts: &mut Fonts, dest: &Path) -> Result<usize, String> {
-    let tab = app.tab().ok_or("no note is open")?;
+    let tab = app.tab().ok_or("no hay ninguna nota abierta")?;
     let pal = view::palette(app);
     let mut info = view::ViewInfo::default();
     let mut dom = Dom::new();
@@ -96,7 +96,7 @@ fn write(app: &App, fonts: &mut Fonts, dest: &Path) -> Result<usize, String> {
     doc.set_metadata(Metadata::new().title(tab.title().to_string()).creator("Rustsidian".to_string()));
     let mut out = Out { fonts, font_cache: HashMap::new(), images: HashMap::new() };
     for &(top, bottom) in &pages {
-        let settings = PageSettings::from_wh(PAGE_W, PAGE_H).ok_or("bad page size")?;
+        let settings = PageSettings::from_wh(PAGE_W, PAGE_H).ok_or("tamaño de página no válido")?;
         let mut page = doc.start_page_with(settings);
         let mut s = page.surface();
         s.push_transform(&Transform::from_row(scale, 0.0, 0.0, scale, 0.0, MARGIN_Y - top * scale));

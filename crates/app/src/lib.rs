@@ -108,14 +108,14 @@ pub fn pane_image(frame: &Frame, pixmap: &Pixmap, scale: f32) -> Result<Pixmap, 
     let root = nodes
         .iter()
         .position(|n| has(n, "workspace-leaf") && has(n, "mod-active"))
-        .ok_or("no pane is open")?;
-    let r = nodes[root..].iter().find(|n| has(n, "view-content")).ok_or("no pane is open")?.rect;
+        .ok_or("no hay ningún panel abierto")?;
+    let r = nodes[root..].iter().find(|n| has(n, "view-content")).ok_or("no hay ningún panel abierto")?.rect;
     let (x0, y0) = ((r.x * scale).round().max(0.0), (r.y * scale).round().max(0.0));
     let x1 = ((r.x + r.w) * scale).round().min(pixmap.width() as f32);
     let y1 = ((r.y + r.h) * scale).round().min(pixmap.height() as f32);
     rustsidian_ui::IntRect::from_ltrb(x0 as i32, y0 as i32, x1 as i32, y1 as i32)
         .and_then(|rect| pixmap.clone_rect(rect))
-        .ok_or_else(|| "the pane is not visible".to_string())
+        .ok_or_else(|| "el panel no está visible".to_string())
 }
 
 impl App {
@@ -126,12 +126,12 @@ impl App {
             if self.system_clipboard {
                 clipboard::set_image(&pm)
             } else {
-                Err("the system clipboard is off".to_string())
+                Err("el portapapeles del sistema está desactivado".to_string())
             }
         });
         self.notice = Some(match copied {
-            Ok(()) => "Screenshot copied".to_string(),
-            Err(e) => format!("Cannot copy screenshot: {e}"),
+            Ok(()) => "Captura de pantalla copiada".to_string(),
+            Err(e) => format!("No se pudo copiar la captura de pantalla: {e}"),
         });
     }
 

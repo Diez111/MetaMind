@@ -710,7 +710,7 @@ fn sidebar_files(app: &App, dom: &mut Dom, parent: NodeId, viewport_h: f32) {
         header,
         El::div()
             .class("nav-header-title")
-            .text(app.store.root.file_name().and_then(|n| n.to_str()).unwrap_or("Vault").to_string()),
+            .text(app.store.root.file_name().and_then(|n| n.to_str()).unwrap_or("Bóveda").to_string()),
     );
     for (icon, cmd) in [
         ("note-plus", "file-explorer:new-file"),
@@ -719,7 +719,7 @@ fn sidebar_files(app: &App, dom: &mut Dom, parent: NodeId, viewport_h: f32) {
     ] {
         let b = icon_button(dom, header, icon, cmd, false);
         if cmd == "file-explorer:sort-menu" {
-            dom.nodes[b].el.attrs.push(("aria-label".into(), "Change sort order".into()));
+            dom.nodes[b].el.attrs.push(("aria-label".into(), "Cambiar orden".into()));
         }
     }
     let target = app.explorer_drag.as_ref().and_then(|d| d.target.as_deref());
@@ -769,10 +769,10 @@ fn sidebar_files(app: &App, dom: &mut Dom, parent: NodeId, viewport_h: f32) {
 }
 
 fn sidebar_search(app: &App, dom: &mut Dom, parent: NodeId) {
-    section_header(dom, parent, "search", "Search");
+    section_header(dom, parent, "search", "Buscar");
     let caret = if app.focus == Focus::Search { "▏" } else { "" };
     let shown = if app.search_query.is_empty() && app.focus != Focus::Search {
-        "Type a query, press Enter".to_string()
+        "Escribe una búsqueda y pulsa Intro".to_string()
     } else {
         format!("{}{caret}", app.search_query)
     };
@@ -782,7 +782,7 @@ fn sidebar_search(app: &App, dom: &mut Dom, parent: NodeId) {
     }
     let list = dom.add(parent, El::div().class("nav-files-container").id("search-results"));
     if let Some(e) = &app.search_error {
-        dom.add(list, El::div().class("search-result-file-match").text(format!("Query error: {e}")));
+        dom.add(list, El::div().class("search-result-file-match").text(format!("Error en la búsqueda: {e}")));
     }
     for r in &app.search_results {
         dom.add(
@@ -806,20 +806,20 @@ fn sidebar_search(app: &App, dom: &mut Dom, parent: NodeId) {
 
 /// Operators offered while a search field is empty, as (inserted text, description).
 pub const SEARCH_OPTIONS: &[(&str, &str)] = &[
-    ("path:", "match path of the file"),
-    ("file:", "match file name"),
-    ("tag:", "search for tags"),
-    ("line:", "search keywords on same line"),
-    ("section:", "search keywords under same heading"),
-    ("[", "match property"),
+    ("path:", "coincidir con la ruta del archivo"),
+    ("file:", "coincidir con el nombre del archivo"),
+    ("tag:", "buscar etiquetas"),
+    ("line:", "buscar palabras en la misma línea"),
+    ("section:", "buscar palabras bajo el mismo encabezado"),
+    ("[", "coincidir con una propiedad"),
 ];
 
 fn search_options(dom: &mut Dom, parent: NodeId, action: &str) {
     let list = dom.add(parent, El::div().class("search-options"));
-    dom.add(list, El::div().class("search-options-title").text("Search options"));
+    dom.add(list, El::div().class("search-options-title").text("Opciones de búsqueda"));
     for (op, desc) in SEARCH_OPTIONS {
         let row = dom.add(list, El::div().class("suggestion-item").action(format!("{action}{op}")));
-        let label = if *op == "[" { "[property]" } else { op };
+        let label = if *op == "[" { "[propiedad]" } else { op };
         dom.add(row, El::div().class("suggestion-title").text(label));
         dom.add(row, El::div().class("suggestion-aux").text(*desc));
     }
@@ -838,7 +838,7 @@ fn right_sidebar(app: &App, dom: &mut Dom, parent: NodeId) {
         icon_button(dom, head, icon, cmd, app.right_panel == panel);
     }
     let Some(tab) = app.tab() else {
-        dom.add(parent, El::div().class("pane-empty").text("No file is open."));
+        dom.add(parent, El::div().class("pane-empty").text("No hay ningún archivo abierto."));
         return;
     };
     let cmd = match app.right_panel {
@@ -847,7 +847,7 @@ fn right_sidebar(app: &App, dom: &mut Dom, parent: NodeId) {
         RightPanel::Outline => "outline:open",
     };
     if let Some(name) = app.disabled_by(cmd) {
-        dom.add(parent, El::div().class("pane-empty").text(format!("{name} is turned off.")));
+        dom.add(parent, El::div().class("pane-empty").text(format!("{name} está desactivado.")));
         return;
     }
     match app.right_panel {
@@ -858,7 +858,7 @@ fn right_sidebar(app: &App, dom: &mut Dom, parent: NodeId) {
 }
 
 fn outline(tab: &crate::shell::Tab, dom: &mut Dom, parent: NodeId) {
-    section_header(dom, parent, "list", "Outline");
+    section_header(dom, parent, "list", "Esquema");
     let outline = dom.add(parent, El::div().class("pane-section"));
     for h in tab.meta.iter().flat_map(|(_, m)| &m.headings) {
         dom.add(
@@ -872,7 +872,7 @@ fn outline(tab: &crate::shell::Tab, dom: &mut Dom, parent: NodeId) {
 }
 
 fn outgoing(app: &App, tab: &crate::shell::Tab, dom: &mut Dom, parent: NodeId) {
-    section_header(dom, parent, "arrow-up-right", "Outgoing links");
+    section_header(dom, parent, "arrow-up-right", "Enlaces salientes");
     let list = dom.add(parent, El::div().class("pane-section"));
     let mut seen = std::collections::HashSet::new();
     for l in tab.meta.iter().flat_map(|(_, m)| &m.links) {
@@ -895,24 +895,24 @@ fn outgoing(app: &App, tab: &crate::shell::Tab, dom: &mut Dom, parent: NodeId) {
         );
     }
     if seen.is_empty() {
-        dom.add(list, El::div().class("pane-empty").text("No outgoing links."));
+        dom.add(list, El::div().class("pane-empty").text("No hay enlaces salientes."));
     }
 }
 
 fn backlinks(app: &App, dom: &mut Dom, parent: NodeId) {
     let bar = dom.add(parent, El::div().class("nav-buttons-container"));
     let b = icon_button(dom, bar, "collapse", "backlinks:toggle-collapse", app.backlinks_collapsed);
-    dom.nodes[b].el.attrs.push(("aria-label".into(), "Collapse results".into()));
+    dom.nodes[b].el.attrs.push(("aria-label".into(), "Contraer resultados".into()));
     let b = icon_button(dom, bar, "context", "backlinks:toggle-context", app.backlinks_more);
-    dom.nodes[b].el.attrs.push(("aria-label".into(), "Show more context".into()));
+    dom.nodes[b].el.attrs.push(("aria-label".into(), "Mostrar más contexto".into()));
     let b = icon_button(dom, bar, "sort", "backlinks:toggle-sort", app.backlinks_desc);
-    dom.nodes[b].el.attrs.push(("aria-label".into(), "Change sort order".into()));
+    dom.nodes[b].el.attrs.push(("aria-label".into(), "Cambiar orden".into()));
     let b = icon_button(dom, bar, "search", "backlinks:toggle-filter", app.backlinks_filter.is_some());
-    dom.nodes[b].el.attrs.push(("aria-label".into(), "Show search filter".into()));
+    dom.nodes[b].el.attrs.push(("aria-label".into(), "Mostrar filtro de búsqueda".into()));
     if let Some(f) = &app.backlinks_filter {
         let (text, faint) = match (f.is_empty(), app.backlinks_editing) {
             (_, true) => (format!("{f}▏"), false),
-            (true, false) => ("Filter...".to_string(), true),
+            (true, false) => ("Filtrar…".to_string(), true),
             (false, false) => (f.clone(), false),
         };
         let field = dom.add(
@@ -941,11 +941,11 @@ fn backlinks(app: &App, dom: &mut Dom, parent: NodeId) {
         })
         .collect();
     let header = dom.add(parent, El::div().class("nav-header"));
-    dom.add(header, El::div().class("nav-header-title").text("Linked mentions"));
+    dom.add(header, El::div().class("nav-header-title").text("Menciones vinculadas"));
     dom.add(header, El::div().class("tree-item-flair").text(files.len().to_string()));
     let back = dom.add(parent, El::div().class("pane-section"));
     if files.is_empty() {
-        dom.add(back, El::div().class("pane-empty").text("No backlinks found."));
+        dom.add(back, El::div().class("pane-empty").text("No se encontraron retroenlaces."));
     }
     let ordered: Box<dyn Iterator<Item = _>> =
         if app.backlinks_desc { Box::new(files.iter().rev()) } else { Box::new(files.iter()) };
@@ -970,14 +970,14 @@ fn backlinks(app: &App, dom: &mut Dom, parent: NodeId) {
     }
     let header = dom.add(parent, El::div().class("nav-header").action("backlinks:toggle-unlinked"));
     dom.add(header, icons::el(if app.show_unlinked { "chevron-down" } else { "chevron-right" }));
-    dom.add(header, El::div().class("nav-header-title").text("Unlinked mentions"));
+    dom.add(header, El::div().class("nav-header-title").text("Menciones sin vínculo"));
     if !app.show_unlinked {
         return;
     }
     let list = dom.add(parent, El::div().class("pane-section"));
     let files = app.mentions.as_ref().map(|m| m.files.as_slice()).unwrap_or(&[]);
     if files.is_empty() {
-        dom.add(list, El::div().class("pane-empty").text("No unlinked mentions."));
+        dom.add(list, El::div().class("pane-empty").text("No hay menciones sin vínculo."));
     }
     for (p, snippets) in files {
         let row = dom.add(list, El::div().class("tree-item-self bookmark").action(format!("open:{p}")));
@@ -986,7 +986,7 @@ fn backlinks(app: &App, dom: &mut Dom, parent: NodeId) {
             row,
             El::div()
                 .class("tree-item-flair clickable-icon")
-                .text("Link")
+                .text("Vincular")
                 .action(format!("backlinks:link:{p}")),
         );
         for s in snippets {
@@ -1459,7 +1459,7 @@ pub(crate) fn note_blocks(
                         .class("cm-fold-indicator")
                         .class_if(folded, "is-collapsed")
                         .text(if folded { "▸" } else { "▾" })
-                        .attr("aria-label", if folded { "Unfold heading" } else { "Fold heading" })
+                        .attr("aria-label", if folded { "Desplegar encabezado" } else { "Plegar encabezado" })
                         .action(format!("fold:{}", b.start)),
                 );
             }
@@ -1734,15 +1734,15 @@ fn board_embed(app: &App, dom: &mut Dom, view: NodeId, rel: &str, info: &mut Vie
         dom.add(holder, El::div().class("rich-notice").text(text));
     };
     let Some(board) = board else {
-        notice(dom, format!("Excalidraw: {name} is not in the vault"));
+        notice(dom, format!("Excalidraw: {name} no está en la bóveda"));
         return;
     };
     match &*board {
         crate::excalidraw::Loaded::Failed(e) => {
-            notice(dom, format!("Excalidraw: {name} could not be read ({e}); showing the text"))
+            notice(dom, format!("Excalidraw: no se pudo leer {name} ({e}); se muestra el texto"))
         }
         crate::excalidraw::Loaded::Board(b) if b.list.ops.is_empty() => {
-            notice(dom, format!("Excalidraw: {name} is an empty board"))
+            notice(dom, format!("Excalidraw: {name} es un tablero vacío"))
         }
         crate::excalidraw::Loaded::Board(b) => {
             crate::excalidraw::add(dom, holder, b.clone(), &mut info.exc);
@@ -1785,23 +1785,23 @@ fn empty_state(app: &App, dom: &mut Dom, parent: NodeId) {
     let wrap = dom.add(parent, El::div().class("empty-state"));
     let card = dom.add(wrap, El::div().class("empty-state-container"));
     dom.add(card, El::div().class("empty-state-logo").image(logo()));
-    dom.add(card, El::div().class("empty-state-title").text("No file is open"));
+    dom.add(card, El::div().class("empty-state-title").text("No hay ningún archivo abierto"));
     let notes = app.store.index.notes().count();
     let sub = if notes == 0 {
-        "This vault is empty. Create your first note to get started.".to_string()
+        "Esta bóveda está vacía. Crea tu primera nota para empezar.".to_string()
     } else {
-        format!("{notes} notes in this vault. Pick one on the left, or:")
+        format!("{notes} notas en esta bóveda. Elige una a la izquierda o:")
     };
     dom.add(card, El::div().class("empty-state-subtitle").text(sub));
     let list = dom.add(card, El::div().class("empty-state-action-list"));
     for (icon, label, cmd) in [
-        ("note-plus", "Create new note", "file-explorer:new-file"),
-        ("switcher", "Go to file", "switcher:open"),
-        ("command", "Open command palette", "command-palette:open"),
-        ("calendar", "Open today's daily note", "daily-notes"),
-        ("graph", "Open graph view", "graph:open"),
-        ("settings", "Open settings", "app:open-settings"),
-        ("vault", "Open another vault", "app:open-vault"),
+        ("note-plus", "Crear nota", "file-explorer:new-file"),
+        ("switcher", "Ir a un archivo", "switcher:open"),
+        ("command", "Abrir paleta de comandos", "command-palette:open"),
+        ("calendar", "Abrir la nota diaria de hoy", "daily-notes"),
+        ("graph", "Abrir vista de gráfico", "graph:open"),
+        ("settings", "Abrir ajustes", "app:open-settings"),
+        ("vault", "Abrir otra bóveda", "app:open-vault"),
     ] {
         let row = dom.add(list, El::div().class("empty-state-action").action(cmd));
         dom.add(row, icons::el(icon));
@@ -1843,7 +1843,7 @@ fn graph(
     dom.add(
         header,
         El::div().class("graph-count").text(format!(
-            "{} nodes  ·  {} links",
+            "{} nodos  ·  {} enlaces",
             g.graph.nodes.len(),
             g.graph.edges.len()
         )),
@@ -1853,7 +1853,7 @@ fn graph(
         El::div()
             .class("graph-control")
             .class_if(g.auto_fit, "is-enabled")
-            .text("Fit")
+            .text("Ajustar")
             .action("graph:reset-view"),
     );
     let pane = dom.add(parent, El::div().class("view-content graph-view-container"));
@@ -1946,13 +1946,13 @@ fn graph_panel(
                 head,
                 El::div()
                     .class("clickable-icon")
-                    .attr("aria-label", "Restore default settings")
+                    .attr("aria-label", "Restaurar ajustes predeterminados")
                     .action("graph:reset-settings"),
             );
             dom.add(b, icons::el("rotate-ccw"));
             let b = dom.add(
                 head,
-                El::div().class("clickable-icon").attr("aria-label", "Close").action("graph:toggle-panel"),
+                El::div().class("clickable-icon").attr("aria-label", "Cerrar").action("graph:toggle-panel"),
             );
             dom.add(b, icons::el("x"));
         }
@@ -1963,12 +1963,12 @@ fn graph_panel(
         let s = &g.settings;
         match *id {
             "filter" => {
-                field(dom, body, "search", &s.search, "Search files...");
+                field(dom, body, "search", &s.search, "Buscar archivos…");
                 let f = &s.filters;
-                toggle(dom, body, "Tags", f.show_tags, "graph:toggle-tags");
-                toggle(dom, body, "Attachments", f.show_attachments, "graph:toggle-attachments");
-                toggle(dom, body, "Existing files only", f.hide_unresolved, "graph:toggle-unresolved");
-                toggle(dom, body, "Orphans", f.show_orphans, "graph:toggle-orphans");
+                toggle(dom, body, "Etiquetas", f.show_tags, "graph:toggle-tags");
+                toggle(dom, body, "Adjuntos", f.show_attachments, "graph:toggle-attachments");
+                toggle(dom, body, "Solo archivos existentes", f.hide_unresolved, "graph:toggle-unresolved");
+                toggle(dom, body, "Huérfanos", f.show_orphans, "graph:toggle-orphans");
                 if g.local.is_some() {
                     slider(dom, body, &DEPTH);
                 }
@@ -1976,36 +1976,36 @@ fn graph_panel(
             "color-groups" => {
                 for (gi, cg) in s.color_groups.iter().enumerate() {
                     let row = dom.add(body, El::div().class("graph-color-group"));
-                    field(dom, row, &format!("group:{gi}"), &cg.query, "Enter query...");
+                    field(dom, row, &format!("group:{gi}"), &cg.query, "Escribe una consulta…");
                     dom.add(
                         row,
                         El::div()
                             .class("graph-color-swatch")
                             .style(&format!("background-color: #{:06x}", cg.rgb))
-                            .attr("aria-label", "Change color")
+                            .attr("aria-label", "Cambiar color")
                             .action(format!("graph:group-color:{gi}")),
                     );
                     let x = dom.add(
                         row,
                         El::div()
                             .class("clickable-icon")
-                            .attr("aria-label", "Remove group")
+                            .attr("aria-label", "Quitar grupo")
                             .action(format!("graph:group-remove:{gi}")),
                     );
                     dom.add(x, icons::el("x"));
                 }
                 dom.add(
                     body,
-                    El::div().class("graph-button mod-wide").text("New group").action("graph:group-new"),
+                    El::div().class("graph-button mod-wide").text("Grupo nuevo").action("graph:group-new"),
                 );
             }
             "display" => {
-                toggle(dom, body, "Arrows", s.show_arrows, "graph:toggle-arrows");
+                toggle(dom, body, "Flechas", s.show_arrows, "graph:toggle-arrows");
                 for sl in &DISPLAY_SLIDERS {
                     slider(dom, body, sl);
                 }
                 let row = dom.add(body, El::div().class("graph-setting mod-end"));
-                dom.add(row, El::div().class("graph-button").text("Animate").action("graph:animate"));
+                dom.add(row, El::div().class("graph-button").text("Animar").action("graph:animate"));
             }
             _ => {
                 for sl in &FORCE_SLIDERS {
@@ -2156,7 +2156,7 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
             Panel::Tags => "tag-pane:open",
         };
         if let Some(name) = app.disabled_by(cmd) {
-            dom.add(left, El::div().class("pane-empty").text(format!("{name} is turned off.")));
+            dom.add(left, El::div().class("pane-empty").text(format!("{name} está desactivado.")));
         } else {
             match app.panel {
                 Panel::Files => sidebar_files(app, dom, left, viewport_h),
@@ -2188,9 +2188,10 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
             .find(|c| c.0 == a)
             .map(|c| c.1.to_string())
             .or_else(|| {
-                a.strip_prefix("close-tab:").map(|_| "Close tab (middle click also closes)".to_string())
+                a.strip_prefix("close-tab:")
+                    .map(|_| "Cerrar pestaña (el clic central también cierra)".to_string())
             })
-            .or_else(|| a.strip_prefix("toggle-pin:").map(|_| "Unpin tab".to_string()))?;
+            .or_else(|| a.strip_prefix("toggle-pin:").map(|_| "Desanclar pestaña".to_string()))?;
         let key = app.hotkey_for(a);
         Some(if key.is_empty() { name } else { format!("{name}  ({key})") })
     });
@@ -2220,7 +2221,10 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
         };
         dom.add(status, El::div().class("status-bar-item").text(count));
         // 200 words a minute, a common estimate for silent reading.
-        dom.add(status, El::div().class("status-bar-item").text(format!("{} min de lectura", words.div_ceil(200))));
+        dom.add(
+            status,
+            El::div().class("status-bar-item").text(format!("{} min de lectura", words.div_ceil(200))),
+        );
         dom.add(
             status,
             El::div()
@@ -2247,16 +2251,16 @@ fn overlays(app: &App, dom: &mut Dom, viewport_h: f32) {
         }
         let modal = dom.add(0, el);
         let placeholder = match p.kind {
-            PromptKind::Commands => "Type a command…",
-            PromptKind::Switcher => "Find or create a note…",
-            PromptKind::Rename => "New name…",
-            PromptKind::NewFolder => "Folder name…",
-            PromptKind::Template => "Find a template…",
+            PromptKind::Commands => "Escribe un comando…",
+            PromptKind::Switcher => "Busca o crea una nota…",
+            PromptKind::Rename => "Nombre nuevo…",
+            PromptKind::NewFolder => "Nombre de la carpeta…",
+            PromptKind::Template => "Busca una plantilla…",
             PromptKind::Workspace => match p.target.as_str() {
-                "save" => "Workspace name…",
-                _ => "Find a workspace…",
+                "save" => "Nombre del espacio de trabajo…",
+                _ => "Busca un espacio de trabajo…",
             },
-            PromptKind::BaseCell => "Empty to remove the property…",
+            PromptKind::BaseCell => "Vacío para quitar la propiedad…",
         };
         let shown = if p.query.is_empty() { placeholder.to_string() } else { format!("{}▏", p.query) };
         let input = dom.add(modal, El::div().class("prompt-input-container"));
@@ -2338,7 +2342,7 @@ fn overlays(app: &App, dom: &mut Dom, viewport_h: f32) {
         dom.add(
             0,
             El::div().class("perf-overlay").text(format!(
-                "frame {:.2} ms · {} nodes",
+                "fotograma {:.2} ms · {} nodos",
                 app.last_frame_us as f32 / 1000.0,
                 dom.nodes.len()
             )),
@@ -2603,7 +2607,7 @@ fn hover_popover(app: &App, dom: &mut Dom, viewport_h: f32) {
         El::div().class("hover-popover-title").text(path::stem(&h.path).to_string()).action(action.clone()),
     );
     if h.text.trim().is_empty() {
-        dom.add(pop, El::div().class("hover-popover-empty").text("No preview for this file"));
+        dom.add(pop, El::div().class("hover-popover-empty").text("No hay vista previa de este archivo"));
     } else {
         embedded_blocks(dom, pop, &h.text, &action, &palette(app));
     }

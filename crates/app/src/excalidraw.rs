@@ -108,11 +108,11 @@ pub fn skipped_note(list: &DisplayList) -> Option<String> {
     let mut seen: Vec<(String, usize)> = Vec::new();
     for (_, why) in &list.skipped {
         let name = match why {
-            excalidraw_core::Skip::Deleted => "deleted".to_string(),
+            excalidraw_core::Skip::Deleted => "eliminado".to_string(),
             excalidraw_core::Skip::Type(t) => t.clone(),
-            excalidraw_core::Skip::EmptyText => "empty text".to_string(),
-            excalidraw_core::Skip::NoGeometry => "no geometry".to_string(),
-            excalidraw_core::Skip::MissingFile(_) => "missing image".to_string(),
+            excalidraw_core::Skip::EmptyText => "texto vacío".to_string(),
+            excalidraw_core::Skip::NoGeometry => "sin geometría".to_string(),
+            excalidraw_core::Skip::MissingFile(_) => "imagen faltante".to_string(),
         };
         match seen.iter_mut().find(|(k, _)| *k == name) {
             Some((_, n)) => *n += 1,
@@ -121,7 +121,7 @@ pub fn skipped_note(list: &DisplayList) -> Option<String> {
     }
     let parts: Vec<String> = seen.iter().map(|(k, n)| format!("{n} × {k}")).collect();
     Some(format!(
-        "Excalidraw: {} element(s) not drawn ({}); frames and embeds have no picture here",
+        "Excalidraw: {} elemento(s) sin dibujar ({}); los marcos y embeds no tienen imagen aquí",
         list.skipped.len(),
         parts.join(", ")
     ))
@@ -540,7 +540,7 @@ mod tests {
         let b = Board::parse(src).unwrap();
         assert_eq!(b.list.ops.len(), 1);
         let note = skipped_note(&b.list).unwrap();
-        assert!(note.contains("1 element(s) not drawn"), "{note}");
+        assert!(note.contains("1 elemento(s) sin dibujar"), "{note}");
         assert!(note.contains("frame"), "{note}");
         assert!(skipped_note(&Board::parse(SCENE).unwrap().list).is_none());
     }

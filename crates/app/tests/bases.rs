@@ -114,7 +114,11 @@ fn a_base_with_bad_syntax_shows_the_error() {
     let mut app = App::open(d.path()).unwrap();
     app.open_note("Bad.base");
     let f = frame(&mut app, &mut Fonts::new());
-    assert!(f.dom.nodes.iter().any(|n| n.el.text.as_deref().is_some_and(|t| t.contains("cannot be read"))));
+    assert!(f.dom.nodes.iter().any(|n| n
+        .el
+        .text
+        .as_deref()
+        .is_some_and(|t| t.contains("No se puede leer esta base"))));
 }
 
 #[test]
@@ -173,9 +177,9 @@ fn a_kanban_view_has_a_column_per_group_and_moves_cards() {
     assert_eq!(
         labels,
         [
-            "Set \u{201c}status\u{201d} to \u{201c}done\u{201d}",
-            "Set \u{201c}status\u{201d} to \u{201c}reading\u{201d}",
-            "Remove \u{201c}status\u{201d} from A",
+            "Establecer \u{201c}status\u{201d} en \u{201c}done\u{201d}",
+            "Establecer \u{201c}status\u{201d} en \u{201c}reading\u{201d}",
+            "Quitar \u{201c}status\u{201d} de A",
         ]
     );
     app.key(rustsidian_app::Key::new("Enter"));

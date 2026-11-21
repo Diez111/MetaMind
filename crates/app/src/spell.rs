@@ -65,7 +65,7 @@ pub fn add(word: &str) -> std::io::Result<()> {
     if let Some(dict) = DICT.write().ok().as_mut().and_then(|d| d.as_mut()) {
         dict.add(&word).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string()))?;
     }
-    let path = user_path().ok_or_else(|| std::io::Error::other("no configuration folder"))?;
+    let path = user_path().ok_or_else(|| std::io::Error::other("no hay carpeta de configuración"))?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }

@@ -14,18 +14,19 @@ impl App {
         let text = match std::fs::read_to_string(&path) {
             Ok(t) => t,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Map::new()),
-            Err(e) => return Err(format!("Cannot read workspaces: {e}")),
+            Err(e) => return Err(format!("No se pudieron leer los espacios de trabajo: {e}")),
         };
-        let v: Value = serde_json::from_str(&text).map_err(|e| format!("Cannot read workspaces: {e}"))?;
+        let v: Value = serde_json::from_str(&text)
+            .map_err(|e| format!("No se pudieron leer los espacios de trabajo: {e}"))?;
         Ok(v.get("workspaces").and_then(Value::as_object).cloned().unwrap_or_default())
     }
 
     fn write_workspaces(&self, all: Map<String, Value>) -> Result<(), String> {
         let text = serde_json::to_string_pretty(&serde_json::json!({ "workspaces": all }))
-            .map_err(|e| format!("Cannot save workspaces: {e}"))?;
+            .map_err(|e| format!("No se pudieron guardar los espacios de trabajo: {e}"))?;
         std::fs::create_dir_all(&self.config.dir)
             .and_then(|_| std::fs::write(self.config.dir.join(FILE), text))
-            .map_err(|e| format!("Cannot save workspaces: {e}"))
+            .map_err(|e| format!("No se pudieron guardar los espacios de trabajo: {e}"))
     }
 
     /// Saved workspace names, sorted.
@@ -42,7 +43,7 @@ impl App {
             self.write_workspaces(all)
         });
         self.notice = Some(match saved {
-            Ok(()) => format!("Saved workspace \u{201c}{name}\u{201d}"),
+            Ok(()) => format!("Espacio de trabajo \u{201c}{name}\u{201d} guardado"),
             Err(e) => e,
         });
     }
@@ -58,12 +59,14 @@ impl App {
             }
         };
         let Some(v) = v else {
-            self.notice = Some(format!("No workspace named \u{201c}{name}\u{201d}"));
+            self.notice = Some(format!("No hay ningún espacio de trabajo llamado \u{201c}{name}\u{201d}"));
             return;
         };
         self.save_all();
         if self.all_tabs().any(|t| t.editor.buf.is_modified()) {
-            self.notice = Some("Cannot load the workspace: a changed note could not be saved".to_string());
+            self.notice = Some(
+                "No se pudo cargar el espacio de trabajo: una nota modificada no se pudo guardar".to_string(),
+            );
             return;
         }
         self.tabs.clear();
@@ -79,7 +82,7 @@ impl App {
         self.show_canvas = false;
         self.show_base = false;
         self.apply_session(&v);
-        self.notice = Some(format!("Loaded workspace \u{201c}{name}\u{201d}"));
+        self.notice = Some(format!("Espacio de trabajo \u{201c}{name}\u{201d} cargado"));
     }
 
     pub fn delete_workspace(&mut self, name: &str) {
@@ -88,7 +91,7 @@ impl App {
             self.write_workspaces(all)
         });
         self.notice = Some(match deleted {
-            Ok(()) => format!("Deleted workspace \u{201c}{name}\u{201d}"),
+            Ok(()) => format!("Espacio de trabajo \u{201c}{name}\u{201d} eliminado"),
             Err(e) => e,
         });
     }
@@ -107,21 +110,21 @@ impl App {
         let typed = query.trim();
         if target == "save" && !typed.is_empty() && !names.iter().any(|n| n == typed) {
             items.push(row(
-                format!("Save as \u{201c}{typed}\u{201d}"),
-                "New",
+                format!("Guardar como \u{201c}{typed}\u{201d}"),
+                "Nuevo",
                 format!("workspaces:save-as:{typed}"),
             ));
         }
         for i in hits {
             let n = &names[i];
             items.push(match target {
-                "save" => row(n.clone(), "Replace", format!("workspaces:save-as:{n}")),
-                "delete" => row(n.clone(), "Delete", format!("workspaces:delete:{n}")),
+                "save" => row(n.clone(), "Reemplazar", format!("workspaces:save-as:{n}")),
+                "delete" => row(n.clone(), "Eliminar", format!("workspaces:delete:{n}")),
                 _ => row(n.clone(), "", format!("workspaces:load:{n}")),
             });
         }
         if items.is_empty() && target != "save" {
-            items.push(row("No saved workspaces".into(), "", "prompt:dismiss".into()));
+            items.push(row("No hay espacios de trabajo guardados".into(), "", "prompt:dismiss".into()));
         }
         items
     }

@@ -24,7 +24,7 @@ fn a_saved_workspace_brings_back_its_panes_and_tabs() {
     app.run("workspaces:save");
     assert_eq!(app.prompt.as_ref().map(|p| p.kind), Some(PromptKind::Workspace));
     app.text_input("Writing");
-    assert_eq!(labels(&app), ["Save as \u{201c}Writing\u{201d}"]);
+    assert_eq!(labels(&app), ["Guardar como \u{201c}Writing\u{201d}"]);
     app.key(rustsidian_app::Key::new("Enter"));
     assert_eq!(app.workspace_names().unwrap(), ["Writing"]);
 
@@ -32,7 +32,7 @@ fn a_saved_workspace_brings_back_its_panes_and_tabs() {
     app.focus_pane(0);
     app.run("workspace:close-all");
     app.load_workspace("Writing");
-    assert_eq!(app.notice.as_deref(), Some("Loaded workspace \u{201c}Writing\u{201d}"));
+    assert_eq!(app.notice.as_deref(), Some("Espacio de trabajo \u{201c}Writing\u{201d} cargado"));
     assert_eq!(app.panes.len(), 2);
     assert_eq!(app.pane, 1);
     assert!(app.panes[1].stacked);
@@ -45,7 +45,7 @@ fn a_saved_workspace_brings_back_its_panes_and_tabs() {
     app.run("workspaces:delete:Writing");
     assert!(app.workspace_names().unwrap().is_empty());
     app.run("workspaces:load");
-    assert_eq!(labels(&app), ["No saved workspaces"]);
+    assert_eq!(labels(&app), ["No hay espacios de trabajo guardados"]);
 }
 
 #[test]
@@ -55,7 +55,7 @@ fn a_broken_workspace_file_is_reported_not_ignored() {
     fs::create_dir_all(&app.config.dir).unwrap();
     fs::write(app.config.dir.join("rustsidian-workspaces.json"), "{oops").unwrap();
     app.run("workspaces:load");
-    assert!(labels(&app)[0].starts_with("Cannot read workspaces"), "{:?}", labels(&app));
+    assert!(labels(&app)[0].starts_with("No se pudieron leer los espacios de trabajo"), "{:?}", labels(&app));
     app.save_workspace("x");
-    assert!(app.notice.as_deref().unwrap().starts_with("Cannot read workspaces"));
+    assert!(app.notice.as_deref().unwrap().starts_with("No se pudieron leer los espacios de trabajo"));
 }

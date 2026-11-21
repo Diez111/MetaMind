@@ -25,7 +25,7 @@ pub fn is_link(s: &str) -> bool {
 /// The action name and its decoded query parameters.
 pub fn parse(uri: &str) -> Result<(String, Vec<(String, String)>), String> {
     if !is_link(uri) {
-        return Err(format!("not a {SCHEME}// link: {uri}"));
+        return Err(format!("no es un enlace {SCHEME}//: {uri}"));
     }
     let rest = uri[SCHEME.len()..].trim_start_matches('/');
     let (action, query) = rest.split_once('?').unwrap_or((rest, ""));
@@ -59,8 +59,8 @@ pub fn resolve(uri: &str, vaults: &[PathBuf]) -> Result<Target, String> {
             let note = create(&vault, name, get("content").unwrap_or(""))?;
             Ok(Target { vault, note: Some(note) })
         }
-        "" => Err("the link names no action".into()),
-        other => Err(format!("unsupported link action `{other}`")),
+        "" => Err("el enlace no indica ninguna acción".into()),
+        other => Err(format!("acción de enlace no compatible `{other}`")),
     }
 }
 
@@ -69,7 +69,7 @@ fn vault(name: Option<&str>, vaults: &[PathBuf]) -> Result<PathBuf, String> {
         return vaults
             .first()
             .cloned()
-            .ok_or_else(|| "the link names no vault and none was opened before".into());
+            .ok_or_else(|| "el enlace no indica ninguna bóveda y antes no se abrió ninguna".into());
     };
     let p = Path::new(name);
     if p.is_absolute() && p.is_dir() {
@@ -79,7 +79,7 @@ fn vault(name: Option<&str>, vaults: &[PathBuf]) -> Result<PathBuf, String> {
         .iter()
         .find(|v| v.file_name().is_some_and(|f| f.to_string_lossy().eq_ignore_ascii_case(name)))
         .cloned()
-        .ok_or_else(|| format!("no recently opened vault is named `{name}`"))
+        .ok_or_else(|| format!("ninguna bóveda abierta recientemente se llama `{name}`"))
 }
 
 /// A command-line argument naming an existing file, as a path or a `file://` URL (desktop
@@ -110,15 +110,15 @@ pub fn for_path(p: &Path, vaults: &[PathBuf]) -> Result<Target, String> {
         return Ok(Target { vault: p.to_path_buf(), note: None });
     }
     if !p.is_file() {
-        return Err(format!("{} does not exist", p.display()));
+        return Err(format!("{} no existe", p.display()));
     }
     let known = vaults.iter().filter(|v| p.starts_with(v)).max_by_key(|v| v.components().count());
     let vault = known
         .cloned()
         .or_else(|| p.ancestors().skip(1).find(|d| d.join(".obsidian").is_dir()).map(Path::to_path_buf))
         .or_else(|| p.parent().map(Path::to_path_buf))
-        .ok_or_else(|| format!("{} is not inside a vault", p.display()))?;
-    let rel = p.strip_prefix(&vault).map_err(|_| format!("{} is not inside a vault", p.display()))?;
+        .ok_or_else(|| format!("{} no está dentro de una bóveda", p.display()))?;
+    let rel = p.strip_prefix(&vault).map_err(|_| format!("{} no está dentro de una bóveda", p.display()))?;
     Ok(Target { vault, note: Some(rel.to_string_lossy().replace('\\', "/")) })
 }
 

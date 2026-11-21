@@ -118,7 +118,7 @@ fn a_broken_board_keeps_the_text_and_says_why() {
     assert!(f.info.exc.is_empty(), "nothing to paint");
     let notices = texts(&f, "rich-notice");
     assert!(
-        notices.iter().any(|t| t.contains("roto.excalidraw") && t.contains("could not be read")),
+        notices.iter().any(|t| t.contains("roto.excalidraw") && t.contains("no se pudo leer")),
         "{notices:?}"
     );
     // The line that names the board is still there, in the note's text.

@@ -223,11 +223,12 @@ impl App {
     /// Open the active note in a new pane to the right of (`row`) or below the focused one.
     pub fn split(&mut self, row: bool) {
         if self.is_popped(self.pane) {
-            self.notice = Some("Split panes are only available in the main window".to_string());
+            self.notice =
+                Some("Los paneles divididos solo están disponibles en la ventana principal".to_string());
             return;
         }
         let Some(t) = self.tab() else {
-            self.notice = Some("Open a note to split".to_string());
+            self.notice = Some("Abre una nota para dividir el panel".to_string());
             return;
         };
         let mut tab = Tab::new(t.path.clone(), &t.editor.buf.text(), t.stamp, t.vim.is_some());
@@ -315,7 +316,7 @@ impl App {
     /// Move the active tab into a pane of its own, shown in a new window.
     pub fn move_to_window(&mut self) {
         if self.tab().is_none() {
-            self.notice = Some("Open a note to move it to a new window".to_string());
+            self.notice = Some("Abre una nota para moverla a una ventana nueva".to_string());
             return;
         }
         let tab = self.tabs.remove(self.active);

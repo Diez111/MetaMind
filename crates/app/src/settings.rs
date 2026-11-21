@@ -23,44 +23,74 @@ pub enum Section {
 const SECTIONS: [(Section, &str, &str); 7] = [
     (Section::General, "general", "General"),
     (Section::Editor, "editor", "Editor"),
-    (Section::Files, "files", "Files & links"),
-    (Section::Appearance, "appearance", "Appearance"),
-    (Section::Interface, "interface", "Interface"),
-    (Section::Hotkeys, "hotkeys", "Hotkeys"),
-    (Section::CorePlugins, "core-plugins", "Core plugins"),
+    (Section::Files, "files", "Archivos y enlaces"),
+    (Section::Appearance, "appearance", "Apariencia"),
+    (Section::Interface, "interface", "Interfaz"),
+    (Section::Hotkeys, "hotkeys", "Atajos de teclado"),
+    (Section::CorePlugins, "core-plugins", "Plugins principales"),
 ];
 
 /// Core plugins this app honors: (id in `core-plugins.json`, name, description, the commands
 /// that are blocked and hidden while it is off).
 pub(crate) const CORE_PLUGINS: &[(&str, &str, &str, &[&str])] = &[
-    ("backlink", "Backlinks", "Show links to the active note in the right sidebar.", &["backlinks:open"]),
-    ("bookmarks", "Bookmarks", "Keep notes and searches at hand.", &["bookmarks:open"]),
-    ("canvas", "Canvas", "Lay out notes and cards on a board.", &["canvas:new"]),
-    ("bases", "Bases", "Show notes as tables and cards from their properties.", &["bases:new"]),
-    ("command-palette", "Command palette", "Run any command by name.", &["command-palette:open"]),
+    (
+        "backlink",
+        "Retroenlaces",
+        "Muestra en la barra lateral derecha los enlaces a la nota activa.",
+        &["backlinks:open"],
+    ),
+    ("bookmarks", "Marcadores", "Ten notas y búsquedas a mano.", &["bookmarks:open"]),
+    ("canvas", "Canvas", "Coloca notas y tarjetas en un tablero.", &["canvas:new"]),
+    ("bases", "Bases", "Muestra notas como tablas y tarjetas a partir de sus propiedades.", &["bases:new"]),
+    (
+        "command-palette",
+        "Paleta de comandos",
+        "Ejecuta cualquier comando por su nombre.",
+        &["command-palette:open"],
+    ),
     (
         "daily-notes",
-        "Daily notes",
-        "Open a note for today.",
+        "Notas diarias",
+        "Abre una nota para hoy.",
         &["daily-notes", "daily-notes:goto-prev", "daily-notes:goto-next"],
     ),
-    ("file-explorer", "Files", "List the files of the vault in the left sidebar.", &["file-explorer:open"]),
-    ("graph", "Graph view", "Show the links between notes as a graph.", &["graph:open", "graph:open-local"]),
-    ("outgoing-link", "Outgoing links", "Show the links of the active note.", &["outgoing-links:open"]),
-    ("outline", "Outline", "Show the headings of the active note.", &["outline:open"]),
-    ("switcher", "Quick switcher", "Jump to a note by name.", &["switcher:open"]),
-    ("global-search", "Search", "Search the vault with query operators.", &["global-search:open"]),
+    (
+        "file-explorer",
+        "Archivos",
+        "Lista los archivos de la bóveda en la barra lateral izquierda.",
+        &["file-explorer:open"],
+    ),
+    (
+        "graph",
+        "Vista de gráfico",
+        "Muestra los enlaces entre notas como un gráfico.",
+        &["graph:open", "graph:open-local"],
+    ),
+    (
+        "outgoing-link",
+        "Enlaces salientes",
+        "Muestra los enlaces de la nota activa.",
+        &["outgoing-links:open"],
+    ),
+    ("outline", "Esquema", "Muestra los encabezados de la nota activa.", &["outline:open"]),
+    ("switcher", "Selector rápido", "Salta a una nota por su nombre.", &["switcher:open"]),
+    ("global-search", "Buscar", "Busca en la bóveda con operadores de consulta.", &["global-search:open"]),
     (
         "workspaces",
-        "Workspaces",
-        "Save and load layouts of tabs and panes.",
+        "Espacios de trabajo",
+        "Guarda y carga disposiciones de pestañas y paneles.",
         &["workspaces:save", "workspaces:load", "workspaces:delete"],
     ),
-    ("tag-pane", "Tags view", "List the tags of the vault with their counts.", &["tag-pane:open"]),
+    (
+        "tag-pane",
+        "Vista de etiquetas",
+        "Lista las etiquetas de la bóveda con sus recuentos.",
+        &["tag-pane:open"],
+    ),
     (
         "templates",
-        "Templates",
-        "Insert a template, the date or the time.",
+        "Plantillas",
+        "Inserta una plantilla, la fecha o la hora.",
         &["templates:insert-template", "templates:insert-current-date", "templates:insert-current-time"],
     ),
 ];
@@ -144,102 +174,102 @@ const ITEMS: &[Item] = &[
         section: Interface,
         file: File::Appearance,
         key: "showRibbon",
-        name: "Show ribbon",
-        desc: "Show the column of buttons along the left edge of the window.",
+        name: "Mostrar barra de iconos",
+        desc: "Muestra la columna de botones en el borde izquierdo de la ventana.",
         control: Toggle(true),
     },
     Item {
         section: Interface,
         file: File::Appearance,
         key: "showViewHeader",
-        name: "Show tab title bar",
-        desc: "Show the bar with the note title and view buttons above each note.",
+        name: "Mostrar barra de título de la pestaña",
+        desc: "Muestra la barra con el título de la nota y los botones de vista sobre cada nota.",
         control: Toggle(true),
     },
     Item {
         section: Editor,
         file: File::App,
         key: "vimMode",
-        name: "Vim key bindings",
-        desc: "Use Vim-style keys in the editor.",
+        name: "Atajos de teclado Vim",
+        desc: "Usa teclas al estilo Vim en el editor.",
         control: Toggle(false),
     },
     Item {
         section: Editor,
         file: File::App,
         key: "readableLineLength",
-        name: "Readable line length",
-        desc: "Limit the width of lines in the editor.",
+        name: "Longitud de línea legible",
+        desc: "Limita el ancho de las líneas en el editor.",
         control: Toggle(false),
     },
     Item {
         section: Editor,
         file: File::App,
         key: "spellcheck",
-        name: "Spellcheck",
-        desc: "Underline misspelled English words. Right-click one for suggestions.",
+        name: "Corrección ortográfica",
+        desc: "Subraya palabras mal escritas en inglés. Haz clic derecho en una para ver sugerencias.",
         control: Toggle(true),
     },
     Item {
         section: Editor,
         file: File::App,
         key: "propertiesInDocument",
-        name: "Properties in document",
-        desc: "Show front matter as a properties table, as raw source, or not at all.",
-        control: Choice("visible", &[("visible", "Visible"), ("source", "Source"), ("hidden", "Hidden")]),
+        name: "Propiedades en el documento",
+        desc: "Muestra el front matter como tabla de propiedades, como código fuente o no lo muestres.",
+        control: Choice("visible", &[("visible", "Visibles"), ("source", "Código fuente"), ("hidden", "Ocultas")]),
     },
     Item {
         section: Editor,
         file: File::App,
         key: "useTab",
-        name: "Indent using tabs",
-        desc: "Tab inserts a tab character instead of spaces.",
+        name: "Sangrar con tabulaciones",
+        desc: "Tab inserta un carácter de tabulación en lugar de espacios.",
         control: Toggle(true),
     },
     Item {
         section: Editor,
         file: File::App,
         key: "tabSize",
-        name: "Tab indent size",
-        desc: "Number of spaces one indent level is worth.",
+        name: "Tamaño de la sangría",
+        desc: "Número de espacios que vale un nivel de sangría.",
         control: Number(4.0, 1.0, 16.0),
     },
     Item {
         section: Editor,
         file: File::App,
         key: "autoPairBrackets",
-        name: "Auto pair brackets",
-        desc: "Typing ( [ { or a quote also inserts the closing one.",
+        name: "Cerrar paréntesis automáticamente",
+        desc: "Al escribir ( [ { o una comilla también se inserta el cierre.",
         control: Toggle(true),
     },
     Item {
         section: Editor,
         file: File::App,
         key: "autoPairMarkdown",
-        name: "Auto pair Markdown syntax",
-        desc: "Typing * _ ` or ~ also inserts the closing marker.",
+        name: "Cerrar sintaxis Markdown automáticamente",
+        desc: "Al escribir * _ ` o ~ también se inserta el marcador de cierre.",
         control: Toggle(true),
     },
     Item {
         section: Editor,
         file: File::App,
         key: "smartIndentList",
-        name: "Smart lists",
-        desc: "Enter continues a list item and Backspace removes an empty one.",
+        name: "Listas inteligentes",
+        desc: "Intro continúa un elemento de lista y Backspace elimina uno vacío.",
         control: Toggle(true),
     },
     Item {
         section: Files,
         file: File::App,
         key: "newFileLocation",
-        name: "Default location for new notes",
-        desc: "Where Create new note puts the file.",
+        name: "Ubicación predeterminada de las notas nuevas",
+        desc: "Dónde guarda el archivo la orden «Crear nota».",
         control: Choice(
             "root",
             &[
-                ("root", "Vault folder"),
-                ("current", "Same folder as current file"),
-                ("folder", "In the folder specified below"),
+                ("root", "Carpeta de la bóveda"),
+                ("current", "La misma carpeta que el archivo actual"),
+                ("folder", "En la carpeta indicada abajo"),
             ],
         ),
     },
@@ -247,22 +277,22 @@ const ITEMS: &[Item] = &[
         section: Files,
         file: File::App,
         key: "newFileFolderPath",
-        name: "Folder for new notes",
-        desc: "Used when the location above is a specific folder.",
+        name: "Carpeta para notas nuevas",
+        desc: "Se usa cuando la ubicación anterior es una carpeta concreta.",
         control: Text,
     },
     Item {
         section: Files,
         file: File::App,
         key: "newLinkFormat",
-        name: "New link format",
-        desc: "How links are written when a file is renamed or moved.",
+        name: "Formato de los enlaces nuevos",
+        desc: "Cómo se escriben los enlaces al renombrar o mover un archivo.",
         control: Choice(
             "shortest",
             &[
-                ("shortest", "Shortest path when possible"),
-                ("relative", "Relative path to file"),
-                ("absolute", "Absolute path in vault"),
+                ("shortest", "Ruta más corta cuando sea posible"),
+                ("relative", "Ruta relativa al archivo"),
+                ("absolute", "Ruta absoluta en la bóveda"),
             ],
         ),
     },
@@ -270,14 +300,14 @@ const ITEMS: &[Item] = &[
         section: Files,
         file: File::App,
         key: "trashOption",
-        name: "Deleted files",
-        desc: "What happens to a note you delete.",
+        name: "Archivos eliminados",
+        desc: "Qué pasa cuando eliminas una nota.",
         control: Choice(
             "local",
             &[
-                ("system", "Move to system trash"),
-                ("local", "Move to vault .trash folder"),
-                ("none", "Permanently delete"),
+                ("system", "Mover a la papelera del sistema"),
+                ("local", "Mover a la carpeta .trash de la bóveda"),
+                ("none", "Eliminar permanentemente"),
             ],
         ),
     },
@@ -285,43 +315,43 @@ const ITEMS: &[Item] = &[
         section: Appearance,
         file: File::Appearance,
         key: "theme",
-        name: "Base color scheme",
-        desc: "Light or dark base for the interface.",
+        name: "Esquema de color base",
+        desc: "Base clara u oscura para la interfaz.",
         control: Choice(
             "obsidian",
-            &[("obsidian", "Dark"), ("moonstone", "Light"), ("system", "Adapt to system")],
+            &[("obsidian", "Oscuro"), ("moonstone", "Claro"), ("system", "Adaptarse al sistema")],
         ),
     },
     Item {
         section: Appearance,
         file: File::Appearance,
         key: "baseFontSize",
-        name: "Font size",
-        desc: "Size of text in notes, in pixels.",
+        name: "Tamaño de fuente",
+        desc: "Tamaño del texto de las notas, en píxeles.",
         control: Number(16.0, 10.0, 30.0),
     },
     Item {
         section: Appearance,
         file: File::Appearance,
         key: "textFontFamily",
-        name: "Text font",
-        desc: "Font for note text, as a comma-separated list. The first installed font is used.",
+        name: "Fuente del texto",
+        desc: "Fuente del texto de las notas, como lista separada por comas. Se usa la primera fuente instalada.",
         control: Text,
     },
     Item {
         section: Appearance,
         file: File::Appearance,
         key: "accentColor",
-        name: "Accent color",
-        desc: "Color for links, tags and highlights, such as #8a5cf5. Empty uses the default.",
+        name: "Color de acento",
+        desc: "Color de enlaces, etiquetas y resaltados, por ejemplo #8a5cf5. Vacío usa el predeterminado.",
         control: Text,
     },
     Item {
         section: Appearance,
         file: File::Appearance,
         key: "lineWidth",
-        name: "Line width",
-        desc: "Maximum width of note text in pixels while Readable line length is on.",
+        name: "Ancho de línea",
+        desc: "Ancho máximo del texto de las notas en píxeles cuando «Longitud de línea legible» está activado.",
         control: Number(800.0, 400.0, 2400.0),
     },
 ];
@@ -391,7 +421,7 @@ impl App {
         file.set(key, v);
         let r = file.save();
         if let Err(e) = r {
-            self.notice = Some(format!("Cannot save {}: {e}", self.setting_file(f).path.display()));
+            self.notice = Some(format!("No se pudo guardar {}: {e}", self.setting_file(f).path.display()));
         }
         self.setting_changed(key);
     }
@@ -460,14 +490,14 @@ impl App {
             let seq = vec![k];
             let other = self.keymap.iter().find(|(s, c)| *s == seq && c != cmd).map(|(_, c)| c.clone());
             if let Some(name) = other.and_then(|c| COMMANDS.iter().find(|x| x.0 == c).map(|x| x.1)) {
-                self.notice = Some(format!("This key is also bound to \"{name}\""));
+                self.notice = Some(format!("Esta tecla también está asignada a \"{name}\""));
             }
         }
     }
 
     fn after_hotkey_change(&mut self) {
         if let Err(e) = self.config.hotkeys.save() {
-            self.notice = Some(format!("Cannot save hotkeys.json: {e}"));
+            self.notice = Some(format!("No se pudo guardar hotkeys.json: {e}"));
         }
         self.keymap = default_keymap(&self.config);
     }
@@ -489,20 +519,20 @@ impl App {
             Number(_, lo, hi) => match text.trim().parse::<f64>() {
                 Ok(n) if n.is_finite() => number_json(n.clamp(lo, hi)),
                 _ => {
-                    self.notice = Some(format!("\"{}\" is not a number", text.trim()));
+                    self.notice = Some(format!("\"{}\" no es un número", text.trim()));
                     return;
                 }
             },
             _ if it.key == "accentColor" && !text.trim().is_empty() => {
                 if theme_engine::parse_color(text.trim()).is_none() {
-                    self.notice = Some(format!("\"{}\" is not a color", text.trim()));
+                    self.notice = Some(format!("\"{}\" no es un color", text.trim()));
                     return;
                 }
                 json!(text.trim())
             }
             // The value goes into a CSS declaration.
             _ if it.key == "textFontFamily" && text.contains([';', '{', '}']) => {
-                self.notice = Some("A font list cannot contain ; { or }".to_string());
+                self.notice = Some("Una lista de fuentes no puede contener ; { ni }".to_string());
                 return;
             }
             _ => json!(text.trim()),
@@ -619,13 +649,13 @@ impl App {
                     let on = self.core_on(arg);
                     self.config.set_core_plugin(arg, !on);
                     if let Err(e) = self.config.core_plugins.save() {
-                        self.notice = Some(format!("Cannot save core-plugins.json: {e}"));
+                        self.notice = Some(format!("No se pudo guardar core-plugins.json: {e}"));
                     }
                 }
             }
             "auto-update" => {
                 if let Err(e) = crate::update::set_auto_check(!crate::update::auto_check()) {
-                    self.notice = Some(format!("Cannot save the update setting: {e}"));
+                    self.notice = Some(format!("No se pudo guardar el ajuste de actualizaciones: {e}"));
                 }
             }
             "hk" => {
@@ -668,7 +698,7 @@ impl App {
                     self.set_hotkey(&cmd, None);
                 }
                 k if k.chars().count() == 1 && !key.ctrl && !key.alt => {
-                    self.notice = Some("A hotkey for a character needs Ctrl or Alt".into());
+                    self.notice = Some("Un atajo para un carácter necesita Ctrl o Alt".into());
                 }
                 _ => {
                     s.capture = None;
@@ -782,16 +812,16 @@ fn items_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, section
 fn appearance_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     items_view(app, dom, parent, ui, Section::Appearance, "");
     let theme = app.config.css_theme().unwrap_or("");
-    let ctl = row(dom, parent, "Theme", "Community theme from .obsidian/themes. Click to cycle.");
-    let label = if theme.is_empty() { "Default" } else { theme };
+    let ctl = row(dom, parent, "Tema", "Tema de la comunidad en .obsidian/themes. Haz clic para cambiar.");
+    let label = if theme.is_empty() { "Predeterminado" } else { theme };
     dom.add(ctl, El::div().class("dropdown").text(format!("{label} ▾")).action("settings:css-theme"));
-    heading(dom, parent, "CSS snippets");
-    let ctl = row(dom, parent, "Reload", "Read themes, snippets and settings from disk again.");
-    button(dom, ctl, "Reload", "settings:reload".into(), false);
+    heading(dom, parent, "Fragmentos CSS");
+    let ctl = row(dom, parent, "Recargar", "Vuelve a leer temas, fragmentos y ajustes del disco.");
+    button(dom, ctl, "Recargar", "settings:reload".into(), false);
     if ui.snippets.is_empty() {
         dom.add(
             parent,
-            El::div().class("setting-item-description").text("No snippets in .obsidian/snippets."),
+            El::div().class("setting-item-description").text("No hay fragmentos en .obsidian/snippets."),
         );
     }
     let enabled = app.config.enabled_snippets();
@@ -802,8 +832,8 @@ fn appearance_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
 }
 
 fn hotkeys_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
-    let ctl = row(dom, parent, "Filter", "Show commands whose name contains this text.");
-    let shown = if ui.filter.is_empty() { "Filter commands…" } else { &ui.filter };
+    let ctl = row(dom, parent, "Filtrar", "Muestra los comandos cuyo nombre contiene este texto.");
+    let shown = if ui.filter.is_empty() { "Filtrar comandos…" } else { &ui.filter };
     input(dom, ctl, "hk-filter", shown, ui.edit.as_ref());
     let needle = ui.filter.to_lowercase();
     let custom = app.config.hotkeys.value.as_object();
@@ -812,9 +842,9 @@ fn hotkeys_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
         let capturing = ui.capture.as_deref() == Some(id);
         let bound = app.hotkey_for(id);
         let label = if capturing {
-            "Press a key (Esc cancels, Backspace clears)".to_string()
+            "Pulsa una tecla (Esc cancela, Backspace borra)".to_string()
         } else if bound.is_empty() {
-            "Blank".to_string()
+            "Sin asignar".to_string()
         } else {
             bound
         };
@@ -823,7 +853,7 @@ fn hotkeys_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
             El::div()
                 .class("setting-hotkey")
                 .class_if(capturing, "is-capturing")
-                .class_if(label == "Blank", "is-blank")
+                .class_if(label == "Sin asignar", "is-blank")
                 .text(label)
                 .action(format!("settings:hk:{id}")),
         );
@@ -868,28 +898,34 @@ fn search_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, needle
         }
     }
     if !found {
-        dom.add(parent, El::div().class("setting-item-description").text("No settings match."));
+        dom.add(parent, El::div().class("setting-item-description").text("Ningún ajuste coincide."));
     }
 }
 
 fn general_view(app: &App, dom: &mut Dom, parent: NodeId) {
-    let ctl = row(dom, parent, "Rustsidian", "Fast native Markdown knowledge base.");
+    let ctl = row(dom, parent, "Rustsidian", "Base de conocimiento Markdown nativa y rápida.");
     dom.add(ctl, El::div().class("setting-value").text(format!("v{}", env!("CARGO_PKG_VERSION"))));
     // The path goes in the description, which wraps; a long one does not fit beside the name.
-    row(dom, parent, "Vault", &app.store.root.display().to_string());
-    let ctl = row(dom, parent, "Notes", "");
+    row(dom, parent, "Bóveda", &app.store.root.display().to_string());
+    let ctl = row(dom, parent, "Notas", "");
     dom.add(ctl, El::div().class("setting-value").text(app.store.index.notes().count().to_string()));
-    let ctl = row(dom, parent, "Performance overlay", "Show the frame time and node count in the corner.");
+    let ctl = row(
+        dom,
+        parent,
+        "Superposición de rendimiento",
+        "Muestra el tiempo por fotograma y el número de nodos en la esquina.",
+    );
     toggle(dom, ctl, app.perf, "settings:perf".into());
-    let ctl = row(dom, parent, "Updates", &app.update.describe());
+    let ctl = row(dom, parent, "Actualizaciones", &app.update.describe());
     match &app.update {
         crate::update::State::Available(r) => {
             button(dom, ctl, &format!("Install {}", r.tag), "app:install-update".into(), true)
         }
-        s if !s.busy() => button(dom, ctl, "Check now", "app:check-for-updates".into(), false),
+        s if !s.busy() => button(dom, ctl, "Buscar ahora", "app:check-for-updates".into(), false),
         _ => {}
     }
-    let ctl = row(dom, parent, "Check for updates automatically", "Once a day, when Rustsidian starts.");
+    let ctl =
+        row(dom, parent, "Buscar actualizaciones automáticamente", "Una vez al día, al iniciar Rustsidian.");
     toggle(dom, ctl, crate::update::auto_check(), "settings:auto-update".into());
 }
 
@@ -907,9 +943,9 @@ pub fn modal(app: &App, dom: &mut Dom) {
     let modal = dom.add(backdrop, modal);
     let tabs = dom.add(modal, El::div().class("vertical-tab-header"));
     let search = ui.edit.as_ref().filter(|e| e.0 == "search").map_or(ui.search.as_str(), |e| e.1.as_str());
-    let shown = if ui.search.is_empty() { "Search settings…" } else { &ui.search };
+    let shown = if ui.search.is_empty() { "Buscar ajustes…" } else { &ui.search };
     input(dom, tabs, "search", shown, ui.edit.as_ref());
-    dom.add(tabs, El::div().class("vertical-tab-header-group-title").text("Options"));
+    dom.add(tabs, El::div().class("vertical-tab-header-group-title").text("Opciones"));
     for (sec, slug, name) in SECTIONS {
         dom.add(
             tabs,
@@ -940,7 +976,7 @@ pub fn modal(app: &App, dom: &mut Dom) {
         container,
         El::div()
             .class("setting-footer")
-            .text("Changes are saved to .obsidian as you make them.  Esc closes."),
+            .text("Los cambios se guardan en .obsidian a medida que los haces.  Esc cierra."),
     );
     let _ = TrashMode::Vault;
 }
