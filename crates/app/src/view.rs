@@ -617,7 +617,7 @@ fn list_block(
     callout: Option<(Color, usize, usize)>,
     math: &[crate::rich::Inline],
     info: &mut ViewInfo,
-) {
+) -> NodeId {
     let parent = match callout {
         Some((color, _, _)) => dom.add(
             view,
@@ -677,6 +677,8 @@ fn list_block(
         });
         attach_math(&shown, math, &mut next, node, info);
     }
+    parent
+
 }
 
 /// Record the formulas whose blanks a text node holds, in the order they appear in it.
@@ -1412,7 +1414,10 @@ pub(crate) fn note_blocks(
     for (i, b) in doc.blocks[first..last].iter().enumerate() {
         info.marks.push((first + i, dom.nodes.len()));
         let root = b.tree.root();
-        let callout_folded = matches!(root.kind, NodeKind::Callout { fold: md_engine::Fold::Closed, .. });
+        // A callout marked Closed by the source is shown folded unless the user
+        // clicked its title to expand it: the toggle lives in `expanded_callouts`.
+        let callout_folded = matches!(root.kind, NodeKind::Callout { fold: md_engine::Fold::Closed, .. })
+            && !app.expanded_callouts.contains(&b.start);
         let (s, e) = (b.start + root.span.start as usize, b.start + root.span.end as usize);
         let class = match root.kind {
             NodeKind::Blank => {
@@ -1576,7 +1581,13 @@ pub(crate) fn note_blocks(
             if callout_folded {
                 callout_lines.truncate(1);
             }
-            list_block(dom, view, first + i, callout_lines, callout, &math, info);
+            let callout_node = list_block(dom, view, first + i, callout_lines, callout, &math, info);
+            // A folded callout is clickable: clicking its title expands/collapses the
+            // content without leaving reading mode or putting the caret in the source.
+            if callout_folded && callout_node != view {
+                let node = &mut dom.nodes[callout_node];
+                node.el.action = Some(format!("callout:toggle:{}", b.start));
+            }
         } else {
             let mut el =
                 El::div().class(class).attr("data-block", &(first + i).to_string()).text(display.clone());
@@ -2456,7 +2467,7 @@ fn diagram_zoom(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate:
             .action("mermaid:zoom-close")
             .style(&format!("width: {w:.0}px; height: {h:.0}px")),
     );
-    crate::rich::add_zoom(dom, modal, src, rich, w - 36.0, h - 64.0);
+    crate::rich::add_zoom(dom, modal, src, rich, w - 36.0, h - 64.0, app.diagram_zoom_pan, app.diagram_zoom_scale);
     dom.add(modal, El::div().class("diagram-zoom-hint").text("Clic o Esc para cerrar"));
 }
 

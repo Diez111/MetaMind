@@ -244,8 +244,11 @@ pub fn add(dom: &mut Dom, parent: NodeId, kind: Kind, info: &mut Vec<Item>) -> N
 /// A diagram on its own, full screen: `w` x `h` of room for the painter to fit it to. It is not
 /// a `cm-line` and does not clip, so a diagram that does not fit the note column is drawn as
 /// large as the window allows.
-pub fn add_zoom(dom: &mut Dom, parent: NodeId, src: &str, info: &mut Vec<Item>, w: f32, h: f32) -> NodeId {
-    let el = El::div().class("rich-block diagram-zoom").style(&format!("width: {w:.0}px; height: {h:.0}px"));
+pub fn add_zoom(dom: &mut Dom, parent: NodeId, src: &str, info: &mut Vec<Item>, w: f32, h: f32, pan: (f32, f32), scale: f32) -> NodeId {
+    let el = El::div().class("rich-block diagram-zoom").style(&format!(
+        "width: {w:.0}px; height: {h:.0}px; margin-left: {mx:.0}px; margin-top: {my:.0}px; transform: scale({sc:.2})",
+        w = w, h = h, mx = pan.0, my = pan.1, sc = scale
+    ));
     let node = dom.add(parent, el);
     info.push(Item { node, kind: Kind::Mermaid(src.to_string()) });
     node

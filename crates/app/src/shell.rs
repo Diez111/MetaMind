@@ -515,6 +515,12 @@ pub struct App {
     pub window_w: f32,
     /// Source of the Mermaid diagram shown full screen, after a click on its block.
     pub diagram_zoom: Option<String>,
+    /// Pan offset (x, y) of the diagram zoom overlay.
+    pub diagram_zoom_pan: (f32, f32),
+    /// Zoom scale of the diagram zoom overlay (1.0 = fit).
+    pub diagram_zoom_scale: f32,
+    /// Blocks whose callout was expanded by the user (block starts). Toggled by click.
+    pub expanded_callouts: std::collections::HashSet<usize>,
     /// Off in headless use (tests, screenshots) so they never touch the user's clipboard;
     /// copies then stay inside the application.
     pub system_clipboard: bool,
@@ -728,6 +734,9 @@ impl App {
             menu: None,
             window_w: 1280.0,
             diagram_zoom: None,
+            diagram_zoom_pan: (0.0, 0.0),
+            diagram_zoom_scale: 1.0,
+            expanded_callouts: Default::default(),
             system_clipboard: false,
             clip: String::new(),
         })
@@ -1312,6 +1321,15 @@ pub fn close_tab(&mut self, i: usize) {
             self.tree = None;
         }
                 // ---- in-app video player ----
+        // Toggle a folded callout: clicking its title expands/collapses the content.
+        if let Some(block) = command.strip_prefix("callout:toggle:").and_then(|b| b.parse::<usize>().ok()) {
+            if self.expanded_callouts.contains(&block) {
+                self.expanded_callouts.remove(&block);
+            } else {
+                self.expanded_callouts.insert(block);
+            }
+            return;
+        }
         if let Some(rest) = command.strip_prefix("video:") {
             if let Some((note, rel)) = rest.strip_prefix("open:").and_then(|r| r.split_once('|')) {
                 let path = self.store.abs(rel);
@@ -1778,6 +1796,8 @@ if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
         // A diagram shown full screen is a modal of its own: Escape (or a click on it) closes it.
         if self.diagram_zoom.is_some() && key.key == "Escape" {
             self.diagram_zoom = None;
+                self.diagram_zoom_pan = (0.0, 0.0);
+                self.diagram_zoom_scale = 1.0;
             return true;
         }
         // Only set while the editor has focus; see `after_editor_input`.
