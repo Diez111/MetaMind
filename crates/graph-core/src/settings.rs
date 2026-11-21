@@ -34,8 +34,8 @@ impl Default for GraphSettings {
             color_groups: Vec::new(),
             forces: Forces::default(),
             show_arrows: false,
-            text_fade: 0.0,
-            node_size: 1.0,
+            text_fade: 0.4,
+            node_size: 1.2,
             line_size: 1.0,
             scale: 1.0,
         }

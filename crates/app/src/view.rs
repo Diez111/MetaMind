@@ -2247,7 +2247,7 @@ fn overlays(app: &App, dom: &mut Dom, viewport_h: f32) {
         let t = app.anims.t("prompt");
         let mut el = El::div().class("prompt");
         if t < 1.0 {
-            el = el.style(&format!("opacity: {t:.3}; top: {:.1}px", 68.0 + 12.0 * t));
+            el = el.style(&format!("top: {:.1}px", 68.0 + 12.0 * t));
         }
         let modal = dom.add(0, el);
         let placeholder = match p.kind {
@@ -2328,7 +2328,7 @@ fn overlays(app: &App, dom: &mut Dom, viewport_h: f32) {
         let t = app.anims.t("notice");
         let mut el = El::div().class("notice").attr("role", "status");
         if t < 1.0 {
-            el = el.style(&format!("opacity: {t:.3}; top: {:.1}px", 12.0 * t));
+            el = el.style(&format!("top: {:.1}px", 12.0 * t));
         }
         let toast = dom.add(0, el);
         dom.add(toast, icons::el("warning"));
