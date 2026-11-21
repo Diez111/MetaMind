@@ -158,3 +158,31 @@ fn percent_width_inside_a_row_child_stays_bounded() {
     let side = rect("side");
     assert!(side.w > 0.0 && side.x + side.w <= 640.0, "{side:?}");
 }
+
+#[test]
+fn a_percent_width_cell_is_measured_at_the_width_it_gets() {
+    let mut theme = Theme::new();
+    theme.add_sheet(
+        "test",
+        "body { font-size: 16px; line-height: 24px } .row { display: flex; width: 600px }
+         .narrow { width: 30% } .wide { width: 70% }",
+    );
+    let mut fonts = Fonts::new();
+    let mut d = Dom::new();
+    let row = d.add(0, El::div().class("row").id("row"));
+    let long = "palabra ".repeat(60).trim_end().to_string();
+    d.add(row, El::div().class("narrow").id("n").text(long));
+    d.add(row, El::div().class("wide").id("w").text("corto"));
+    d.style(&theme, Env::default());
+    d.layout(&mut fonts, 600.0, 800.0);
+    let rect = |id: &str| d.nodes[d.by_id(id).unwrap()].rect;
+    let (n, w) = (rect("n"), rect("w"));
+    // The declared percentages, not the natural widths of the text, decide each cell's width.
+    assert!((n.w - 180.0).abs() < 1.0, "{n:?}");
+    assert!((w.w - 420.0).abs() < 1.0, "{w:?}");
+    // Its height is the height the text takes once it wraps in *that* width: a long cell in a
+    // narrow column used to be measured at the width of its unwrapped text, and the row came out
+    // hundreds of pixels short (or tall) of what it really held.
+    assert!(n.h > 300.0, "{n:?}");
+    assert!(rect("row").h >= n.h, "the row holds its tallest cell: {:?} {n:?}", rect("row"));
+}

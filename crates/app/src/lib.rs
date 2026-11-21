@@ -151,6 +151,21 @@ impl App {
         self.hover_preview = None;
         if let Some((node, action)) = frame.dom.action_at(x, y) {
             let action = action.to_string();
+            if action == "mermaid:zoom" {
+                // The block's source is kept with the item that paints it; the full-screen view
+                // re-renders the same diagram with the width of the window.
+                self.diagram_zoom = frame.info.rich.iter().find(|it| it.node == node).and_then(|it| {
+                    match &it.kind {
+                        crate::rich::Kind::Mermaid(src) => Some(src.clone()),
+                        _ => None,
+                    }
+                });
+                return;
+            }
+            if action == "mermaid:zoom-close" {
+                self.diagram_zoom = None;
+                return;
+            }
             if action == "video:scrub" {
                 self.video.scrub_press(frame.dom.nodes[node].rect, x);
                 return;

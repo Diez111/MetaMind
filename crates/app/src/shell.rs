@@ -507,6 +507,8 @@ pub struct App {
     pub menu: Option<crate::menu::Menu>,
     /// Logical window width of the last frame, to keep menus on screen.
     pub window_w: f32,
+    /// Source of the Mermaid diagram shown full screen, after a click on its block.
+    pub diagram_zoom: Option<String>,
     /// Off in headless use (tests, screenshots) so they never touch the user's clipboard;
     /// copies then stay inside the application.
     pub system_clipboard: bool,
@@ -717,6 +719,7 @@ impl App {
             switch_vault: false,
             menu: None,
             window_w: 1280.0,
+            diagram_zoom: None,
             system_clipboard: false,
             clip: String::new(),
         })
@@ -1742,6 +1745,11 @@ if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
         }
         if let Some(r) = self.modal_key(&key) {
             return r;
+        }
+        // A diagram shown full screen is a modal of its own: Escape (or a click on it) closes it.
+        if self.diagram_zoom.is_some() && key.key == "Escape" {
+            self.diagram_zoom = None;
+            return true;
         }
         // Only set while the editor has focus; see `after_editor_input`.
         if let Some(r) = self.suggest_key(&key) {

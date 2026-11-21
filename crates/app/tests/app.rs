@@ -863,3 +863,33 @@ fn reading_view_draws_inline_backgrounds_and_strikes() {
     assert_eq!(node.overlays.len(), 2, "highlight and inline code backgrounds");
     assert_eq!(node.overlays_top.len(), 1, "strikethrough line");
 }
+
+#[test]
+fn a_numbered_heading_keeps_its_number_in_the_heading_style() {
+    // Live preview hides the `## ` marker, so the display of this heading starts with `10.`,
+    // which a rendered list would take for an ordered-item marker. It is part of the heading:
+    // it has to share the heading's run, weight, size and baseline.
+    let (_d, mut app) = note("intro\n\n## 10. Gates (all prefixed)\n\nThe body.\n", "{}");
+    cursor_at(&mut app, "intro");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(900, 700).unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    assert!(
+        !frame.dom.nodes.iter().any(|n| n.el.classes.iter().any(|c| c == "list-item-marker")),
+        "a heading number is not a list marker"
+    );
+    let block = frame.info.blocks.iter().find(|b| b.display.contains("Gates")).unwrap();
+    let node = &frame.dom.nodes[block.node];
+    assert_eq!(node.el.text.as_deref(), Some("10. Gates (all prefixed)"));
+    assert!(
+        node.el.attrs.iter().any(|(k, v)| k == "aria-level" && v == "2"),
+        "still an H2: {:?}",
+        node.el.attrs
+    );
+    assert!(!node.el.spans.is_empty(), "the heading has styled runs");
+    assert!(
+        node.el.spans.iter().all(|s| s.bold && s.scale > 1.0),
+        "every run of the heading is bold and scaled: {:?}",
+        node.el.spans
+    );
+}
