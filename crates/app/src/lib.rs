@@ -91,7 +91,7 @@ pub fn render_window(
     }
     view::add_graph(app, &mut dom, &info);
     canvasview::add_canvas(app, &mut dom, &info);
-    rich::paint(&mut dom, &info.rich, fonts);
+    rich::paint(&mut dom, &info.rich, &info.inline, fonts);
     let scene = dom.paint();
     let clear = dom.nodes[0].style.background;
     rustsidian_ui::render(&scene, fonts, pixmap, scale, clear);

@@ -529,13 +529,7 @@ impl Dom {
     /// Assign `rect` (border box) to `id` and lay out its children inside it.
     /// The longest prefix of `text` that fits in `avail` once `…` is added, or `None` when the
     /// whole text fits already.
-    fn shorten(
-        &self,
-        fonts: &mut Fonts,
-        id: NodeId,
-        text: &str,
-        avail: f32,
-    ) -> Option<String> {
+    fn shorten(&self, fonts: &mut Fonts, id: NodeId, text: &str, avail: f32) -> Option<String> {
         let n = &self.nodes[id];
         let (w, _) = fonts.measure(text, &n.el.spans, &n.style.text, None);
         if w <= avail || avail <= 0.0 {
