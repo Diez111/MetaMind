@@ -1260,6 +1260,7 @@ pub(crate) fn note_blocks(
     for (i, b) in doc.blocks[first..last].iter().enumerate() {
         info.marks.push((first + i, dom.nodes.len()));
         let root = b.tree.root();
+        let callout_folded = matches!(root.kind, NodeKind::Callout { fold: md_engine::Fold::Closed, .. });
         let (s, e) = (b.start + root.span.start as usize, b.start + root.span.end as usize);
         let class = match root.kind {
             NodeKind::Blank => {
@@ -1350,6 +1351,7 @@ pub(crate) fn note_blocks(
                     block_decos.push(hide(first_end, e));
                 }
                 callout = Some((callout_color(&buf.slice(ks, ke)), shown_s, shown_e));
+
             }
         }
         // The `#`s of a heading are markup, not content: they stay out of the way unless the
@@ -1415,7 +1417,13 @@ pub(crate) fn note_blocks(
         // A rendered list is drawn item by item: a single text run cannot hang the wrapped
         // lines under the item's text, and the bullet would be the source's own `-`.
         if rendered && !folded_here && has_list_lines(&display) {
-            list_block(dom, view, first + i, cut_lines(&display, &spans, &map), callout, &math, info);
+            let mut callout_lines = cut_lines(&display, &spans, &map);
+            // A closed callout shows its title and nothing else: `list_block` gives every line
+            // its own child node, which the block's hide decorations would not reach.
+            if callout_folded {
+                callout_lines.truncate(1);
+            }
+            list_block(dom, view, first + i, callout_lines, callout, &math, info);
         } else {
             let mut el =
                 El::div().class(class).attr("data-block", &(first + i).to_string()).text(display.clone());
