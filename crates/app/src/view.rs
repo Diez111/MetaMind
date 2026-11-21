@@ -2299,7 +2299,7 @@ fn overlays(app: &App, dom: &mut Dom, viewport_h: f32) {
         let y = if m.y + m.height() > viewport_h { (viewport_h - m.height()).max(0.0) } else { m.y };
         let t = app.anims.t("menu");
         let el = El::div().class("menu").style(&format!(
-            "left: {x:.1}px; top: {:.1}px; width: {:.0}px; opacity: {t:.3}",
+            "left: {x:.1}px; top: {:.1}px; width: {:.0}px",
             y - 4.0 * (1.0 - t),
             crate::menu::WIDTH
         ));
