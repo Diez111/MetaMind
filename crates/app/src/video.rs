@@ -782,6 +782,15 @@ pub fn widget(app: &crate::App, dom: &mut Dom, view: NodeId, rel: &str) -> NodeI
     dom.add(track, El::div().class("video-player-fill").style(&format!("flex-grow: {t:.4}")));
     dom.add(track, El::div().class("video-player-thumb"));
     dom.add(track, El::div().class("video-player-rest").style(&format!("flex-grow: {:.4}", 1.0 - t)));
+    // Fullscreen: opens the video in a modal at the window size, like the mermaid zoom.
+    let fullscreen = dom.add(
+        controls,
+        El::div()
+            .class("clickable-icon video-player-btn")
+            .attr("aria-label", "Pantalla completa")
+            .action("video:fullscreen"),
+    );
+    dom.add(fullscreen, icons::el("maximize"));
     let close = dom.add(
         controls,
         El::div()

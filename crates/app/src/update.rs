@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::{channel, Receiver};
 
-pub const LATEST_URL: &str = "https://api.github.com/repos/siddarth1872004/RustSidian/releases/latest";
+pub const LATEST_URL: &str = "https://api.github.com/repos/Diez111/MetMind/releases/latest";
 pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
 /// Automatic checks run at most this often.
 const CHECK_EVERY_MS: u64 = 24 * 60 * 60 * 1000;
