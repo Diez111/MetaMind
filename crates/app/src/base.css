@@ -242,7 +242,7 @@ body {
 .menu-item-title { flex-grow: 1; overflow: hidden }
 .menu-item-hotkey { color: var(--text-faint); font-size: var(--font-ui-smaller) }
 .menu-separator { height: 1px; margin: 4px 6px; background-color: var(--background-modifier-border) }
-.notice { position: absolute; top: 74px; right: 16px; width: 420px; max-width: 420px; display: flex; align-items: flex-start; gap: 10px; background-color: var(--rs-toast); border: 1px solid var(--rs-rule-strong); border-left: 3px solid var(--rs-warning); border-radius: var(--radius-m); padding: 10px 12px; color: var(--text-normal); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35) }
+.notice { position: absolute; bottom: 46px; top: auto; right: 16px; width: 420px; max-width: 420px; display: flex; align-items: flex-start; gap: 10px; background-color: var(--rs-toast); border: 1px solid var(--rs-rule-strong); border-left: 3px solid var(--rs-warning); border-radius: var(--radius-m); padding: 10px 12px; color: var(--text-normal); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35) }
 .notice .svg-icon { color: var(--rs-warning); width: 15px; height: 15px; margin-top: 1px }
 .notice-text { flex-grow: 1; font-size: 0.86em; line-height: 1.5 }
 .notice-close { width: 20px; flex-shrink: 0; color: var(--text-faint); text-align: center; font-size: 1.05em }
@@ -344,7 +344,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .metadata-properties-heading { color: var(--text-faint); font-size: 0.78em; font-weight: 600; padding: 4px 0 }
 .metadata-property { display: flex; align-items: center; min-height: 30px; gap: 10px }
 .metadata-property-key { width: 132px; flex-shrink: 0; color: var(--text-muted); font-size: 0.82em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-.metadata-property-value { flex-grow: 1; color: var(--text-normal); font-size: 0.9em; overflow: hidden }
+.metadata-property-value { flex-grow: 1; min-width: 0; color: var(--text-normal); font-size: 0.9em; overflow: hidden }
 .metadata-property-remove { width: 22px; flex-shrink: 0; color: var(--text-faint); text-align: center }
 .metadata-property-remove:hover { color: var(--text-normal) }
 .metadata-input, .metadata-input-readonly { padding: 2px 6px; border-radius: var(--radius-s); white-space: nowrap }
@@ -354,6 +354,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .metadata-input-readonly { color: var(--text-muted) }
 .multi-select-container { display: flex; gap: 4px; align-items: center }
 .multi-select-container { flex-wrap: wrap; row-gap: 4px }
+.multi-select-container { display: flex; flex-wrap: wrap; gap: 3px 4px; align-items: center }
 .multi-select-pill { display: flex; align-items: center; gap: 4px; padding: 1px 9px; border-radius: 999px; background-color: var(--rs-pill); color: var(--text-normal); font-size: 0.8em }
 .multi-select-pill-remove-button { color: var(--text-faint) }
 .multi-select-pill-remove-button:hover { color: var(--text-normal) }

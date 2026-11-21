@@ -657,15 +657,15 @@ fn status_bar_shows_word_goal_and_reading_time() {
             .nodes
             .iter()
             .filter_map(|n| n.el.text.clone())
-            .filter(|t| t.contains("word") || t.contains("min read"))
+            .filter(|t| t.contains("palabra") || t.contains("min de lectura"))
             .collect()
     };
     app.run("open:Goal.md");
     let s = status(&mut app);
-    assert!(s.contains(&"450 / 1000 words".to_string()) && s.contains(&"3 min read".to_string()), "{s:?}");
+    assert!(s.contains(&"450 / 1000 palabras".to_string()) && s.contains(&"3 min de lectura".to_string()), "{s:?}");
     app.run("open:Plain.md");
     let s = status(&mut app);
-    assert!(s.contains(&"3 words".to_string()) && s.contains(&"1 min read".to_string()), "{s:?}");
+    assert!(s.contains(&"3 palabras".to_string()) && s.contains(&"1 min de lectura".to_string()), "{s:?}");
 }
 
 #[test]

@@ -287,7 +287,7 @@ pub fn render(app: &App, dom: &mut Dom, parent: NodeId, mode: ViewMode, text: &s
         let text = if e.buf.is_empty() { "Property name▏".to_string() } else { shown(e) };
         dom.add(kcell, El::div().class("metadata-input is-editing").text(text));
     } else {
-        dom.add(wrap, El::div().class("metadata-add-button").text("+ Add property").action("properties:add"));
+        dom.add(wrap, El::div().class("metadata-add-button").text("+ Agregar propiedad").action("properties:add"));
     }
     true
 }

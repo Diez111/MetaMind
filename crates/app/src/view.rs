@@ -1134,9 +1134,9 @@ fn editor(
         return;
     };
     let mode_label = match tab.mode {
-        ViewMode::Source => "source",
-        ViewMode::LivePreview => "live preview",
-        ViewMode::Reading => "reading",
+        ViewMode::Source => "fuente",
+        ViewMode::LivePreview => "vista previa",
+        ViewMode::Reading => "lectura",
     };
     let header = dom.add(
         parent,
@@ -2206,7 +2206,7 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
         if let Some(label) = t.vim_label() {
             dom.add(status, El::div().class("status-bar-item").text(label));
         }
-        dom.add(status, El::div().class("status-bar-item").text(format!("{backlinks} backlinks")));
+        dom.add(status, El::div().class("status-bar-item").text(format!("{backlinks} retroenlaces")));
         let goal =
             t.meta.as_ref().and_then(|(_, m)| m.frontmatter.as_ref()?.iter().find(|(k, _)| k == "word-goal"));
         let goal = goal.and_then(|(_, v)| match v {
@@ -2215,17 +2215,17 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
             _ => None,
         });
         let count = match goal {
-            Some(g) => format!("{words} / {g} words"),
-            None => format!("{words} words"),
+            Some(g) => format!("{words} / {g} palabras"),
+            None => format!("{words} palabras"),
         };
         dom.add(status, El::div().class("status-bar-item").text(count));
         // 200 words a minute, a common estimate for silent reading.
-        dom.add(status, El::div().class("status-bar-item").text(format!("{} min read", words.div_ceil(200))));
+        dom.add(status, El::div().class("status-bar-item").text(format!("{} min de lectura", words.div_ceil(200))));
         dom.add(
             status,
             El::div()
                 .class("status-bar-item")
-                .text(format!("{} characters", t.editor.buf.rope().len_chars())),
+                .text(format!("{} caracteres", t.editor.buf.rope().len_chars())),
         );
     }
     for s in &app.plugins.ext.reg.status {
@@ -2233,7 +2233,7 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
     }
     dom.add(
         status,
-        El::div().class("status-bar-item").text(format!("{} notes", app.store.index.notes().count())),
+        El::div().class("status-bar-item").text(format!("{} notas", app.store.index.notes().count())),
     );
 }
 
