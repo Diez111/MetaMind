@@ -369,3 +369,85 @@ fn status_bar_shows_a_spinner_while_the_vault_loads() {
     }
     assert!(app.busy.is_none(), "the spinner clears itself");
 }
+
+#[test]
+fn every_control_in_the_panel_sits_on_one_axis() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    app.run("settings:section:appearance");
+    let frame = draw(&mut app);
+    let has = |n: &rustsidian_ui::dom::Node, c: &str| n.el.classes.iter().any(|x| x == c);
+    // The controls of the panel, and the box each one sits in.
+    let mut rights: Vec<f32> = Vec::new();
+    for n in frame.dom.nodes.iter().filter(|n| has(n, "setting-item-control")) {
+        rights.push(n.rect.x + n.rect.w);
+    }
+    assert!(rights.len() >= 6, "{rights:?}");
+    let (min, max) = rights.iter().fold((f32::MAX, f32::MIN), |(a, b), &r| (a.min(r), b.max(r)));
+    assert!(max - min < 0.5, "the control column is not one axis: {rights:?}");
+    // Every text input of a row has the same width, so the column reads as a column.
+    let widths: Vec<f32> = frame
+        .dom
+        .nodes
+        .iter()
+        .filter(|n| has(n, "setting-input"))
+        .filter(|n| {
+            n.parent.is_some_and(|p| has(&frame.dom.nodes[p], "setting-item-control"))
+        })
+        .map(|n| n.rect.w)
+        .collect();
+    assert!(widths.len() >= 3, "{widths:?}");
+    let (min, max) = widths.iter().fold((f32::MAX, f32::MIN), |(a, b), &r| (a.min(r), b.max(r)));
+    assert!(max - min < 0.5, "the inputs are not one width: {widths:?}");
+    // The colour chip sits inside its control instead of hanging off the column.
+    let chip = frame
+        .dom
+        .nodes
+        .iter()
+        .find(|n| has(n, "color-chip"))
+        .expect("the accent colour has a chip");
+    let owner = frame.dom.nodes[chip.parent.expect("the chip has a parent")].rect;
+    assert!(
+        chip.rect.x >= owner.x && chip.rect.x + chip.rect.w <= owner.x + owner.w + 0.5,
+        "the chip is outside its control: {:?} in {owner:?}",
+        chip.rect
+    );
+}
+
+#[test]
+fn the_settings_sidebar_has_an_icon_for_every_category() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    let frame = draw(&mut app);
+    let icons: Vec<_> = frame
+        .dom
+        .nodes
+        .iter()
+        .filter(|n| n.el.classes.iter().any(|c| c == "vertical-tab-nav-icon"))
+        .collect();
+    assert_eq!(icons.len(), 5, "every category has an icon");
+    // The empty square a missing glyph leaves behind is the bug this guards against.
+    for icon in icons {
+        let mut x0 = f32::MAX;
+        let mut x1 = f32::MIN;
+        let mut y0 = f32::MAX;
+        let mut y1 = f32::MIN;
+        for c in &icon.draw {
+            if let rustsidian_ui::Cmd::Lines { segs, .. } = c {
+                for s in segs {
+                    x0 = x0.min(s[0]).min(s[2]);
+                    x1 = x1.max(s[0]).max(s[2]);
+                    y0 = y0.min(s[1]).min(s[3]);
+                    y1 = y1.max(s[1]).max(s[3]);
+                }
+            }
+        }
+        assert!(x1 - x0 > 4.0 && y1 - y0 > 4.0, "a category icon draws nothing: {x0}..{x1}");
+    }
+    // The footer that leaked another product's name is gone, and the note is said once.
+    let notes = texts(&frame, "settings-nav-note");
+    assert_eq!(notes, ["Los cambios se guardan al instante."], "{notes:?}");
+    assert!(texts(&frame, "setting-footer").is_empty());
+}

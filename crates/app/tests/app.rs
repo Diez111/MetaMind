@@ -540,7 +540,9 @@ fn folding() {
     // Folding from inside a section folds the section and moves the cursor to its heading.
     app.run("editor:toggle-fold");
     let s = shown(&mut app);
-    assert!(s.iter().any(|t| t.starts_with("# A") && t.ends_with('⋯')), "{s:?}");
+    // The heading keeps its rendering while the caret sits in it: the `#`s are markup, not text.
+    assert!(s.iter().any(|t| t.starts_with("A") && t.ends_with('⋯')), "{s:?}");
+    assert!(!s.iter().any(|t| t.contains("# A")), "{s:?}");
     assert!(!s.iter().any(|t| t.contains("alpha") || t.contains("beta")), "{s:?}");
     assert!(s.iter().any(|t| t.contains("C")), "{s:?}");
     assert_eq!(app.tab().unwrap().editor.buf.sels[0].head, 10);
@@ -892,4 +894,256 @@ fn a_numbered_heading_keeps_its_number_in_the_heading_style() {
         "every run of the heading is bold and scaled: {:?}",
         node.el.spans
     );
+}
+
+/// The box a node's painted commands occupy, in window coordinates.
+fn draw_box(frame: &Frame, node: usize) -> Option<(f32, f32, f32, f32)> {
+    let mut b: Option<(f32, f32, f32, f32)> = None;
+    let mut grow = |x: f32, y: f32| {
+        b = Some(match b {
+            None => (x, y, x, y),
+            Some((x0, y0, x1, y1)) => (x0.min(x), y0.min(y), x1.max(x), y1.max(y)),
+        });
+    };
+    for c in &frame.dom.nodes[node].draw {
+        match c {
+            Cmd::Text { x, y, .. } => grow(*x, *y),
+            Cmd::Fill { rect, .. } => {
+                grow(rect.x, rect.y);
+                grow(rect.x + rect.w, rect.y + rect.h);
+            }
+            Cmd::Lines { segs, .. } => {
+                for s in segs {
+                    grow(s[0], s[1]);
+                    grow(s[2], s[3]);
+                }
+            }
+            _ => {}
+        }
+    }
+    b
+}
+
+/// The action of the innermost node under a point, the same way a click finds it.
+fn action_at(frame: &Frame, x: f32, y: f32) -> Option<String> {
+    frame.dom.action_at(x, y).map(|(_, a)| a.to_string())
+}
+
+#[test]
+fn a_click_on_a_folded_callout_shows_its_body_in_place() {
+    let src = "intro\n\n> [!success]- Solución\n> Cuerpo con $x^2$ aqui.\n\nAfter\n";
+    let (_d, mut app) = note(src, "{}");
+    cursor_at(&mut app, "After");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(900, 700).unwrap();
+
+    // Folded: the title is all there is, and the formula of the hidden body is not collected.
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let shown: Vec<String> = frame.info.blocks.iter().map(|b| b.display.clone()).collect();
+    assert!(shown.contains(&"Solución".to_string()), "{shown:?}");
+    assert!(!shown.iter().any(|t| t.contains("Cuerpo")), "the body is hidden: {shown:?}");
+    assert!(frame.info.inline.is_empty(), "math of a folded body is not typeset");
+
+    // The folded callout carries the toggle on the box the reader sees.
+    let node = frame
+        .dom
+        .nodes
+        .iter()
+        .position(|n| n.el.action.as_deref().is_some_and(|a| a.starts_with("callout:toggle:")))
+        .expect("a folded callout is clickable");
+    let action = frame.dom.nodes[node].el.action.clone().unwrap();
+    let r = frame.dom.nodes[node].rect;
+    assert_eq!(action_at(&frame, r.x + 4.0, r.y + 4.0).as_deref(), Some(action.as_str()));
+
+    let caret = app.tab().unwrap().editor.buf.sels[0].head;
+    app.click(&frame, &mut fonts, r.x + 4.0, r.y + 4.0, false);
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let shown: Vec<String> = frame.info.blocks.iter().map(|b| b.display.clone()).collect();
+    // The body is on screen, in place, and the block is still rendered: no markdown showed up.
+    assert!(shown.iter().any(|t| t.contains("Cuerpo con")), "{shown:?}");
+    assert!(!shown.iter().any(|t| t.contains("[!success]")), "the source never shows: {shown:?}");
+    assert!(!shown.iter().any(|t| t.trim_start().starts_with('>')), "{shown:?}");
+    // Its formula is typeset again, because the body it sits in is visible.
+    assert_eq!(frame.info.inline.len(), 1, "the formula of the shown body is collected");
+    // The caret did not move into the block: the click was the handle, not the text.
+    assert_eq!(app.tab().unwrap().editor.buf.sels[0].head, caret);
+
+    // The same click folds it back: the title line carries the toggle while the body is shown.
+    let title = frame.info.blocks.iter().find(|b| b.display == "Solución").unwrap().node;
+    let tr = frame.dom.nodes[title].rect;
+    app.click(&frame, &mut fonts, tr.x + 2.0, tr.y + 2.0, false);
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let shown: Vec<String> = frame.info.blocks.iter().map(|b| b.display.clone()).collect();
+    assert!(shown.contains(&"Solución".to_string()), "{shown:?}");
+    assert!(!shown.iter().any(|t| t.contains("Cuerpo")), "folded again: {shown:?}");
+    assert!(frame.info.inline.is_empty());
+
+    // In reading mode the same click toggles it, and no caret is involved.
+    app.tabs[0].mode = ViewMode::Reading;
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let node = frame
+        .dom
+        .nodes
+        .iter()
+        .position(|n| n.el.action.as_deref().is_some_and(|a| a.starts_with("callout:toggle:")))
+        .expect("clickable in reading mode too");
+    let r = frame.dom.nodes[node].rect;
+    app.click(&frame, &mut fonts, r.x + 4.0, r.y + 4.0, false);
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let shown: Vec<String> = frame.info.blocks.iter().map(|b| b.display.clone()).collect();
+    assert!(shown.iter().any(|t| t.contains("Cuerpo con")), "{shown:?}");
+}
+
+#[test]
+fn the_callout_toggle_is_kept_per_note() {
+    let d = tempfile::tempdir().unwrap();
+    fs::create_dir_all(d.path().join(".obsidian")).unwrap();
+    fs::write(d.path().join(".obsidian/app.json"), "{}").unwrap();
+    // The same offsets in both notes, so an offset-keyed toggle would leak between them.
+    let text = "intro\n\n> [!success]- Solución\n> Cuerpo.\n";
+    fs::write(d.path().join("A.md"), text).unwrap();
+    fs::write(d.path().join("B.md"), text).unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("A.md");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(900, 700).unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let action = frame
+        .dom
+        .nodes
+        .iter()
+        .find_map(|n| n.el.action.clone().filter(|a| a.starts_with("callout:toggle:")))
+        .expect("the callout can be opened");
+    app.run(&action);
+    let shown: Vec<String> =
+        render(&mut app, &mut fonts, &mut pm, 1.0).info.blocks.iter().map(|b| b.display.clone()).collect();
+    assert!(shown.iter().any(|t| t.contains("Cuerpo")), "{shown:?}");
+
+    // Another note with the same layout opens folded: the toggle did not follow the file.
+    app.open_note("B.md");
+    let shown: Vec<String> =
+        render(&mut app, &mut fonts, &mut pm, 1.0).info.blocks.iter().map(|b| b.display.clone()).collect();
+    assert!(shown.contains(&"Solución".to_string()), "{shown:?}");
+    assert!(!shown.iter().any(|t| t.contains("Cuerpo")), "{shown:?}");
+}
+
+#[test]
+fn a_diagram_opens_pans_zooms_and_swaps_to_its_source() {
+    let src = "intro\n\n```mermaid\ngraph LR\n  A --> B\n  B --> C\n```\n";
+    let (_d, mut app) = note(src, "{}");
+    cursor_at(&mut app, "intro");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(900, 700).unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let block = frame
+        .dom
+        .nodes
+        .iter()
+        .position(|n| n.el.action.as_deref() == Some("mermaid:zoom"))
+        .expect("the block opens the full-screen view");
+    let br = frame.dom.nodes[block].rect;
+    app.click(&frame, &mut fonts, br.x + 6.0, br.y + 6.0, false);
+    assert!(app.diagram_zoom.is_some(), "a click on the block opens it");
+
+    // The drawing gets a surface of its own: a click on it grabs it instead of closing the view.
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let zoom = frame
+        .info
+        .rich
+        .iter()
+        .find(|it| frame.dom.nodes[it.node].el.action.as_deref() == Some("mermaid:drag"))
+        .map(|it| it.node)
+        .expect("the drawing has its own action");
+    let zr = frame.dom.nodes[zoom].rect;
+    let (cx, cy) = (zr.x + zr.w / 2.0, zr.y + zr.h / 2.0);
+    let fitted = draw_box(&frame, zoom).expect("the diagram is painted");
+    app.click(&frame, &mut fonts, cx, cy, false);
+    assert!(app.diagram_zoom.is_some(), "a click on the diagram closed the view");
+
+    // The same press grabs it: dragging moves it, and the painter draws it where it was left.
+    app.drag(&frame, &mut fonts, cx + 40.0, cy + 24.0);
+    app.release();
+    assert_eq!(app.diagram_zoom_pan, (40.0, 24.0));
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let moved = draw_box(&frame, zoom).expect("the diagram is painted");
+    assert!((moved.0 - fitted.0 - 40.0).abs() < 1.5, "{moved:?} vs {fitted:?}");
+    assert!((moved.1 - fitted.1 - 24.0).abs() < 1.5, "{moved:?} vs {fitted:?}");
+
+    // The wheel zooms it, and the drawing grows with the factor.
+    app.wheel(&frame, cx, cy, -6.0);
+    assert!(app.diagram_zoom_scale > 1.0, "scale {}", app.diagram_zoom_scale);
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let zoomed = draw_box(&frame, zoom).expect("the diagram is painted");
+    assert!(zoomed.2 - zoomed.0 > moved.2 - moved.0, "{zoomed:?} vs {moved:?}");
+    // Zooming out runs into a floor instead of turning the diagram inside out.
+    for _ in 0..40 {
+        app.wheel(&frame, cx, cy, 20.0);
+    }
+    assert_eq!(app.diagram_zoom_scale, rustsidian_app::MIN_DIAGRAM_ZOOM);
+
+    // A double click inside the view shows its source, in the same box. The view has been open
+    // for a while by now, so the pair of presses is its own and not the block's.
+    std::thread::sleep(std::time::Duration::from_millis(420));
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    app.click(&frame, &mut fonts, cx, cy, false);
+    app.click(&frame, &mut fonts, cx, cy, false);
+    assert!(app.diagram_zoom_source, "the view did not swap to its source");
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let texts: Vec<&str> = frame.dom.nodes.iter().filter_map(|n| n.el.text.as_deref()).collect();
+    assert!(texts.iter().any(|t| t.contains("graph LR")), "the source is not on screen: {texts:?}");
+    assert!(frame.info.rich.len() < 2, "the drawing is not painted while the source shows");
+
+    // Escape closes it and forgets how it was left.
+    app.key(key("Escape"));
+    assert!(app.diagram_zoom.is_none());
+    assert_eq!(app.diagram_zoom_pan, (0.0, 0.0));
+    assert_eq!(app.diagram_zoom_scale, 1.0);
+}
+
+#[test]
+fn a_double_click_swaps_a_diagram_for_its_source_in_place() {
+    let src = "intro\n\n```mermaid\ngraph LR\n  A --> B\n  B --> C\n```\n\nAfter\n";
+    let (_d, mut app) = note(src, "{}");
+    cursor_at(&mut app, "After");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(900, 700).unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let block = frame
+        .dom
+        .nodes
+        .iter()
+        .position(|n| n.el.action.as_deref() == Some("mermaid:zoom"))
+        .expect("the block opens the full-screen view");
+    let br = frame.dom.nodes[block].rect;
+    let (x, y) = (br.x + 6.0, br.y + 6.0);
+    // Two presses in the same spot: the second is the double click.
+    app.click(&frame, &mut fonts, x, y, false);
+    app.click(&frame, &mut fonts, x, y, false);
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    assert!(frame.info.rich.is_empty(), "the drawing is gone");
+    let shown: Vec<String> = frame.info.blocks.iter().map(|b| b.display.clone()).collect();
+    assert!(shown.iter().any(|t| t.contains("graph LR")), "the source is shown: {shown:?}");
+    assert!(app.diagram_zoom.is_none(), "the double click did not leave the overlay open");
+
+    // And back: the same two presses on the source return the drawing.
+    let block = frame.info.blocks.iter().find(|b| b.display.contains("graph LR")).unwrap().node;
+    let br = frame.dom.nodes[block].rect;
+    let (x, y) = (br.x + 6.0, br.y + 6.0);
+    app.click(&frame, &mut fonts, x, y, false);
+    app.click(&frame, &mut fonts, x, y, false);
+    assert!(app.mermaid_source.is_empty(), "the block draws its diagram again");
+    // The caret went into the block on the first press, which is what shows it as source: move
+    // it away and the drawing is back.
+    cursor_at(&mut app, "After");
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    assert_eq!(frame.info.rich.len(), 1, "the drawing is back");
+
+    // A slow pair of clicks is two clicks: the view opens and the block is untouched.
+    let br = frame.dom.nodes[frame.info.rich[0].node].rect;
+    app.click(&frame, &mut fonts, br.x + 6.0, br.y + 6.0, false);
+    std::thread::sleep(std::time::Duration::from_millis(450));
+    app.click(&frame, &mut fonts, br.x + 6.0, br.y + 6.0, false);
+    assert!(app.diagram_zoom.is_some(), "the view stays open");
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    assert_eq!(frame.info.rich.len(), 2, "the overlay still draws the diagram");
 }

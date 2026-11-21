@@ -301,8 +301,40 @@ pub fn render(header: &str, lines: &[&str], m: &mut dyn Measure) -> Result<Diagr
     Ok(layout(g, &dir, m))
 }
 
+/// Widest a node's label is allowed to get before it wraps. A diagram of long sentences stayed
+/// as wide as the longest one, which no note column fits: wrapping them keeps the boxes close to
+/// each other and the drawing narrow enough to be read at its fitted size.
+const MAX_LABEL_W: f32 = 190.0;
+
+/// The lines a node's label is drawn in: its own line breaks, and then as many lines as it takes
+/// for no one of them to be wider than [`MAX_LABEL_W`].
+fn label_lines(label: &str, m: &mut dyn Measure) -> Vec<String> {
+    let mut out = Vec::new();
+    for hard in label.split('\n') {
+        let mut line = String::new();
+        for word in hard.split_whitespace() {
+            let candidate = if line.is_empty() { word.to_string() } else { format!("{line} {word}") };
+            if !line.is_empty() && m.width(&candidate, TEXT_SIZE, false) > MAX_LABEL_W {
+                out.push(std::mem::take(&mut line));
+            }
+            if line.is_empty() {
+                line.push_str(word);
+            } else {
+                line.push(' ');
+                line.push_str(word);
+            }
+        }
+        out.push(line);
+    }
+    // A label of nothing but spaces still needs a line to sit on.
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
+}
+
 fn node_size(n: &Node, m: &mut dyn Measure) -> (f32, f32) {
-    let lines: Vec<&str> = n.label.split('\n').collect();
+    let lines = label_lines(&n.label, m);
     let tw = lines.iter().map(|l| m.width(l, TEXT_SIZE, false)).fold(0.0, f32::max);
     let th = lines.len() as f32 * TEXT_SIZE * 1.3;
     match n.shape {
@@ -689,11 +721,11 @@ fn layout(mut g: Graph, dir: &str, m: &mut dyn Measure) -> Diagram {
             }
             Shape::Diamond => items.push(Item::Diamond { cx, cy, w: n.w, h: n.h, fill: Fill::Node }),
         }
-        let lines: Vec<&str> = n.label.split('\n').collect();
+        let lines = label_lines(&n.label, m);
         let lh = TEXT_SIZE * 1.3;
         for (i, l) in lines.iter().enumerate() {
             let y = cy - (lines.len() as f32 - 1.0) * lh / 2.0 + i as f32 * lh;
-            items.push(Item::Text { x: cx, y, text: (*l).to_string(), bold: false, size: TEXT_SIZE });
+            items.push(Item::Text { x: cx, y, text: l.clone(), bold: false, size: TEXT_SIZE });
         }
     }
 

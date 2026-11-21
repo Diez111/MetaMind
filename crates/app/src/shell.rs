@@ -513,14 +513,33 @@ pub struct App {
     pub menu: Option<crate::menu::Menu>,
     /// Logical window width of the last frame, to keep menus on screen.
     pub window_w: f32,
+    /// Logical window height of the last frame, for the views that fill it.
+    pub window_h: f32,
     /// Source of the Mermaid diagram shown full screen, after a click on its block.
     pub diagram_zoom: Option<String>,
-    /// Pan offset (x, y) of the diagram zoom overlay.
+    /// Pan offset (x, y) of the diagram zoom overlay, in pixels of the window.
     pub diagram_zoom_pan: (f32, f32),
-    /// Zoom scale of the diagram zoom overlay (1.0 = fit).
+    /// Extra zoom of the diagram overlay, on top of the fit its box gives it (1.0 = fit).
     pub diagram_zoom_scale: f32,
-    /// Blocks whose callout was expanded by the user (block starts). Toggled by click.
-    pub expanded_callouts: std::collections::HashSet<usize>,
+    /// The diagram overlay shows its source instead of the drawing (double click).
+    pub diagram_zoom_source: bool,
+    /// When the overlay was opened: the second press of the click that opened it belongs to the
+    /// block it came from, not to the view.
+    pub diagram_zoom_since: Option<std::time::Instant>,
+    /// The overlay is being dragged: where the pointer went down and the pan from then.
+    pub diagram_drag: Option<((f32, f32), (f32, f32))>,
+    /// Callout blocks the reader folded or unfolded, by note and block start. A callout marked
+    /// `-` in the source is folded until this says otherwise, and one that is open folds when it
+    /// says so: the set is the reader's override of the source.
+    pub callout_toggled: std::collections::HashSet<(String, usize)>,
+    /// Mermaid blocks shown as their source instead of the drawing, by note and block start.
+    pub mermaid_source: std::collections::HashSet<(String, usize)>,
+    /// The video player is drawn as a modal over the window instead of its note.
+    pub video_fullscreen: bool,
+    /// Where and when the last press landed, to tell a double click from two clicks.
+    pub last_click: Option<(std::time::Instant, (f32, f32))>,
+    /// A drag happened since that press, so the next one cannot be its second half.
+    pub clicked_dragged: bool,
     /// Off in headless use (tests, screenshots) so they never touch the user's clipboard;
     /// copies then stay inside the application.
     pub system_clipboard: bool,
@@ -733,10 +752,18 @@ impl App {
             switch_vault: false,
             menu: None,
             window_w: 1280.0,
+            window_h: 800.0,
             diagram_zoom: None,
             diagram_zoom_pan: (0.0, 0.0),
             diagram_zoom_scale: 1.0,
-            expanded_callouts: Default::default(),
+            diagram_zoom_source: false,
+            diagram_zoom_since: None,
+            diagram_drag: None,
+            callout_toggled: Default::default(),
+            mermaid_source: Default::default(),
+            video_fullscreen: false,
+            last_click: None,
+            clicked_dragged: false,
             system_clipboard: false,
             clip: String::new(),
         })
@@ -997,8 +1024,19 @@ impl App {
     }
 
     /// Close one tab, saving it first. The tab stays open when the save fails.
-    
-    // ---- in-app video player ----
+    pub fn close_tab(&mut self, i: usize) {
+        if self.tabs.get(i).is_none_or(|t| t.pinned) {
+            return;
+        }
+        let prev = self.active;
+        self.active = i;
+        if !self.save() {
+            return;
+        }
+        let tab = self.tabs.remove(i);
+        self.closed_tabs.push(tab.path);
+        self.active = if prev > i { prev - 1 } else { prev.min(self.tabs.len().saturating_sub(1)) };
+    }
 
     /// Called from `render_window` before building the view: reads frames, updates the clock.
     pub fn video_tick(&mut self, now: std::time::Instant) {
@@ -1023,20 +1061,6 @@ impl App {
     /// Close the video player, called when the media file is deleted or renamed.
     pub fn close_player(&mut self) {
         self.video.close();
-    }
-
-pub fn close_tab(&mut self, i: usize) {
-        if self.tabs.get(i).is_none_or(|t| t.pinned) {
-            return;
-        }
-        let prev = self.active;
-        self.active = i;
-        if !self.save() {
-            return;
-        }
-        let tab = self.tabs.remove(i);
-        self.closed_tabs.push(tab.path);
-        self.active = if prev > i { prev - 1 } else { prev.min(self.tabs.len().saturating_sub(1)) };
     }
 
     /// Save every modified tab (called when the window loses focus, on a timer, and on quit).
@@ -1323,11 +1347,21 @@ pub fn close_tab(&mut self, i: usize) {
                 // ---- in-app video player ----
         // Toggle a folded callout: clicking its title expands/collapses the content.
         if let Some(block) = command.strip_prefix("callout:toggle:").and_then(|b| b.parse::<usize>().ok()) {
-            if self.expanded_callouts.contains(&block) {
-                self.expanded_callouts.remove(&block);
-            } else {
-                self.expanded_callouts.insert(block);
+            let note = self.tabs.get(self.active).map(|t| t.path.clone()).unwrap_or_default();
+            let key = (note, block);
+            if !self.callout_toggled.insert(key.clone()) {
+                self.callout_toggled.remove(&key);
             }
+            return;
+        }
+        if command == "video:fullscreen" {
+            if self.video.is_open() {
+                self.set_video_fullscreen(!self.video_fullscreen);
+            }
+            return;
+        }
+        if command == "video:fullscreen-close" {
+            self.set_video_fullscreen(false);
             return;
         }
         if let Some(rest) = command.strip_prefix("video:") {
@@ -1793,11 +1827,15 @@ if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
         if let Some(r) = self.modal_key(&key) {
             return r;
         }
-        // A diagram shown full screen is a modal of its own: Escape (or a click on it) closes it.
+        // A diagram shown full screen is a modal of its own: Escape, or a click on the backdrop,
+        // closes it.
         if self.diagram_zoom.is_some() && key.key == "Escape" {
-            self.diagram_zoom = None;
-                self.diagram_zoom_pan = (0.0, 0.0);
-                self.diagram_zoom_scale = 1.0;
+            self.close_diagram_zoom();
+            return true;
+        }
+        // The same for a video shown over the window: Escape gives the note its player back.
+        if self.video_fullscreen && key.key == "Escape" {
+            self.set_video_fullscreen(false);
             return true;
         }
         // Only set while the editor has focus; see `after_editor_input`.

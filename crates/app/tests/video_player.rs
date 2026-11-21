@@ -267,9 +267,23 @@ mod unix {
         );
 
         let actions: Vec<&str> = frame.dom.nodes.iter().filter_map(|n| n.el.action.as_deref()).collect();
-        for want in ["video:toggle", "video:seek:clip.mp4:-10", "video:seek:clip.mp4:10", "video:scrub"] {
+        for want in ["video:toggle", "video:scrub", "video:speed", "video:fullscreen", "video:close"] {
             assert!(actions.contains(&want), "{want} is missing from {actions:?}");
         }
+        // The ±10 s buttons were two controls doing what the bar and the arrows already do.
+        assert!(
+            !actions.iter().any(|a| a.starts_with("video:seek:")),
+            "the seek buttons are gone: {actions:?}"
+        );
+        // The speed control says what it does instead of being an unreadable glyph.
+        let speed = frame
+            .dom
+            .nodes
+            .iter()
+            .find(|n| n.el.action.as_deref() == Some("video:speed"))
+            .and_then(|n| n.el.text.clone())
+            .expect("the speed control has no label");
+        assert_eq!(speed, "1x");
         // Everything is laid out and visible: a zero-width track could not be dragged.
         let rect_of =
             |class: &str| frame.dom.nodes.iter().find(|n| has(n, class)).map(|n| n.rect).unwrap_or_default();
@@ -313,5 +327,112 @@ mod unix {
         assert!(card.dom.nodes.iter().any(|n| n.el.action.as_deref() == Some(action)));
         assert!(!card.dom.nodes.iter().any(|n| has(n, "video-player")));
         assert_eq!(decoders_of(d.path()), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn the_speed_control_cycles_the_rates_and_the_readout_follows() {
+        let mut v = VideoPlayer::default();
+        // Nothing set yet: the control says what it does, and what it does is normal speed.
+        assert_eq!(v.speed_label(), "1x");
+        let mut seen = Vec::new();
+        for _ in 0..5 {
+            v.cycle_speed();
+            seen.push(v.speed_label());
+        }
+        assert_eq!(seen, ["1.25x", "1.5x", "2x", "0.75x", "1x"]);
+        assert!(!v.is_open(), "changing the speed opens nothing on its own");
+    }
+
+    #[test]
+    fn the_fullscreen_button_shows_the_player_over_the_window() {
+        let Some(d) = clip() else { return };
+        fs::write(d.path().join("Note.md"), "![[clip.mp4]]\n").unwrap();
+        let mut app = App::open(d.path()).unwrap();
+        app.open_note("Note.md");
+        let mut fonts = Fonts::new();
+        let mut pm = Pixmap::new(1100, 700).unwrap();
+        app.run("video:open:Note.md|clip.mp4");
+        for _ in 0..250 {
+            render(&mut app, &mut fonts, &mut pm, 1.0);
+            if app.video.current().is_some() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        app.video.toggle_pause();
+        let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+        let button = frame
+            .dom
+            .nodes
+            .iter()
+            .position(|n| n.el.action.as_deref() == Some("video:fullscreen"))
+            .expect("the player offers full screen");
+        let r = frame.dom.nodes[button].rect;
+        // It is inside the card, not clipped away by a narrow panel.
+        assert!(r.w > 0.0 && r.h > 0.0, "{r:?}");
+        let card = frame
+            .dom
+            .nodes
+            .iter()
+            .find(|n| n.el.classes.iter().any(|c| c == "video-player"))
+            .map(|n| n.rect)
+            .expect("no player");
+        assert!(r.x >= card.x && r.x + r.w <= card.x + card.w, "the button is cut off: {r:?} in {card:?}");
+
+        // The click opens the modal; the note keeps no player of its own meanwhile.
+        app.click(&frame, &mut fonts, r.x + 2.0, r.y + 2.0, false);
+        assert!(app.video_fullscreen, "the button did not open the full-screen view");
+        let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+        let has = |c: &str| frame.dom.nodes.iter().any(|n| n.el.classes.iter().any(|x| x == c));
+        assert!(has("mod-video"), "the video has no modal of its own");
+        assert!(has("video-fullscreen"), "no backdrop behind it");
+        // The card in the note is gone while the player is over the window.
+        let cards = frame.dom.nodes.iter().filter(|n| n.el.classes.iter().any(|c| c == "video-player")).count();
+        assert_eq!(cards, 1, "the player is drawn once");
+
+        // Escape goes back to the player in its note.
+        app.key(rustsidian_app::Key::parse("Escape").unwrap());
+        assert!(!app.video_fullscreen);
+        let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+        assert!(!frame.dom.nodes.iter().any(|n| n.el.classes.iter().any(|x| x == "mod-video")));
+        assert!(frame.dom.nodes.iter().any(|n| n.el.classes.iter().any(|x| x == "video-player")));
+        app.run("video:close");
+    }
+
+    /// How long the clip takes to play out from the start, in milliseconds.
+    fn play_out(v: &mut VideoPlayer) -> u128 {
+        let t0 = Instant::now();
+        v.seek_to(0.0);
+        while t0.elapsed() < Duration::from_secs(10) {
+            v.tick(Instant::now());
+            if v.state() == &State::Idle {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        t0.elapsed().as_millis()
+    }
+
+    #[test]
+    fn a_higher_speed_plays_the_clip_out_sooner() {
+        let Some(d) = clip() else { return };
+        let mut normal = VideoPlayer::default();
+        open(&mut normal, d.path());
+        assert!(wait_frame(&mut normal));
+        let at_one = play_out(&mut normal);
+        assert_eq!(normal.speed(), 1.0);
+
+        let mut fast = VideoPlayer::default();
+        open(&mut fast, d.path());
+        assert!(wait_frame(&mut fast));
+        fast.set_speed(2.0);
+        assert_eq!(fast.speed_label(), "2x");
+        let at_two = play_out(&mut fast);
+        normal.close();
+        fast.close();
+        assert!(
+            at_two * 100 < at_one * 80,
+            "2x took {at_two} ms against {at_one} ms at 1x"
+        );
     }
 }

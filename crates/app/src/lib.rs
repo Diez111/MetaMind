@@ -44,7 +44,13 @@ pub mod video;
 pub use shell::{App, Key};
 
 use rustsidian_ui::{Dom, Fonts, Pixmap};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+/// How long after a press the next one still counts as its second half.
+pub const DOUBLE_CLICK: Duration = Duration::from_millis(400);
+/// Limits of the full-screen diagram's zoom, as a multiple of the fit its box gives it.
+pub const MIN_DIAGRAM_ZOOM: f32 = 0.4;
+pub const MAX_DIAGRAM_ZOOM: f32 = 4.0;
 
 /// One rendered frame and the information needed to map input back onto it.
 pub struct Frame {
@@ -76,6 +82,7 @@ pub fn render_window(
     app.scale = scale;
     app.step_scrolls();
     app.window_w = pixmap.width() as f32 / scale;
+    app.window_h = pixmap.height() as f32 / scale;
     let (mut dom, info) = view::build(app, pixmap.height() as f32 / scale, solo);
     let env = app.env();
     dom.style(&app.theme, env);
@@ -140,8 +147,22 @@ impl App {
         });
     }
 
-    /// Left click at window coordinates.
+    /// Left click at window coordinates. Two presses in the same spot within [`DOUBLE_CLICK`]
+    /// are a double click, which is what swaps a diagram between its drawing and its source.
     pub fn click(&mut self, frame: &Frame, fonts: &mut Fonts, x: f32, y: f32, shift: bool) {
+        let now = Instant::now();
+        let double = self.last_click.is_some_and(|(t, (px, py))| {
+            !self.clicked_dragged
+                && now.saturating_duration_since(t) <= DOUBLE_CLICK
+                && (x - px).abs() <= 4.0
+                && (y - py).abs() <= 4.0
+        });
+        // The third press starts over: a double click is consumed by what it opened.
+        self.last_click = if double { None } else { Some((now, (x, y))) };
+        self.clicked_dragged = false;
+        if double && self.double_click(frame, x, y) {
+            return;
+        }
         if self.menu_click(frame, x, y) || !self.press_pane(frame, x, y) || !self.press_stack(frame, x, y) {
             return;
         }
@@ -156,16 +177,25 @@ impl App {
             if action == "mermaid:zoom" {
                 // The block's source is kept with the item that paints it; the full-screen view
                 // re-renders the same diagram with the width of the window.
-                self.diagram_zoom = frame.info.rich.iter().find(|it| it.node == node).and_then(|it| {
+                let src = frame.info.rich.iter().find(|it| it.node == node).and_then(|it| {
                     match &it.kind {
                         crate::rich::Kind::Mermaid(src) => Some(src.clone()),
                         _ => None,
                     }
                 });
+                if let Some(src) = src {
+                    self.open_diagram_zoom(src);
+                }
                 return;
             }
             if action == "mermaid:zoom-close" {
-                self.diagram_zoom = None;
+                self.close_diagram_zoom();
+                return;
+            }
+            if action == "mermaid:drag" {
+                // A press on the diagram itself grabs it: the overlay is dragged from here, and
+                // the click never reaches the backdrop that would close it.
+                self.diagram_drag = Some(((x, y), self.diagram_zoom_pan));
                 return;
             }
             if action == "video:scrub" {
@@ -234,6 +264,85 @@ impl App {
         }
     }
 
+    /// What a double click does, wherever it lands: a diagram swaps between its drawing and its
+    /// source. In the note the swap is the block's, in the full-screen view it is the view's, so
+    /// the second press of a click that just opened the view belongs to the block it came from.
+    /// Returns whether it was a double click of ours.
+    pub fn double_click(&mut self, frame: &Frame, x: f32, y: f32) -> bool {
+        let note = self.tabs.get(self.active).map(|t| t.path.clone()).unwrap_or_default();
+        let fresh = self.diagram_zoom_since.is_some_and(|t| t.elapsed() <= DOUBLE_CLICK);
+        // A diagram drawn in the note, or the source a previous double click left there.
+        let mut note_block = frame
+            .info
+            .rich
+            .iter()
+            .find(|it| {
+                matches!(it.kind, crate::rich::Kind::Mermaid(_))
+                    && frame.dom.nodes[it.node].rect.contains(x, y)
+            })
+            .and_then(|it| frame.info.blocks.iter().find(|b| b.node == it.node))
+            .map(|b| b.src_start);
+        if note_block.is_none() {
+            note_block = frame
+                .info
+                .blocks
+                .iter()
+                .find(|b| b.display.contains("```mermaid") && frame.dom.nodes[b.node].rect.contains(x, y))
+                .map(|b| b.src_start);
+        }
+        // Inside a view that was already open, the double click is the view's own.
+        if self.diagram_zoom.is_some() && !fresh {
+            self.diagram_zoom_source = !self.diagram_zoom_source;
+            return true;
+        }
+        let Some(start) = note_block else { return false };
+        let key = (note, start);
+        if !self.mermaid_source.remove(&key) {
+            self.mermaid_source.insert(key);
+        }
+        // The block now shows its own source; the view it opened on the first press goes away.
+        if self.diagram_zoom.is_some() {
+            self.close_diagram_zoom();
+        }
+        true
+    }
+
+    /// Open the full-screen view of a diagram, from the note block that holds it.
+    pub fn open_diagram_zoom(&mut self, src: String) {
+        self.diagram_zoom = Some(src);
+        self.diagram_zoom_pan = (0.0, 0.0);
+        self.diagram_zoom_scale = 1.0;
+        self.diagram_zoom_source = false;
+        self.diagram_zoom_since = Some(Instant::now());
+    }
+
+    /// Close the full-screen diagram and forget how it was left.
+    pub fn close_diagram_zoom(&mut self) {
+        self.diagram_zoom = None;
+        self.diagram_zoom_pan = (0.0, 0.0);
+        self.diagram_zoom_scale = 1.0;
+        self.diagram_zoom_source = false;
+        self.diagram_zoom_since = None;
+        self.diagram_drag = None;
+    }
+
+    /// Show the player over the window, or back in its note. The decoder is asked for a frame as
+    /// large as the window, so the picture is sharp instead of a small one stretched.
+    pub fn set_video_fullscreen(&mut self, on: bool) {
+        if !self.video.is_open() {
+            self.video_fullscreen = false;
+            return;
+        }
+        self.video_fullscreen = on;
+        let scale = if self.scale > 0.0 { self.scale } else { 1.0 };
+        let cap = if on {
+            (((self.window_w - 80.0) * scale) as u32, ((self.window_h - 120.0) * scale) as u32)
+        } else {
+            ((640.0 * scale) as u32, (360.0 * scale) as u32)
+        };
+        self.video.set_cap(cap);
+    }
+
     /// A press in a pane other than the focused one focuses it first. Returns whether the press
     /// should go on: only tab bar actions do, as the rest of that pane was laid out unfocused.
     pub(crate) fn press_pane(&mut self, frame: &Frame, x: f32, y: f32) -> bool {
@@ -260,6 +369,12 @@ impl App {
 
     /// Extend the selection while dragging with the button held.
     pub fn drag(&mut self, frame: &Frame, fonts: &mut Fonts, x: f32, y: f32) {
+        self.clicked_dragged = true;
+        if let Some(((sx, sy), (px, py))) = self.diagram_drag {
+            // The diagram follows the pointer from where it was grabbed.
+            self.diagram_zoom_pan = (px + (x - sx), py + (y - sy));
+            return;
+        }
         if self.pane_drag.is_some() {
             return self.pane_drag_to(x, y);
         }
@@ -290,6 +405,12 @@ impl App {
     pub fn wheel(&mut self, frame: &Frame, x: f32, y: f32, lines: f32) {
         self.menu = None;
         self.hover_preview = None;
+        if self.diagram_zoom.is_some() {
+            // Wheel over the full-screen diagram zooms it, around its centre.
+            let step = (-lines / 6.0).exp();
+            self.diagram_zoom_scale = (self.diagram_zoom_scale * step).clamp(MIN_DIAGRAM_ZOOM, MAX_DIAGRAM_ZOOM);
+            return;
+        }
         if let (Some(rect), Some(g)) = (graph_rect(frame), &mut self.graph_view) {
             if rect.contains(x, y) && !in_graph_panel(frame, x, y) {
                 return g.wheel(&rect, x, y, lines / 3.0);
@@ -336,6 +457,9 @@ impl App {
 
     /// The left button was released.
     pub fn release(&mut self) {
+        if self.diagram_drag.take().is_some() {
+            return;
+        }
         if self.video.scrub_release() {
             return;
         }

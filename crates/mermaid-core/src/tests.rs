@@ -110,3 +110,74 @@ fn frontmatter_and_comments_are_skipped() {
     let d = draw("---\ntitle: t\n---\n%% note\ngraph TD\n A --> B");
     assert!(texts(&d).contains(&"B"));
 }
+
+/// The boxes of the nodes, which is what a reader sees as cards.
+fn node_boxes(d: &Diagram) -> Vec<(f32, f32, f32, f32)> {
+    d.items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Rect { x, y, w, h, fill: Fill::Node, .. } => Some((*x, *y, *w, *h)),
+            Item::Diamond { cx, cy, w, h, .. } => Some((cx - w / 2.0, cy - h / 2.0, *w, *h)),
+            Item::Ellipse { cx, cy, rx, ry, .. } => Some((cx - rx, cy - ry, rx * 2.0, ry * 2.0)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn overlap(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> bool {
+    a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3
+}
+
+#[test]
+fn node_boxes_never_overlap() {
+    // The shape of the decision tree that overflowed in the app: many long labels over several
+    // layers of a top-down flow.
+    let d = draw(
+        "graph TD\n\
+           Q[Que te dan en el enunciado?] --> A[La formula de la funcion]\n\
+           Q --> B[El polinomio ya armado]\n\
+           A --> C[Derivar el polinomio en el centro]\n\
+           B --> C\n\
+           C --> D[Piden error o tolerancia?]\n\
+           D -->|Si| E[Centro 0: Maclaurin]\n\
+           D -->|No| F[Centro c distinto de 0]\n\
+           E --> G[No: alcanza con el polinomio y un termino]\n\
+           F --> G\n\
+           G --> H[Es composicion o producto?]\n\
+           H -->|Composicion| I[Regla de la cadena]\n\
+           H -->|Producto| J[Regla del producto]\n\
+           H -->|Ninguna| K[Funcion simple]\n",
+    );
+    let boxes = node_boxes(&d);
+    assert!(boxes.len() >= 10, "{boxes:?}");
+    for (i, a) in boxes.iter().enumerate() {
+        for (j, b) in boxes.iter().enumerate().skip(i + 1) {
+            assert!(!overlap(*a, *b), "boxes {i} and {j} overlap: {a:?} {b:?}");
+        }
+    }
+}
+
+#[test]
+fn edges_are_painted_before_the_boxes_they_join() {
+    // Draw order is the order of the commands: a box has to come after every line that reaches
+    // it, or the line is drawn over its text.
+    let d = draw("graph LR\n  A[one] --> B[two]\n  B --> C[three]\n  B --> A\n");
+    let last_line = d.items.iter().rposition(|i| matches!(i, Item::Line { .. })).unwrap();
+    let first_box = d.items.iter().position(|i| matches!(i, Item::Rect { fill: Fill::Node, .. })).unwrap();
+    assert!(last_line < first_box, "lines at {last_line}, boxes from {first_box}");
+}
+
+#[test]
+fn a_diagram_of_long_labels_is_narrow_enough_to_fit_a_column() {
+    // Labels wrap instead of growing without end: a diagram of prose labels has to stay inside
+    // the width of a note column at a size the text can still be read at.
+    let d = draw(
+        "graph TD\n\
+           A[Derivar el polinomio en el centro y evaluar] --> B[Piden error o tolerancia explicita]\n\
+           B --> C[No: alcanza con el polinomio y un termino]\n\
+           C --> D[Comprobar el resultado con la formula]\n",
+    );
+    // Wide enough for the labels, narrow enough that fitting it to 644 px keeps the text over
+    // 11 px (`TEXT_SIZE` is 14).
+    assert!(d.width <= 644.0 / (11.0 / TEXT_SIZE), "a {} px wide diagram is too wide", d.width);
+}

@@ -682,8 +682,7 @@ mod tests {
 
     #[test]
     fn send_requires_a_key_and_fills_the_panel() {
-        let mut panel = AiPanel::default();
-        panel.input = "hola".into();
+        let mut panel = AiPanel { input: "hola".into(), ..Default::default() };
         let cfg = AiConfig::default();
         panel.send(&cfg, "", "hola");
         assert!(panel.error.as_deref().unwrap().contains("clave"));

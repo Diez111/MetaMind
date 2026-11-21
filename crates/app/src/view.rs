@@ -1413,10 +1413,11 @@ pub(crate) fn note_blocks(
     for (i, b) in doc.blocks[first..last].iter().enumerate() {
         info.marks.push((first + i, dom.nodes.len()));
         let root = b.tree.root();
-        // A callout marked Closed by the source is shown folded unless the user
-        // clicked its title to expand it: the toggle lives in `expanded_callouts`.
+        // A callout marked Closed by the source is shown folded, and one that is open folds, the
+        // moment the reader clicks its title: `callout_toggled` is that override, per note.
+        let callout_key = (tab.path.clone(), b.start);
         let callout_folded = matches!(root.kind, NodeKind::Callout { fold: md_engine::Fold::Closed, .. })
-            && !app.expanded_callouts.contains(&b.start);
+            != app.callout_toggled.contains(&callout_key);
         let (s, e) = (b.start + root.span.start as usize, b.start + root.span.end as usize);
         let class = match root.kind {
             NodeKind::Blank => {
@@ -1447,7 +1448,12 @@ pub(crate) fn note_blocks(
         let rendered = match mode {
             ViewMode::Source => false,
             ViewMode::Reading => true,
-            ViewMode::LivePreview => !sels.iter().any(|x| x.start() <= e && x.end() >= s),
+            // A heading is rendered whatever the caret is doing: `## 11.` next to a rendered `10.`
+            // is the same level drawn two ways, and the `#`s are markup, not content.
+            ViewMode::LivePreview => {
+                matches!(root.kind, NodeKind::Heading { .. })
+                    || !sels.iter().any(|x| x.start() <= e && x.end() >= s)
+            }
         };
         let src = buf.slice(s, e);
         if rendered
@@ -1477,23 +1483,31 @@ pub(crate) fn note_blocks(
         }
         if rendered {
             if let Some(kind) = crate::rich::block_kind(&b.tree, &src, root.span.start) {
-                let node = crate::rich::add(dom, view, kind, &mut info.rich);
-                let bv = BlockView {
-                    block: first + i,
-                    node,
-                    src_start: s,
-                    src_end: e,
-                    map: vec![(s, 0, 0)],
-                    ..BlockView::default()
-                };
-                info.blocks.push(bv);
-                continue;
+                // A double click on a diagram swaps the drawing for its source, in place.
+                let as_source = matches!(kind, crate::rich::Kind::Mermaid(_))
+                    && app.mermaid_source.contains(&(tab.path.clone(), b.start));
+                if !as_source {
+                    let node = crate::rich::add(dom, view, kind, &mut info.rich);
+                    let bv = BlockView {
+                        block: first + i,
+                        node,
+                        src_start: s,
+                        src_end: e,
+                        map: vec![(s, 0, 0)],
+                        ..BlockView::default()
+                    };
+                    info.blocks.push(bv);
+                    continue;
+                }
             }
         }
         let mut callout: Option<(Color, usize, usize)> = None;
+        // Whether the callout was given a title of its own, which is what can be clicked to fold
+        // it: an untitled one shows its type, which is part of the body's own line.
+        let mut callout_titled = false;
         if rendered && matches!(root.kind, NodeKind::BlockQuote | NodeKind::Callout { .. }) {
             hide_quote_markers(&src, s, &mut block_decos);
-            if let NodeKind::Callout { kind, fold, title } = root.kind {
+            if let NodeKind::Callout { kind, title, .. } = root.kind {
                 let first_end = s + src.find('\n').unwrap_or(src.len());
                 let (ks, ke) = (b.start + kind.start as usize, b.start + kind.end as usize);
                 let (ts, te) = (b.start + title.start as usize, b.start + title.end as usize);
@@ -1503,9 +1517,12 @@ pub(crate) fn note_blocks(
                 block_decos.push(hide(s, shown_s));
                 block_decos.push(hide(shown_e, first_end));
                 block_decos.push(Deco { start: shown_s, end: shown_e, style: Deco_::Strong });
-                if fold == md_engine::Fold::Closed {
+                // The body of a folded callout is not on screen, whatever the source says: the
+                // reader's toggle is what decides, and it is the same state the click writes.
+                if callout_folded {
                     block_decos.push(hide(first_end, e));
                 }
+                callout_titled = te > ts;
                 callout = Some((callout_color(&buf.slice(ks, ke)), shown_s, shown_e));
             }
         }
@@ -1572,8 +1589,11 @@ pub(crate) fn note_blocks(
             });
         }
         // A rendered list is drawn item by item: a single text run cannot hang the wrapped
-        // lines under the item's text, and the bullet would be the source's own `-`.
-        if rendered && !folded_here && draws_list_lines(&root.kind, &display) {
+        // lines under the item's text, and the bullet would be the source's own `-`. A callout
+        // with a title of its own is drawn that way too, list or not: the title has to be a line
+        // of its own to fold and unfold it, while a click on the body still places the caret.
+        let split_callout = callout_titled && display.contains('\n');
+        if rendered && !folded_here && (draws_list_lines(&root.kind, &display) || split_callout) {
             let mut callout_lines = cut_lines(&display, &spans, &map);
             // A closed callout shows its title and nothing else: `list_block` gives every line
             // its own child node, which the block's hide decorations would not reach.
@@ -1581,11 +1601,15 @@ pub(crate) fn note_blocks(
                 callout_lines.truncate(1);
             }
             let callout_node = list_block(dom, view, first + i, callout_lines, callout, &math, info);
-            // A folded callout is clickable: clicking its title expands/collapses the
-            // content without leaving reading mode or putting the caret in the source.
-            if callout_folded && callout_node != view {
-                let node = &mut dom.nodes[callout_node];
-                node.el.action = Some(format!("callout:toggle:{}", b.start));
+            // A click on the callout's title folds or unfolds it, in the reading view as well as
+            // in live preview: the action sits on the title line (which is the whole box while
+            // the body is hidden) and never on the body, where a click has to place the caret.
+            if callout.is_some() {
+                let title =
+                    if callout_folded { Some(callout_node) } else { dom.nodes[callout_node].children.first().copied() };
+                if let Some(n) = title.filter(|&n| n != view) {
+                    dom.nodes[n].el.action = Some(format!("callout:toggle:{}", b.start));
+                }
             }
         } else {
             let mut el =
@@ -1594,8 +1618,7 @@ pub(crate) fn note_blocks(
                 el = el.attr("aria-level", &level.to_string());
             }
             let mut bv = BlockView { block: first + i, node: 0, src_start: s, src_end: e, display, map };
-            if let Some((color, ts, te)) = callout {
-                let (d0, d1) = (bv.to_display(ts), bv.to_display(te));
+            if let Some((color, ts, te)) = callout {                let (d0, d1) = (bv.to_display(ts), bv.to_display(te));
                 for sp in spans.iter_mut().filter(|sp| sp.start >= d0 && sp.end <= d1) {
                     sp.color = Some(color);
                 }
@@ -1615,6 +1638,11 @@ pub(crate) fn note_blocks(
             }
             code_spans(&b.tree, b.start, &src, s, &bv.map, pal, &mut spans);
             bv.node = dom.add(view, el.spans(spans));
+            // A folded callout whose title and body share one run is the whole box: there is no
+            // title node to put the handle on, and the body is hidden anyway.
+            if callout.is_some() && callout_folded {
+                dom.nodes[bv.node].el.action = Some(format!("callout:toggle:{}", b.start));
+            }
             if !math.is_empty() {
                 info.inline.push(crate::rich::InlineItem { node: bv.node, slots: math.clone() });
             }
@@ -1899,7 +1927,10 @@ fn embeds(
                 board_embed(app, dom, view, rel, info);
             }
         } else if crate::video::is_video(rel) && app.video.is_open() && app.video.path() == rel {
-            crate::video::widget(app, dom, view, rel);
+            // While the player is full screen it lives in the overlay, not in the note.
+            if !app.video_fullscreen {
+                crate::video::widget(app, dom, view);
+            }
         } else {
             // Video, audio and anything else this build does not decode: a card that names the
             // file and hands it to the system player, instead of a line of raw English.
@@ -2445,15 +2476,40 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
     for s in &app.plugins.ext.reg.status {
         dom.add(status, El::div().class("status-bar-item").text(s.text.clone()));
     }
+    let notes = app.store.index.notes().count();
     dom.add(
         status,
-        El::div().class("status-bar-item").text(format!("{} notas", app.store.index.notes().count())),
+        El::div()
+            .class("status-bar-item")
+            .text(format!("{notes} nota{}", if notes == 1 { "" } else { "s" })),
     );
 }
 
+/// The player over the window, at the size of the window: the same card as in the note, asked to
+/// decode a frame that fills it. A click on the frame plays or pauses it; a click outside the
+/// card, or Escape, goes back to the player in its note.
+fn video_fullscreen(app: &App, dom: &mut Dom, viewport_h: f32) {
+    if !app.video_fullscreen || !app.video.is_open() {
+        return;
+    }
+    let (w, h) = ((app.window_w - 80.0).max(240.0), (viewport_h - 80.0).max(160.0));
+    let backdrop = dom.add(
+        0,
+        El::div().class("modal-container mod-dim video-fullscreen").action("video:fullscreen-close"),
+    );
+    let modal = dom.add(
+        backdrop,
+        El::div()
+            .class("modal mod-video")
+            .style(&format!("width: {w:.0}px; height: {h:.0}px")),
+    );
+    crate::video::widget(app, dom, modal);
+}
+
 /// A Mermaid diagram opened full screen by a click on its block: the window behind it dims and
-/// the diagram gets the width of the window, so the labels of a wide diagram can be read. A
-/// click anywhere, or Escape, closes it.
+/// the diagram gets the width of the window, so the labels of a wide diagram can be read. Inside
+/// the box a click grabs and drags it, the wheel zooms it, and a double click shows its source;
+/// the backdrop and Escape close it.
 fn diagram_zoom(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate::rich::Item>) {
     let Some(src) = &app.diagram_zoom else { return };
     let w = (app.window_w - 120.0).max(160.0);
@@ -2466,21 +2522,33 @@ fn diagram_zoom(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate:
             .action("mermaid:zoom-close")
             .style(&format!("width: {w:.0}px; height: {h:.0}px")),
     );
-    crate::rich::add_zoom(
-        dom,
-        modal,
-        src,
-        rich,
-        w - 36.0,
-        h - 64.0,
-        app.diagram_zoom_pan,
-        app.diagram_zoom_scale,
-    );
-    dom.add(modal, El::div().class("diagram-zoom-hint").text("Clic o Esc para cerrar"));
+    if app.diagram_zoom_source {
+        crate::rich::add_zoom_source(dom, modal, src, w - 36.0, h - 64.0);
+    } else {
+        crate::rich::add_zoom(
+            dom,
+            modal,
+            src,
+            rich,
+            crate::rich::Zoom {
+                w: w - 36.0,
+                h: h - 64.0,
+                pan: app.diagram_zoom_pan,
+                zoom: app.diagram_zoom_scale,
+            },
+        );
+    }
+    let hint = if app.diagram_zoom_source {
+        "Doble clic para ver el diagrama · Esc o clic fuera para cerrar"
+    } else {
+        "Arrastra para mover · rueda para acercar · doble clic para ver el código · Esc para cerrar"
+    };
+    dom.add(modal, El::div().class("diagram-zoom-hint").text(hint));
 }
 
 /// Prompts, the hover preview, settings, menus and notices, over the window.
 fn overlays(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate::rich::Item>) {
+    video_fullscreen(app, dom, viewport_h);
     diagram_zoom(app, dom, viewport_h, rich);
     if let Some(p) = &app.prompt {
         let t = app.anims.t("prompt");

@@ -486,6 +486,12 @@ fn shape(name: &str) -> Shape {
         // lucide `arrow-right`
         "arrow-right" => s.m(5.0, 12.0).l(19.0, 12.0).m(12.0, 5.0).l(19.0, 12.0).l(12.0, 19.0),
         // an empty box: the menu entry that is not the current choice
+        // lucide `layout-grid`: the four squares that stand for a set of add-ons. The settings
+        // sidebar asked for `layout-dashboard`, which had no glyph and drew the empty square a
+        // missing character leaves behind.
+        "plugins" | "layout-grid" | "layout-dashboard" => {
+            s.rect(3.0, 3.0, 10.0, 10.0).rect(14.0, 3.0, 21.0, 10.0).rect(14.0, 14.0, 21.0, 21.0).rect(3.0, 14.0, 10.0, 21.0)
+        }
         "blank" => s,
         // lucide `arrow-up-down`
         "sort" => s

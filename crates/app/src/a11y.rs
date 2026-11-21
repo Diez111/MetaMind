@@ -191,8 +191,10 @@ mod tests {
             .iter()
             .map(|(_, n)| (n.role(), n.label().or(n.value()).map(str::to_string)))
             .collect();
-        // The caret sits on the heading, so live preview shows its markup.
-        assert!(find(Role::Heading, "# Alpha").is_some(), "{all:?}");
+        // The caret sits on the heading, and it still reads as the heading it is: the `#`s are
+        // markup, never part of what a screen reader says.
+        assert!(find(Role::Heading, "Alpha").is_some(), "{all:?}");
+        assert!(find(Role::Heading, "# Alpha").is_none(), "{all:?}");
         assert!(find(Role::Button, "Cambiar orden").is_some(), "{all:?}");
         assert!(find(Role::Button, "Plegar encabezado").is_some(), "{all:?}");
         assert!(find(Role::Label, "Some prose.").is_some());

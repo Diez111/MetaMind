@@ -42,6 +42,10 @@ pub struct InlineItem {
 pub struct Item {
     pub node: NodeId,
     pub kind: Kind,
+    /// Pan of the drawing inside its box, in pixels: what a drag in the full-screen view writes.
+    pub pan: (f32, f32),
+    /// Extra zoom over the fit the box gives the drawing; `1.0` is fitted.
+    pub zoom: f32,
 }
 
 const BLOCK_SIZE: f32 = 20.0;
@@ -68,8 +72,6 @@ const NBSP_EM: f32 = 0.2625;
 /// Spacing of a formula set inside a line of prose: tighter than a display block.
 const INLINE_METRICS: math_core::Metrics =
     math_core::Metrics { padding_x: 3.0, padding_y: 1.0, run_gap: 0.0 };
-/// A display block's tag sits against the right margin, this far in.
-const TAG_INSET: f32 = 6.0;
 /// Smallest fraction of [`BLOCK_SIZE`] a display formula is drawn at: past this the glyphs stop
 /// being readable, so a formula that does not fit is allowed to run under the edge of the pane
 /// rather than turn into a band of a few pixels tall.
@@ -237,21 +239,42 @@ pub fn add(dom: &mut Dom, parent: NodeId, kind: Kind, info: &mut Vec<Item>) -> N
         el = el.class("mermaid-block").action("mermaid:zoom");
     }
     let node = dom.add(parent, el);
-    info.push(Item { node, kind });
+    info.push(Item { node, kind, pan: (0.0, 0.0), zoom: 1.0 });
     node
 }
 
-/// A diagram on its own, full screen: `w` x `h` of room for the painter to fit it to. It is not
-/// a `cm-line` and does not clip, so a diagram that does not fit the note column is drawn as
-/// large as the window allows.
-pub fn add_zoom(dom: &mut Dom, parent: NodeId, src: &str, info: &mut Vec<Item>, w: f32, h: f32, pan: (f32, f32), scale: f32) -> NodeId {
-    let el = El::div().class("rich-block diagram-zoom").style(&format!(
-        "width: {w:.0}px; height: {h:.0}px; margin-left: {mx:.0}px; margin-top: {my:.0}px; transform: scale({sc:.2})",
-        w = w, h = h, mx = pan.0, my = pan.1, sc = scale
-    ));
+/// A diagram on its own, full screen: `w` x `h` of room for the painter to fit it to. It clips,
+/// so a diagram dragged or zoomed past the box stays inside it, and it carries its own action:
+/// a click on it must not reach the backdrop behind and close the view.
+pub fn add_zoom(dom: &mut Dom, parent: NodeId, src: &str, info: &mut Vec<Item>, z: Zoom) -> NodeId {
+    let el = El::div()
+        .class("rich-block diagram-zoom")
+        .style(&format!("width: {:.0}px; height: {:.0}px; overflow: hidden", z.w, z.h))
+        .action("mermaid:drag");
     let node = dom.add(parent, el);
-    info.push(Item { node, kind: Kind::Mermaid(src.to_string()) });
+    info.push(Item { node, kind: Kind::Mermaid(src.to_string()), pan: z.pan, zoom: z.zoom });
     node
+}
+
+/// The box the full-screen view gives a diagram, and how far the reader has moved and zoomed it.
+#[derive(Clone, Copy, Debug)]
+pub struct Zoom {
+    pub w: f32,
+    pub h: f32,
+    pub pan: (f32, f32),
+    pub zoom: f32,
+}
+
+/// A diagram shown as its own source, in the same box the drawing would take (double click).
+pub fn add_zoom_source(dom: &mut Dom, parent: NodeId, src: &str, w: f32, h: f32) -> NodeId {
+    dom.add(
+        parent,
+        El::div()
+            .class("rich-block diagram-zoom diagram-zoom-source")
+            .style(&format!("width: {w:.0}px; height: {h:.0}px; overflow-y: auto"))
+            .action("mermaid:drag")
+            .text(src.to_string()),
+    )
 }
 
 struct Fm<'a> {
@@ -487,45 +510,6 @@ fn emit(
     }
 }
 
-/// Draw a display formula in `r`: centered in the room it has, its `\tag` against the right
-/// margin of the line, and scaled down if the formula is wider than the column (nothing here
-/// scrolls sideways, so the alternative would be drawing it under the edge of the pane).
-#[allow(clippy::too_many_arguments)]
-fn emit_math(
-    r: Rect,
-    rendered: &math_core::Rendered,
-    base: &TextStyle,
-    color: Color,
-    fm: &mut Fm,
-    out: &mut Vec<Cmd>,
-) {
-    let tag = rendered.tag.as_ref();
-    let mut l = rendered.layout.clone();
-    if let Some(t) = tag {
-        // The box draws the tag as a run one em past the formula; its real place is the margin of
-        // the line, so that run comes out of the flow and the label is drawn where amsmath puts
-        // it. What is left is the formula itself, which is what gets centered.
-        l.glyphs
-            .retain(|g| !(g.x >= t.x - 0.01 && (g.y - t.y).abs() < 0.01 && (g.size - t.size).abs() < 0.01));
-        l.width = (t.x - t.size).max(0.0);
-    }
-    let tag_room = tag.map_or(0.0, |t| t.width + TAG_INSET);
-    let room = (r.w - 2.0 * TAG_INSET - tag_room).max(1.0);
-    // Shrink to the room the line has rather than clip the end of the formula, but not past
-    // [`MATH_MIN_SCALE`]: a long formula that still does not fit is drawn under the right edge of
-    // the pane, which is readable, instead of being squeezed into an unreadable strip.
-    let sc = (room / l.width.max(1.0)).clamp(MATH_MIN_SCALE, 1.0);
-    let x = r.x + ((r.w - l.width * sc) / 2.0).max(0.0);
-    let y = r.y + ((r.h - l.height() * sc) / 2.0).max(0.0);
-    emit(&l, x, y, sc, base, color, out);
-    if let Some(t) = tag {
-        let label = math_core::render_full(&t.label(), t.size, false, &math_core::Metrics::ZERO, fm);
-        let x = r.x + r.w - label.layout.width - TAG_INSET;
-        let y = y + l.ascent * sc - label.layout.ascent;
-        emit(&label.layout, x, y, 1.0, base, color, out);
-    }
-}
-
 /// Draw the formulas of the flow into the blanks their text kept for them, on the baseline of
 /// the line each one sits in.
 fn paint_inline(dom: &mut Dom, it: &InlineItem, fonts: &mut Fonts) {
@@ -570,9 +554,11 @@ pub fn paint(dom: &mut Dom, items: &[Item], inline: &[InlineItem], fonts: &mut F
         if let Kind::Mermaid(src) = &it.kind {
             let mut dm = Dm(fm);
             if let Ok(d) = mermaid_core::render(src, &mut dm) {
-                let sc = diagram_scale(&d, r.w);
-                let ox = r.x + ((r.w - d.width * sc) / 2.0).max(0.0);
-                let oy = r.y + ((r.h - d.height * sc) / 2.0).max(0.0);
+                // The box gives the diagram its fit; the reader's own zoom multiplies it and its
+                // pan moves it. A block in the note has neither, so it draws fitted and centred.
+                let sc = (diagram_scale(&d, r.w) * it.zoom).clamp(0.2, 6.0);
+                let ox = r.x + ((r.w - d.width * sc) / 2.0).max(0.0) + it.pan.0;
+                let oy = r.y + ((r.h - d.height * sc) / 2.0).max(0.0) + it.pan.1;
                 let pen = Pen { bg, fg: color, s: sc, ox, oy };
                 emit_diagram(&d, &pen, &base, &mut dm, &mut cmds);
             }

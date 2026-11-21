@@ -448,16 +448,6 @@ const ITEMS: &[Item] = &[
     },
 ];
 
-/// The text a setting shows, and uses, while it is unset.
-fn default_text(key: &str) -> &'static str {
-    match key {
-        crate::ai::KEY_BASE_URL => crate::ai::DEFAULT_BASE_URL,
-        crate::ai::KEY_MODEL => crate::ai::DEFAULT_MODEL,
-        crate::ai::KEY_SYSTEM_PROMPT => crate::ai::DEFAULT_SYSTEM_PROMPT,
-        _ => "",
-    }
-}
-
 fn item(key: &str) -> Option<&'static Item> {
     ITEMS.iter().find(|i| i.key == key)
 }
@@ -1030,8 +1020,11 @@ const SWATCHES: [Swatch; 3] = [
 fn theme_swatches(dom: &mut Dom, ctl: NodeId, current: &str) {
     let wrap = dom.add(ctl, El::div().class("theme-swatches"));
     for s in &SWATCHES {
+        // The name goes under the preview, in the flow: a label laid over the box was cut by the
+        // row below it.
+        let item = dom.add(wrap, El::div().class("theme-swatch-item").class_if(s.value == current, "is-active"));
         let sw = dom.add(
-            wrap,
+            item,
             El::div()
                 .class("theme-swatch")
                 .class_if(s.value == current, "is-active")
@@ -1041,11 +1034,21 @@ fn theme_swatches(dom: &mut Dom, ctl: NodeId, current: &str) {
         );
         dom.add(sw, El::div().class("theme-swatch-bar").style(&format!("background-color: {};", s.bar)));
         dom.add(sw, El::div().class("theme-swatch-dot").style(&format!("background-color: {};", s.accent)));
-        dom.add(sw, El::div().class("theme-swatch-label").text(s.label));
+        dom.add(item, El::div().class("theme-swatch-label").text(s.label));
     }
 }
 
-fn items_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, section: Section, needle: &str) {
+/// The rows of a section. `previews` is what the panel shows and a row of search results does
+/// not: the scheme as three previews instead of a dropdown that names it.
+fn items_view(
+    app: &App,
+    dom: &mut Dom,
+    parent: NodeId,
+    ui: &SettingsUi,
+    section: Section,
+    needle: &str,
+    previews: bool,
+) {
     for it in ITEMS
         .iter()
         .filter(|i| i.section == section && (needle.is_empty() || matches(needle, i.name, i.desc)))
@@ -1057,8 +1060,12 @@ fn items_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, section
             Choice(d, opts) => {
                 let cur = file.str(it.key).unwrap_or(d);
                 let label = opts.iter().find(|o| o.0 == cur).map_or(cur, |o| o.1);
-                if it.key == "theme" {
+                // The scheme picks itself from three previews; the dropdown that says its name is
+                // the same control twice. It stays for a row of search results, which has no room
+                // for the previews.
+                if it.key == "theme" && previews {
                     theme_swatches(dom, ctl, cur);
+                    continue;
                 }
                 dom.add(
                     ctl,
@@ -1105,8 +1112,8 @@ fn items_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, section
     }
 }
 
-fn appearance_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
-    items_view(app, dom, parent, ui, Section::Appearance, "");
+fn appearance_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, previews: bool) {
+    items_view(app, dom, parent, ui, Section::Appearance, "", previews);
     heading(dom, parent, "Tema de la comunidad");
     let theme = app.config.css_theme().unwrap_or("");
     let ctl = row(dom, parent, "Tema", "Lee los temas de .obsidian/themes; haz clic para cambiar.");
@@ -1363,9 +1370,9 @@ fn search_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, needle
         section_header(dom, parent, sec);
         match sec {
             Section::Plugins => plugins_view(app, dom, parent, ui, if whole { "" } else { needle }),
-            Section::Appearance if whole => appearance_view(app, dom, parent, ui),
+            Section::Appearance if whole => appearance_view(app, dom, parent, ui, false),
             Section::Advanced => advanced_view(app, dom, parent, ui, if whole { "" } else { needle }),
-            _ => items_view(app, dom, parent, ui, sec, if whole { "" } else { needle }),
+            _ => items_view(app, dom, parent, ui, sec, if whole { "" } else { needle }, false),
         }
     }
     if found == 0 {
@@ -1414,7 +1421,7 @@ fn advanced_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, need
         general_view(app, dom, parent);
         heading(dom, parent, "Archivos y enlaces");
     }
-    items_view(app, dom, parent, ui, Section::Advanced, needle);
+    items_view(app, dom, parent, ui, Section::Advanced, needle, false);
     if needle.is_empty() {
         heading(dom, parent, "Atajos de teclado");
         hotkeys_view(app, dom, parent, ui);
@@ -1428,7 +1435,7 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
             .class("settings-note")
             .text("El módulo de IA todavía no está conectado: estos ajustes se guardan para cuando llegue."),
     );
-    items_view(app, dom, parent, ui, Section::Ai, "");
+    items_view(app, dom, parent, ui, Section::Ai, "", false);
 }
 
 /// The settings window, drawn over everything else.
@@ -1489,17 +1496,13 @@ pub fn modal(app: &App, dom: &mut Dom) {
         search_view(app, dom, content, ui, &needle);
     } else {
         match ui.section {
-            Section::Appearance => appearance_view(app, dom, content, ui),
-            Section::Editor => items_view(app, dom, content, ui, Section::Editor, ""),
+            Section::Appearance => appearance_view(app, dom, content, ui, true),
+            Section::Editor => items_view(app, dom, content, ui, Section::Editor, "", false),
             Section::Ai => ai_view(app, dom, content, ui),
             Section::Plugins => plugins_view(app, dom, content, ui, ""),
             Section::Advanced => advanced_view(app, dom, content, ui, ""),
         }
     }
-    dom.add(
-        container,
-        El::div().class("setting-footer").text("Los cambios se guardan en .obsidian a medida que los haces."),
-    );
     let _ = TrashMode::Vault;
 }
 
