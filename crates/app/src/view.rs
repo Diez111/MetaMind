@@ -1162,13 +1162,9 @@ fn editor(
     let readable =
         if app.config.app.bool("readableLineLength", false) { " is-readable-line-width" } else { "" };
     let class = format!("{class}{readable}");
-    let fade = if focused { app.anims.t("view") } else { 1.0 };
     let mut view_el = El::div().class(&class);
     if focused {
         view_el = view_el.id("editor");
-    }
-    if fade < 1.0 {
-        view_el = view_el.style(&format!("opacity: {:.3}", 0.25 + 0.75 * fade));
     }
     let view = dom.add(parent, view_el);
     info.editor = Some(view);

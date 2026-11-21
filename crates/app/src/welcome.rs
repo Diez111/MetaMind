@@ -391,7 +391,6 @@ impl Welcome {
         let t = self.anims.t("intro");
         let mut wrap = El::div().class("welcome");
         if t < 1.0 {
-            wrap = wrap.style(&format!("opacity: {t:.3}"));
         }
         let wrap = dom.add(0, wrap);
         let mut card = El::div().class("welcome-card");
@@ -415,7 +414,7 @@ impl Welcome {
         let s = self.anims.t("screen");
         let mut main = El::div().class("welcome-main");
         if s < 1.0 {
-            main = main.style(&format!("opacity: {s:.3}; padding-left: {:.1}px", 28.0 + 10.0 * (1.0 - s)));
+            main = main.style(&format!("padding-left: {:.1}px", 28.0 + 10.0 * (1.0 - s)));
         }
         let main = dom.add(card, main);
         match self.screen {

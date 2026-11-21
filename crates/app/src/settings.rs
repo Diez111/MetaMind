@@ -936,7 +936,6 @@ pub fn modal(app: &App, dom: &mut Dom) {
     let mut backdrop = El::div().class("modal-container mod-dim").action("settings:close");
     let mut modal = El::div().class("modal mod-settings").action("settings:noop");
     if t < 1.0 {
-        backdrop = backdrop.style(&format!("opacity: {t:.3}"));
         modal = modal.style(&format!("margin-top: {:.1}px", 14.0 * (1.0 - t)));
     }
     let backdrop = dom.add(0, backdrop);
