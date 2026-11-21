@@ -65,6 +65,52 @@ pub struct Seen {
 /// How long a notice stays before it fades away by itself.
 const NOTICE_MS: u64 = 4500;
 
+/// A long operation the status bar reports with a spinner and a label. It clears itself after a
+/// few frames so a forgotten spinner never stays on screen.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Busy {
+    pub label: String,
+    frame: u8,
+    left: u8,
+}
+
+impl Busy {
+    const FRAMES: u8 = 36;
+
+    pub fn new(label: impl Into<String>) -> Busy {
+        Busy { label: label.into(), frame: 0, left: Self::FRAMES }
+    }
+
+    /// The glyph for the current frame; ASCII, so every font in the fallback chain has it.
+    pub fn glyph(&self) -> &'static str {
+        const SPIN: [&str; 4] = ["|", "/", "-", "\\"];
+        SPIN[self.frame as usize % SPIN.len()]
+    }
+
+    /// Advance one frame; returns false when the busy state has run its course.
+    pub fn tick(&mut self) -> bool {
+        self.frame = self.frame.wrapping_add(1);
+        self.left = self.left.saturating_sub(1);
+        self.left > 0
+    }
+}
+
+impl crate::App {
+    /// Show a spinner with `label` in the status bar.
+    pub fn start_busy(&mut self, label: impl Into<String>) {
+        self.busy = Some(Busy::new(label));
+    }
+
+    /// Advance the spinner one frame and clear it when its time is up.
+    pub fn busy_tick(&mut self) {
+        if let Some(b) = &mut self.busy {
+            if !b.tick() {
+                self.busy = None;
+            }
+        }
+    }
+}
+
 impl crate::App {
     /// Compare with the last frame and start the animations for what changed.
     pub fn animate_changes(&mut self) {

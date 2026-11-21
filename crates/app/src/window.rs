@@ -419,6 +419,9 @@ impl Win {
         }
         let mut app = app;
         app.set_system_dark(self.window.as_ref().and_then(|w| w.theme()).map(|t| t == Theme::Dark));
+        // The vault index is already built here, but themes, plugins and the search corpus still
+        // load over the next frames; the status bar spinner covers that stretch.
+        app.start_busy("Cargando bóveda…");
         self.app = Some(app);
         self.welcome = None;
         self.welcome_dom = None;
@@ -840,7 +843,7 @@ impl Win {
             .min();
         // While the graph layout or an interface animation is moving, redraw at display rate;
         // both stop by themselves.
-        let animating = app.graph_animating() || app.anims.active() || app.scrolling();
+        let animating = app.graph_animating() || app.anims.active() || app.scrolling() || app.busy.is_some();
         if (animating && frame_due) || (self.animating && !animating) {
             self.last_anim = Instant::now();
             redraw = true;

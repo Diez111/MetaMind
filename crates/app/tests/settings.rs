@@ -220,3 +220,150 @@ fn settings_search_spans_sections_and_interface_toggles_apply() {
         frame.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == "workspace-ribbon")).unwrap();
     assert!(ribbon.style.display_none);
 }
+
+fn draw(app: &mut App) -> rustsidian_app::Frame {
+    let mut fonts = rustsidian_ui::Fonts::new();
+    let mut pm = rustsidian_ui::Pixmap::new(1280, 900).unwrap();
+    rustsidian_app::render(app, &mut fonts, &mut pm, 1.0)
+}
+
+fn actions(frame: &rustsidian_app::Frame) -> Vec<&str> {
+    frame.dom.nodes.iter().filter_map(|n| n.el.action.as_deref()).collect()
+}
+
+fn texts(frame: &rustsidian_app::Frame, class: &str) -> Vec<&str> {
+    frame
+        .dom
+        .nodes
+        .iter()
+        .filter(|n| n.el.classes.iter().any(|c| c == class))
+        .filter_map(|n| n.el.text.as_deref())
+        .collect()
+}
+
+#[test]
+fn settings_search_for_tema_only_shows_appearance() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    app.run("settings:edit:search");
+    typed(&mut app, "tema");
+    let frame = draw(&mut app);
+    let actions = actions(&frame);
+    assert!(actions.contains(&"settings:cycle:theme"), "theme setting must be shown");
+    assert!(actions.contains(&"settings:toggle:showRibbon"));
+    for other in ["settings:toggle:vimMode", "settings:toggle:aiAssistant", "settings:penable:bookmarks"] {
+        assert!(!actions.contains(&other), "{other} belongs to another category");
+    }
+    let titles = texts(&frame, "settings-section-title");
+    assert!(titles.contains(&"Apariencia"));
+    for other in ["Editor", "IA", "Plugins", "Avanzado"] {
+        assert!(!titles.contains(&other), "{other} must not appear for «tema»");
+    }
+    app.key(key("Escape"));
+    assert!(app.settings.is_some(), "the first Escape leaves the search field");
+    app.key(key("Escape"));
+    assert!(app.settings.is_none());
+}
+
+#[test]
+fn ctrl_comma_opens_and_closes_settings() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    assert!(app.settings.is_none());
+    app.key(Key::parse("Ctrl+,").unwrap());
+    assert!(app.settings.is_some());
+    app.key(Key::parse("Ctrl+,").unwrap());
+    assert!(app.settings.is_none());
+}
+
+#[test]
+fn theme_swatches_preview_and_apply_the_scheme() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    app.run("settings:edit:search");
+    typed(&mut app, "tema");
+    let frame = draw(&mut app);
+    let swatches: Vec<_> = frame
+        .dom
+        .nodes
+        .iter()
+        .filter(|n| n.el.classes.iter().any(|c| c == "theme-swatch"))
+        .collect();
+    assert_eq!(swatches.len(), 3);
+    let value = |n: &&rustsidian_ui::dom::Node| {
+        n.el.attrs.iter().find(|(k, _)| k == "data-value").map(|(_, v)| v.clone()).unwrap()
+    };
+    assert_eq!(swatches.iter().map(value).collect::<Vec<_>>(), ["obsidian", "moonstone", "system"]);
+    let active = swatches.iter().find(|n| n.el.classes.iter().any(|c| c == "is-active")).unwrap();
+    assert_eq!(value(active), "obsidian");
+    assert!(active.style.border[0] >= 2.0, "the active swatch has the accent border");
+    // A preview paints the theme's background and accent colors.
+    let bg = active.style.background;
+    assert!(bg.r < 60 && bg.g < 60 && bg.b < 60, "{bg:?}");
+    let accent = frame
+        .dom
+        .nodes
+        .iter()
+        .find(|n| n.el.classes.iter().any(|c| c == "theme-swatch-dot"))
+        .unwrap()
+        .style
+        .background;
+    assert!(accent.b > 200 && accent.r > 100, "{accent:?}");
+    app.run("settings:set:theme:moonstone");
+    assert_eq!(read_json(&d, ".obsidian/appearance.json")["theme"], "moonstone");
+    assert!(!app.dark);
+}
+
+#[test]
+fn search_field_and_category_list_show_the_keyboard_focus_ring() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    // Arrows move the focus ring through the categories; Enter does not need to confirm.
+    app.key(key("ArrowDown"));
+    assert_eq!(app.settings.as_ref().unwrap().nav, Some(0));
+    app.key(key("ArrowDown"));
+    assert_eq!(app.settings.as_ref().unwrap().nav, Some(1));
+    let frame = draw(&mut app);
+    let focused = frame
+        .dom
+        .nodes
+        .iter()
+        .find(|n| n.el.classes.iter().any(|c| c == "vertical-tab-nav-item") && n.focus)
+        .expect("the category list item has the keyboard focus");
+    assert!(focused.el.classes.iter().any(|c| c == "is-focused"));
+    // Editing the search paints the accent focus ring on the field.
+    app.run("settings:edit:search");
+    let frame = draw(&mut app);
+    let search = frame
+        .dom
+        .nodes
+        .iter()
+        .find(|n| n.el.action.as_deref() == Some("settings:edit:search"))
+        .unwrap();
+    assert!(search.focus && search.el.classes.iter().any(|c| c == "is-editing"));
+    assert_eq!(search.style.border_color[3], app.theme_var_interactive_accent());
+}
+
+#[test]
+fn status_bar_shows_a_spinner_while_the_vault_loads() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.start_busy("Indexando bóveda…");
+    let frame = draw(&mut app);
+    assert!(frame.dom.nodes.iter().any(|n| n.el.classes.iter().any(|c| c == "status-bar-busy")));
+    let spinner = frame
+        .dom
+        .nodes
+        .iter()
+        .find(|n| n.el.classes.iter().any(|c| c == "status-bar-spinner"))
+        .unwrap();
+    assert!(["|", "/", "-", "\\"].contains(&spinner.el.text.as_deref().unwrap()));
+    assert!(texts(&frame, "status-bar-busy-label").contains(&"Indexando bóveda…"));
+    for _ in 0..40 {
+        app.busy_tick();
+    }
+    assert!(app.busy.is_none(), "the spinner clears itself");
+}

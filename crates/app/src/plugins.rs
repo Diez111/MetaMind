@@ -4,7 +4,8 @@
 use crate::shell::{App, Key};
 use editor_core::{Change, EditKind, Editor, Sel};
 use ext_api::{
-    Discovered, Event, Extension, Extensions, Host, NoteInfo, PluginInfo, PluginStatus, Selection,
+    Discovered, Event, Extension, Extensions, Host, NoteInfo, PluginInfo as ExtInfo, PluginStatus,
+    Selection,
 };
 use md_engine::frontmatter::Value as Fm;
 use serde_json::{json, Value};
@@ -15,6 +16,333 @@ use vault_core::{fsio, FileKind};
 /// Rounds of event delivery per pump; events raised by plugins while handling events are
 /// delivered in the next round, so a plugin that modifies a note on every modify cannot spin.
 const MAX_ROUNDS: usize = 4;
+
+// ---- Built-in plugins ----------------------------------------------------------------
+//
+// Features that ship with the app are described here as plugins so the settings UI can list,
+// toggle and configure them uniformly. The list is built statically for now; a future plugin
+// system can fill the same registry from manifests on disk.
+
+/// Where a built-in plugin keeps its on/off state.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PluginToggle {
+    /// `core-plugins.json`, under this id.
+    Core(&'static str),
+    /// `app.json`, under this boolean key.
+    App(&'static str),
+}
+
+/// The vault file a plugin setting is stored in.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SettingStore {
+    App,
+    Appearance,
+    /// A JSON file in `.obsidian/`, relative to it.
+    File(&'static str),
+}
+
+/// The control a plugin setting is drawn with.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SettingKind {
+    Toggle(bool),
+    Choice(&'static str, &'static [(&'static str, &'static str)]),
+    Text(&'static str),
+}
+
+/// One configurable value of a built-in plugin.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Setting {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub description: &'static str,
+    pub kind: SettingKind,
+    pub store: SettingStore,
+}
+
+impl Setting {
+    /// The value used when the vault does not set the key yet.
+    pub fn default_value(&self) -> Value {
+        match self.kind {
+            SettingKind::Toggle(b) => json!(b),
+            SettingKind::Choice(d, _) => json!(d),
+            SettingKind::Text(d) => json!(d),
+        }
+    }
+}
+
+/// A plugin the app ships with, as the settings window needs it.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct PluginInfo {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub version: &'static str,
+    pub description: &'static str,
+    /// The line icon drawn on the plugin card.
+    pub icon: &'static str,
+    pub enabled: bool,
+    pub toggle: PluginToggle,
+    pub settings: Vec<Setting>,
+}
+
+/// Every built-in plugin. Filled from the vault config so `enabled` is current.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct PluginRegistry {
+    pub plugins: Vec<PluginInfo>,
+}
+
+impl PluginRegistry {
+    /// The plugins that ship with the app, with their state read from the vault.
+    pub fn builtin(app: &App) -> PluginRegistry {
+        let p = |id, name, version, description, icon, toggle, settings| PluginInfo {
+            id,
+            name,
+            version,
+            description,
+            icon,
+            enabled: toggle_on(app, toggle),
+            toggle,
+            settings,
+        };
+        PluginRegistry {
+            plugins: vec![
+                p(
+                    "spellcheck",
+                    "Corrector ortográfico",
+                    "1.0.0",
+                    "Subraya las palabras dudosas mientras escribes y sugiere correcciones al hacer clic derecho.",
+                    "scan-text",
+                    PluginToggle::App("spellcheck"),
+                    Vec::new(),
+                ),
+                p(
+                    "daily-notes",
+                    "Notas diarias",
+                    "1.0.0",
+                    "Abre la nota del día con la carpeta, el formato y la plantilla que elijas.",
+                    "calendar",
+                    PluginToggle::Core("daily-notes"),
+                    vec![
+                        Setting {
+                            key: "folder",
+                            label: "Carpeta de las notas diarias",
+                            description: "Déjala vacía para guardarlas en la raíz de la bóveda.",
+                            kind: SettingKind::Text(""),
+                            store: SettingStore::File("daily-notes.json"),
+                        },
+                        Setting {
+                            key: "format",
+                            label: "Formato del nombre",
+                            description: "Acepta AAAA, MM, DD y HH, mm, ss; por ejemplo YYYY-MM-DD.",
+                            kind: SettingKind::Text("YYYY-MM-DD"),
+                            store: SettingStore::File("daily-notes.json"),
+                        },
+                        Setting {
+                            key: "template",
+                            label: "Plantilla",
+                            description: "Nota que se copia al crear una nota diaria, sin la extensión.",
+                            kind: SettingKind::Text(""),
+                            store: SettingStore::File("daily-notes.json"),
+                        },
+                    ],
+                ),
+                p(
+                    "templates",
+                    "Plantillas",
+                    "1.0.0",
+                    "Inserta plantillas, la fecha o la hora en la nota activa.",
+                    "template",
+                    PluginToggle::Core("templates"),
+                    vec![
+                        Setting {
+                            key: "folder",
+                            label: "Carpeta de las plantillas",
+                            description: "Solo las notas de esta carpeta aparecen en el selector.",
+                            kind: SettingKind::Text("Templates"),
+                            store: SettingStore::File("templates.json"),
+                        },
+                        Setting {
+                            key: "dateFormat",
+                            label: "Formato de la fecha",
+                            description: "Se usa en las variables {{date}} y {{date:…}}.",
+                            kind: SettingKind::Text("YYYY-MM-DD"),
+                            store: SettingStore::File("templates.json"),
+                        },
+                        Setting {
+                            key: "timeFormat",
+                            label: "Formato de la hora",
+                            description: "Se usa en las variables {{time}} y {{time:…}}.",
+                            kind: SettingKind::Text("HH:mm"),
+                            store: SettingStore::File("templates.json"),
+                        },
+                    ],
+                ),
+                p(
+                    "bookmarks",
+                    "Marcadores",
+                    "1.0.0",
+                    "Guarda notas y búsquedas para volver a ellas en un clic.",
+                    "bookmark",
+                    PluginToggle::Core("bookmarks"),
+                    Vec::new(),
+                ),
+                p(
+                    "ai-corrector",
+                    "Corrector de IA",
+                    "0.1.0",
+                    "Corrección y reescritura con modelos de lenguaje. Aún no está conectado: los ajustes se guardan para cuando el módulo de IA esté disponible.",
+                    "sparkles",
+                    PluginToggle::App("aiCorrector"),
+                    vec![
+                        Setting {
+                            key: "aiProvider",
+                            label: "Proveedor",
+                            description: "Dónde se ejecutarán los modelos del asistente.",
+                            kind: SettingKind::Choice(
+                                "local",
+                                &[
+                                    ("local", "Local (en tu equipo)"),
+                                    ("openai", "OpenAI"),
+                                    ("anthropic", "Anthropic"),
+                                ],
+                            ),
+                            store: SettingStore::App,
+                        },
+                        Setting {
+                            key: "aiModel",
+                            label: "Modelo",
+                            description: "Nombre del modelo, tal como lo espera el proveedor.",
+                            kind: SettingKind::Text(""),
+                            store: SettingStore::App,
+                        },
+                        Setting {
+                            key: "aiLanguage",
+                            label: "Idioma de las correcciones",
+                            description: "Idioma en el que se escriben las sugerencias.",
+                            kind: SettingKind::Choice(
+                                "auto",
+                                &[("auto", "El de la nota"), ("es", "Español"), ("en", "Inglés")],
+                            ),
+                            store: SettingStore::App,
+                        },
+                    ],
+                ),
+            ],
+        }
+    }
+
+    pub fn get(&self, id: &str) -> Option<&PluginInfo> {
+        self.plugins.iter().find(|p| p.id == id)
+    }
+
+    pub fn enabled_count(&self) -> usize {
+        self.plugins.iter().filter(|p| p.enabled).count()
+    }
+}
+
+fn toggle_on(app: &App, toggle: PluginToggle) -> bool {
+    match toggle {
+        PluginToggle::Core(id) => app.core_on(id),
+        PluginToggle::App(key) => app.config.app.bool(key, false),
+    }
+}
+
+fn read_json(path: &Path) -> Value {
+    std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(Value::Null)
+}
+
+impl App {
+    /// The built-in plugins and their current state.
+    pub fn plugin_registry(&self) -> PluginRegistry {
+        PluginRegistry::builtin(self)
+    }
+
+    /// Turn a built-in plugin on or off, writing the file that owns its state.
+    pub fn set_builtin_plugin(&mut self, id: &str, enabled: bool) -> bool {
+        let Some(p) = self.plugin_registry().get(id).cloned() else { return false };
+        match p.toggle {
+            PluginToggle::Core(core) => {
+                // An empty array means every core plugin is on; writing only the requested id
+                // would turn the rest off. Spell the state out when nothing is stored yet.
+                if self.config.core_plugins.value.as_array().is_some_and(|a| a.is_empty()) {
+                    let mut map = serde_json::Map::new();
+                    for (id, ..) in crate::settings::CORE_PLUGINS {
+                        map.insert((*id).to_string(), json!(*id != core));
+                    }
+                    self.config.core_plugins.value = Value::Object(map);
+                } else {
+                    self.config.set_core_plugin(core, enabled);
+                }
+                if let Err(e) = self.config.core_plugins.save() {
+                    self.notice = Some(format!("No se pudo guardar core-plugins.json: {e}"));
+                }
+            }
+            PluginToggle::App(key) => {
+                self.config.app.set(key, json!(enabled));
+                if let Err(e) = self.config.app.save() {
+                    self.notice = Some(format!("No se pudo guardar app.json: {e}"));
+                }
+                self.setting_changed(key);
+            }
+        }
+        true
+    }
+
+    /// One setting of a built-in plugin, with its default when the vault does not set it.
+    pub fn plugin_setting(&self, plugin: &PluginInfo, key: &str) -> Value {
+        let Some(setting) = plugin.settings.iter().find(|s| s.key == key) else { return Value::Null };
+        let stored = match setting.store {
+            SettingStore::App => self.config.app.get(key).cloned(),
+            SettingStore::Appearance => self.config.appearance.get(key).cloned(),
+            SettingStore::File(name) => read_json(&self.config.dir.join(name)).get(key).cloned(),
+        };
+        stored.unwrap_or_else(|| setting.default_value())
+    }
+
+    /// Write one setting of a built-in plugin. Returns false when the value or the key is bad.
+    pub fn set_plugin_setting(&mut self, plugin_id: &str, key: &str, value: Value) -> bool {
+        let Some(p) = self.plugin_registry().get(plugin_id).cloned() else { return false };
+        let Some(setting) = p.settings.iter().find(|s| s.key == key).copied() else { return false };
+        let valid = match setting.kind {
+            SettingKind::Toggle(_) => value.is_boolean(),
+            SettingKind::Text(_) => value.is_string(),
+            SettingKind::Choice(_, opts) => value.as_str().is_some_and(|v| opts.iter().any(|o| o.0 == v)),
+        };
+        if !valid {
+            self.notice = Some(format!("Valor no válido para {}", setting.label));
+            return false;
+        }
+        let saved = match setting.store {
+            SettingStore::App => {
+                self.config.app.set(key, value);
+                self.config.app.save().map(|_| ())
+            }
+            SettingStore::Appearance => {
+                self.config.appearance.set(key, value);
+                self.config.appearance.save().map(|_| ())
+            }
+            SettingStore::File(name) => {
+                let path = self.config.dir.join(name);
+                let mut json = read_json(&path);
+                if !json.is_object() {
+                    json = json!({});
+                }
+                json[key] = value;
+                let text = serde_json::to_string_pretty(&json).unwrap_or_else(|_| "{}".into());
+                vault_core::fsio::atomic_write(&path, text.as_bytes())
+            }
+        };
+        match saved {
+            Ok(()) => {
+                self.setting_changed(key);
+                true
+            }
+            Err(e) => {
+                self.notice = Some(format!("No se pudo guardar {}: {e}", setting.label));
+                false
+            }
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct PluginState {
@@ -252,8 +580,8 @@ fn instantiate(d: &Discovered, root: &Path) -> Result<Box<dyn Extension>, String
     }
 }
 
-pub fn plugin_info(d: &Discovered) -> PluginInfo {
-    PluginInfo {
+pub fn plugin_info(d: &Discovered) -> ExtInfo {
+    ExtInfo {
         id: d.manifest.id.clone(),
         name: d.manifest.name.clone(),
         perms: d.manifest.permissions(d.kind),
@@ -340,7 +668,7 @@ impl App {
     }
 
     /// Load an extension that was built in-process (used by tests and embedders).
-    pub fn add_extension(&mut self, info: PluginInfo, ext: Box<dyn Extension>) -> Result<(), String> {
+    pub fn add_extension(&mut self, info: ExtInfo, ext: Box<dyn Extension>) -> Result<(), String> {
         let mut mgr = std::mem::take(&mut self.plugins.ext);
         let r = mgr.add(&mut AppHost(self), info, ext);
         self.plugins.ext = mgr;

@@ -18,7 +18,7 @@
 //! separator-vertical, separator-horizontal, unlink, code, list, link, calendar, vault,
 //! chevrons-down-up, house, hard-drive, check, play, triangle-alert, panel-left, layout-template,
 //! panel-right, circle-help, copy, clipboard, scissors, trash, bold, italic, strikethrough,
-//! highlighter, table, scan-text.
+//! highlighter, table, scan-text, sparkles.
 //!
 //! The names are Rustsidian's, so a few point at the nearest Lucide icon rather than one with the
 //! same name: `note` is `file-text`, `note-plus` is `file-plus`, `canvas` is `layout-dashboard`,
@@ -709,6 +709,25 @@ fn shape(name: &str) -> Shape {
             .l(2.054, 12.013)
             .m(6.0, 16.0)
             .dot(6.01, 16.0, 1.0),
+        // lucide `sparkles`, drawn as a four-point star with two sparks
+        "sparkles" => s
+            .m(12.0, 3.0)
+            .l(13.6, 8.4)
+            .l(19.0, 10.0)
+            .l(13.6, 11.6)
+            .l(12.0, 17.0)
+            .l(10.4, 11.6)
+            .l(5.0, 10.0)
+            .l(10.4, 8.4)
+            .z()
+            .m(19.0, 3.0)
+            .l(19.0, 6.0)
+            .m(20.5, 4.5)
+            .l(17.5, 4.5)
+            .m(5.0, 16.5)
+            .l(5.0, 18.5)
+            .m(6.0, 17.5)
+            .l(4.0, 17.5),
         // lucide `check`
         "check" => s.m(20.0, 6.0).l(9.0, 17.0).l(4.0, 12.0),
         // a filled dot, the tab status light
