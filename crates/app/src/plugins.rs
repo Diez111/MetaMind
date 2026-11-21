@@ -89,7 +89,7 @@ impl Host for AppHost<'_> {
 
     fn write_note(&mut self, rel: &str, text: &str) -> Result<(), String> {
         if self.dirty_tab(rel) {
-            return Err(format!("{rel} has unsaved edits in the editor"));
+            return Err(format!("{rel} tiene cambios sin guardar en el editor"));
         }
         let existed = self.0.store.index.id(rel).is_some();
         if existed {
@@ -109,7 +109,7 @@ impl Host for AppHost<'_> {
 
     fn delete_note(&mut self, rel: &str) -> Result<(), String> {
         if self.0.store.index.id(rel).is_none() {
-            return Err(format!("not found: {rel}"));
+            return Err(format!("no encontrado: {rel}"));
         }
         self.0.store.delete(rel).map_err(|e| e.to_string())?;
         self.0.retain_tabs(|t| !t.path.eq_ignore_ascii_case(rel));
@@ -120,7 +120,7 @@ impl Host for AppHost<'_> {
 
     fn rename_note(&mut self, from: &str, to: &str) -> Result<(), String> {
         if self.dirty_tab(from) {
-            return Err(format!("{from} has unsaved edits in the editor"));
+            return Err(format!("{from} tiene cambios sin guardar en el editor"));
         }
         let plan = self.0.store.rename(from, to).map_err(|e| e.to_string())?;
         for (old, new) in &plan.moves {
@@ -210,11 +210,11 @@ impl Host for AppHost<'_> {
     }
 
     fn replace_range(&mut self, from: usize, to: usize, text: &str) -> Result<(), String> {
-        let t = self.0.tab_mut().ok_or("no active note")?;
+        let t = self.0.tab_mut().ok_or("no hay ninguna nota activa")?;
         let buf = &mut t.editor.buf;
         let full = buf.text();
         if from > to || to > full.len() || !full.is_char_boundary(from) || !full.is_char_boundary(to) {
-            return Err("range out of bounds".into());
+            return Err("rango fuera de límites".into());
         }
         let now = fsio::now_ms();
         buf.apply(vec![Change { start: from, end: to, text: text.to_string() }], None, EditKind::Other, now);
@@ -224,7 +224,7 @@ impl Host for AppHost<'_> {
 
     fn run_command(&mut self, id: &str) -> Result<(), String> {
         if self.0.plugins.commands.len() >= 64 {
-            return Err("too many queued commands".into());
+            return Err("demasiados comandos en cola".into());
         }
         self.0.plugins.commands.push(id.to_string());
         Ok(())
@@ -244,7 +244,7 @@ fn instantiate(d: &Discovered, root: &Path) -> Result<Box<dyn Extension>, String
         _kind => {
             let _ = root;
             Err(format!(
-                "Este build nativo no ejecuta plugins JS: {} ({})",
+                "Esta compilación nativa no ejecuta plugins JS: {} ({})",
                 d.manifest.name,
                 d.entry.trim_start_matches(".obsidian/plugins/")
             ))
@@ -396,13 +396,13 @@ impl App {
             "plugins:reload" => {
                 self.plugins_load();
                 let n = self.plugins.statuses.iter().filter(|s| s.loaded).count();
-                self.notice = Some(format!("Reloaded plugins: {n} running"));
+                self.notice = Some(format!("Plugins recargados: {n} en ejecución"));
                 true
             }
             "plugins:list" => {
                 let list = self.plugin_list();
                 self.notice = Some(if list.is_empty() {
-                    "No plugins or scripts found".to_string()
+                    "No se encontraron plugins ni scripts".to_string()
                 } else {
                     list.iter()
                         .map(|p| {

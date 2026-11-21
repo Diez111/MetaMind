@@ -30,7 +30,7 @@ impl App {
                 Err(_) => match self.copy_in(file, &dir) {
                     Ok(rel) => rel,
                     Err(e) => {
-                        self.notice = Some(format!("Cannot import {}: {e}", file.display()));
+                        self.notice = Some(format!("No se pudo importar {}: {e}", file.display()));
                         continue;
                     }
                 },
@@ -49,7 +49,7 @@ impl App {
         let name = format!("Pasted image {y:04}{mo:02}{d:02}{h:02}{mi:02}{s:02}.png");
         match self.add_attachment(&name, &dir, |abs| std::fs::write(abs, png)) {
             Ok(rel) => self.link_added(source, vec![rel]),
-            Err(e) => self.notice = Some(format!("Cannot save the pasted image: {e}")),
+            Err(e) => self.notice = Some(format!("No se pudo guardar la imagen pegada: {e}")),
         }
     }
 
@@ -61,8 +61,8 @@ impl App {
         self.files_changed(&[]);
         let Some(source) = source else {
             self.notice = Some(match added.as_slice() {
-                [one] => format!("Added {one}"),
-                many => format!("Added {} files", many.len()),
+                [one] => format!("Añadido {one}"),
+                many => format!("Añadidos {} archivos", many.len()),
             });
             return;
         };
@@ -90,7 +90,7 @@ impl App {
     /// Copy an outside file into `dir`.
     fn copy_in(&mut self, file: &Path, dir: &str) -> std::io::Result<String> {
         if !file.is_file() {
-            return Err(std::io::Error::other("only files can be added"));
+            return Err(std::io::Error::other("solo se pueden añadir archivos"));
         }
         let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         self.add_attachment(&name, dir, |abs| std::fs::copy(file, abs).map(drop))

@@ -124,7 +124,7 @@ impl App {
             let text = match std::fs::read_to_string(self.store.root.join(&p)) {
                 Ok(t) => t,
                 Err(e) => {
-                    files.push((p, vec![format!("Cannot read: {e}")]));
+                    files.push((p, vec![format!("No se pudo leer: {e}")]));
                     continue;
                 }
             };
@@ -182,7 +182,7 @@ impl App {
         let (text, stamp) = match self.store.read(rel) {
             Ok(r) => r,
             Err(e) => {
-                self.notice = Some(format!("Cannot read {rel}: {e}"));
+                self.notice = Some(format!("No se pudo leer {rel}: {e}"));
                 return;
             }
         };
@@ -207,12 +207,17 @@ impl App {
                 // The write reindexed the note, so `files_changed` sees no change to reload.
                 self.reload_tabs(&[rel.to_string()]);
                 self.mentions = None;
-                self.notice = Some(format!("Linked {} mention(s) in {}", hits.len(), path::strip_md(rel)));
+                let n = hits.len();
+                self.notice = Some(if n == 1 {
+                    format!("Se vinculó 1 mención en {}", path::strip_md(rel))
+                } else {
+                    format!("Se vincularon {n} menciones en {}", path::strip_md(rel))
+                });
             }
             Err(WriteError::Conflict { .. }) => {
-                self.notice = Some(format!("{rel} changed on disk; try again"));
+                self.notice = Some(format!("{rel} cambió en el disco; inténtalo de nuevo"));
             }
-            Err(WriteError::Io(e)) => self.notice = Some(format!("Cannot update {rel}: {e}")),
+            Err(WriteError::Io(e)) => self.notice = Some(format!("No se pudo actualizar {rel}: {e}")),
         }
     }
 }

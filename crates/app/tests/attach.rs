@@ -23,7 +23,7 @@ fn dropped_files_are_copied_and_embedded() {
 
     // A directory is refused with a notice and nothing is inserted.
     app.import_files(&[outside.path()]);
-    assert!(app.notice.as_deref().unwrap().contains("only files can be added"));
+    assert!(app.notice.as_deref().unwrap().contains("solo se pueden añadir archivos"));
     assert_eq!(app.tab().unwrap().editor.buf.text(), "![[pic.png]]![[pic 1.png]]\n[[Other]]");
 }
 
@@ -43,7 +43,7 @@ fn markdown_link_setting_and_no_open_note() {
 
     let mut app = App::open(d.path()).unwrap();
     app.import_files(&[&doc]);
-    assert_eq!(app.notice.as_deref(), Some("Added files/my doc.pdf"));
+    assert_eq!(app.notice.as_deref(), Some("Añadido files/my doc.pdf"));
     app.run("open:N.md");
     app.import_files(&[&doc]);
     assert_eq!(app.tab().unwrap().editor.buf.text(), "![my doc 1](my%20doc%201.pdf)");

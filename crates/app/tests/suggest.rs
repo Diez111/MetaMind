@@ -71,7 +71,7 @@ fn slash_runs_a_command_in_place_of_the_query() {
     // A space ends the query, so nothing is offered.
     assert!(app.suggest.is_none());
     key(&mut app, "Enter");
-    typed(&mut app, "/togglebold");
+    typed(&mut app, "/negrita");
     assert_eq!(app.suggest.as_ref().map(|s| s.kind), Some(SuggestKind::Slash));
     assert_eq!(app.suggest.as_ref().unwrap().items[0].action, "editor:toggle-bold");
     key(&mut app, "Enter");

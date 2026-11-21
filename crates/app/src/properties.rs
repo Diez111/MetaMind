@@ -284,10 +284,13 @@ pub fn render(app: &App, dom: &mut Dom, parent: NodeId, mode: ViewMode, text: &s
     if let Some(e) = editing(&Target::NewKey) {
         let row = dom.add(props, El::div().class("metadata-property"));
         let kcell = dom.add(row, El::div().class("metadata-property-key"));
-        let text = if e.buf.is_empty() { "Property name▏".to_string() } else { shown(e) };
+        let text = if e.buf.is_empty() { "Nombre de la propiedad▏".to_string() } else { shown(e) };
         dom.add(kcell, El::div().class("metadata-input is-editing").text(text));
     } else {
-        dom.add(wrap, El::div().class("metadata-add-button").text("+ Agregar propiedad").action("properties:add"));
+        dom.add(
+            wrap,
+            El::div().class("metadata-add-button").text("+ Añadir propiedad").action("properties:add"),
+        );
     }
     true
 }
@@ -355,7 +358,7 @@ impl App {
                 let next = if mode_setting(self) == "visible" { "source" } else { "visible" };
                 self.config.app.set("propertiesInDocument", next.into());
                 if let Err(e) = self.config.app.save() {
-                    self.notice = Some(format!("Cannot save app.json: {e}"));
+                    self.notice = Some(format!("No se pudo guardar app.json: {e}"));
                 }
                 self.prop_edit = None;
             }
@@ -426,7 +429,7 @@ impl App {
             };
             match &found {
                 Some((f, _)) if f.index(&value).is_some() => {
-                    self.notice = Some(format!("Property \"{value}\" already exists"));
+                    self.notice = Some(format!("La propiedad \"{value}\" ya existe"));
                     return;
                 }
                 Some((f, _)) => self.apply_prop_change(f.add(&value, &initial)),
@@ -448,7 +451,7 @@ impl App {
                     return;
                 }
                 if front.index(&value).is_some_and(|x| x != i) {
-                    self.notice = Some(format!("Property \"{value}\" already exists"));
+                    self.notice = Some(format!("La propiedad \"{value}\" ya existe"));
                     return;
                 }
                 self.apply_prop_change(front.rename(&text, i, &value));
@@ -460,7 +463,7 @@ impl App {
                     Kind::Number => match value.parse::<f64>() {
                         Ok(n) if n.is_finite() => Value::Number(n),
                         _ => {
-                            self.notice = Some(format!("\"{value}\" is not a number"));
+                            self.notice = Some(format!("\"{value}\" no es un número"));
                             return;
                         }
                     },

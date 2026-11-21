@@ -202,7 +202,7 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
                     ch => s.push(ch),
                 }
             }
-            i = end.ok_or("unterminated string")?;
+            i = end.ok_or("cadena sin cerrar")?;
             out.push(Tok::Str(s));
         } else if c.is_ascii_digit() {
             let start = i;
@@ -211,7 +211,7 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
             {
                 i += 1;
             }
-            out.push(Tok::Num(src[start..i].parse().map_err(|_| "bad number")?));
+            out.push(Tok::Num(src[start..i].parse().map_err(|_| "número no válido")?));
         } else if c.is_ascii_alphabetic() || c == b'_' || c >= 0x80 {
             let start = i;
             while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_' || b[i] >= 0x80) {
@@ -222,7 +222,7 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
             i += s.len();
             out.push(Tok::Sym(s));
         } else {
-            return Err(format!("unexpected `{}`", src[i..].chars().next().unwrap_or(' ')));
+            return Err(format!("`{}` inesperado", src[i..].chars().next().unwrap_or(' ')));
         }
     }
     Ok(out)
@@ -286,7 +286,7 @@ impl Parser {
         loop {
             if self.eat(".") {
                 let Some(Tok::Ident(name)) = self.peek().cloned() else {
-                    return Err("expected a name after `.`".into());
+                    return Err("se esperaba un nombre después de `.`".into());
                 };
                 self.at += 1;
                 if self.eat("(") {
@@ -323,7 +323,7 @@ impl Parser {
     }
 
     fn primary(&mut self) -> Result<Expr, String> {
-        let t = self.peek().cloned().ok_or("unexpected end")?;
+        let t = self.peek().cloned().ok_or("fin inesperado")?;
         self.at += 1;
         Ok(match t {
             Tok::Num(n) => Expr::Lit(Val::Num(n)),
@@ -341,7 +341,7 @@ impl Parser {
                 _ if self.eat("(") => Expr::Call(id, self.args(")")?),
                 _ => Expr::Name(vec![id]),
             },
-            Tok::Sym(s) => return Err(format!("unexpected `{s}`")),
+            Tok::Sym(s) => return Err(format!("`{s}` inesperado")),
         })
     }
 }
@@ -351,7 +351,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, String> {
     let e = p.binary(0)?;
     match p.peek() {
         None => Ok(e),
-        Some(t) => Err(format!("unexpected {t:?}")),
+        Some(t) => Err(format!("{t:?} inesperado")),
     }
 }
 
@@ -421,10 +421,10 @@ fn parse_filter(y: &Yaml) -> Result<Filter, String> {
             } else if let Some(f) = list("not")? {
                 Ok(Filter::Not(f))
             } else {
-                Err("a filter map needs `and`, `or` or `not`".into())
+                Err("un mapa de filtro necesita `and`, `or` o `not`".into())
             }
         }
-        _ => Err("a filter must be an expression or an `and`/`or`/`not` map".into()),
+        _ => Err("un filtro debe ser una expresión o un mapa `and`/`or`/`not`".into()),
     }
 }
 

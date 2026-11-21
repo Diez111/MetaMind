@@ -627,11 +627,13 @@ pub fn pane(c: &CanvasView, dom: &mut Dom, parent: NodeId, info: &mut crate::vie
     let header = dom.add(parent, El::div().class("view-header graph-controls canvas-controls"));
     dom.add(
         header,
-        El::div().class("graph-count").text(format!("{}  ·  {} nodes", c.path, c.canvas.nodes.len())),
+        El::div().class("graph-count").text(format!("{}  ·  {} nodos", c.path, c.canvas.nodes.len())),
     );
-    for (label, cmd) in
-        [("Add text", "canvas:add-text"), ("Delete", "canvas:delete-selected"), ("Fit", "canvas:reset-view")]
-    {
+    for (label, cmd) in [
+        ("Añadir texto", "canvas:add-text"),
+        ("Eliminar", "canvas:delete-selected"),
+        ("Ajustar", "canvas:reset-view"),
+    ] {
         dom.add(header, El::div().class("graph-control").text(label).action(cmd));
     }
     let pane = dom.add(parent, El::div().class("view-content canvas-wrapper"));
@@ -681,7 +683,7 @@ impl App {
             match opened {
                 Ok(v) => self.canvas_view = Some(v),
                 Err(e) => {
-                    self.notice = Some(format!("Cannot open {rel}: {e}"));
+                    self.notice = Some(format!("No se pudo abrir {rel}: {e}"));
                     return;
                 }
             }
@@ -700,9 +702,9 @@ impl App {
                 v.dirty = false;
             }
             Err(WriteError::Conflict { .. }) => {
-                self.notice = Some(format!("{} was changed outside Rustsidian. Not saved.", v.path))
+                self.notice = Some(format!("{} se cambió fuera de Rustsidian. No se guardó.", v.path))
             }
-            Err(WriteError::Io(e)) => self.notice = Some(format!("Save failed: {e}")),
+            Err(WriteError::Io(e)) => self.notice = Some(format!("No se pudo guardar: {e}")),
         }
     }
 

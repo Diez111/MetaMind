@@ -9,25 +9,25 @@ use vault_core::{path, VaultStore};
 
 pub const USAGE: &str = "Rustsidian
 
-USAGE:
-  rustsidian                                    Show the welcome screen to pick or create a vault
-  rustsidian [open] <vault> [note]              Open a vault in a window
-  rustsidian <file.md>                          Open a note in the vault that contains it
-  rustsidian <rustsidian://link>                Open or create a note from a link (actions: open, new)
-  rustsidian index <vault>                      Build or refresh the index and print statistics
-  rustsidian search <vault> <query> [--limit N] Search with the query syntax
-  rustsidian export <vault> <note> [--format html|md|pdf] [-o <path>]
-  rustsidian doctor <vault>                     Diagnose configuration, index and notes
-  rustsidian screenshot <vault> <out.png> [--note <path>] [--size WxH] [--keys \"Ctrl+P ...\"] [--type <text>] [--run <command id>,...] [--frames N] [--scroll-to <text>] [--light]
-  rustsidian welcome-screenshot <out.png> [--run <action>,...] [--type <text>]
-  rustsidian commands                           List command ids and default hotkeys
-  rustsidian update [--check]                   Install the latest release, or only report it
-  rustsidian version                            Print the version
+USO:
+  rustsidian                                    Muestra la pantalla de bienvenida para elegir o crear una bóveda
+  rustsidian [open] <bóveda> [nota]             Abre una bóveda en una ventana
+  rustsidian <archivo.md>                       Abre una nota de la bóveda que lo contiene
+  rustsidian <rustsidian://enlace>              Abre o crea una nota desde un enlace (acciones: open, new)
+  rustsidian index <bóveda>                     Crea o actualiza el índice e imprime estadísticas
+  rustsidian search <bóveda> <consulta> [--limit N] Busca con la sintaxis de consultas
+  rustsidian export <bóveda> <nota> [--format html|md|pdf] [-o <ruta>]
+  rustsidian doctor <bóveda>                    Diagnostica la configuración, el índice y las notas
+  rustsidian screenshot <bóveda> <salida.png> [--note <ruta>] [--size WxH] [--keys \"Ctrl+P ...\"] [--type <texto>] [--run <id de comando>,...] [--frames N] [--scroll-to <texto>] [--light]
+  rustsidian welcome-screenshot <salida.png> [--run <acción>,...] [--type <texto>]
+  rustsidian commands                           Lista los ids de comando y sus atajos predeterminados
+  rustsidian update [--check]                   Instala la última versión o solo la informa
+  rustsidian version                            Imprime la versión
 
-OPTIONS:
-  --profile    Print a start-up timing breakdown (with `open` and `index`)
+OPCIONES:
+  --profile    Imprime un desglose de tiempos de inicio (con `open` e `index`)
 
-Not implemented in this build: `rustsidian plugin`, `--config-dir`, portable mode.";
+No implementado en esta compilación: `rustsidian plugin`, `--config-dir`, modo portátil.";
 
 struct Args {
     pos: Vec<String>,
@@ -112,22 +112,22 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
             let r = match crate::update::check() {
                 Ok(Some(r)) => r,
                 Ok(None) => {
-                    let _ = writeln!(out, "rustsidian {} is the latest version", crate::update::CURRENT);
+                    let _ = writeln!(out, "rustsidian {} es la última versión", crate::update::CURRENT);
                     return Outcome::Exit(0);
                 }
                 Err(e) => return fail(&format!("update: {e}")),
             };
-            let _ = writeln!(out, "{} is available (installed: v{})", r.tag, crate::update::CURRENT);
+            let _ = writeln!(out, "{} está disponible (instalada: v{})", r.tag, crate::update::CURRENT);
             if a.flag("--check") {
                 return Outcome::Exit(0);
             }
             let exe = match std::env::current_exe() {
                 Ok(p) => p,
-                Err(e) => return fail(&format!("update: cannot find the program file: {e}")),
+                Err(e) => return fail(&format!("update: no se pudo encontrar el archivo del programa: {e}")),
             };
             match crate::update::install(&r, &exe) {
                 Ok(()) => {
-                    let _ = writeln!(out, "installed {} to {}", r.tag, exe.display());
+                    let _ = writeln!(out, "se instaló {} en {}", r.tag, exe.display());
                     Outcome::Exit(0)
                 }
                 Err(e) => fail(&format!("update: {e}")),
@@ -139,9 +139,9 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
             }
             Outcome::Exit(0)
         }
-        "plugin" => fail("the plugin system is not implemented in this build (see README)"),
+        "plugin" => fail("el sistema de plugins no está implementado en esta compilación (ver README)"),
         "index" => {
-            let Some(root) = vault_arg(1) else { return fail("index: expected a vault folder") };
+            let Some(root) = vault_arg(1) else { return fail("index: se esperaba una carpeta de bóveda") };
             match VaultStore::open(&root) {
                 Ok((mut store, st)) => {
                     let t = Instant::now();
@@ -150,12 +150,12 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
                     let links: usize =
                         graph.out.iter().map(|o| o.iter().map(|x| x.1 as usize).sum::<usize>()).sum();
                     let unresolved: usize = graph.unresolved.iter().map(Vec::len).sum();
-                    let _ = writeln!(out, "files: {}\nnotes: {}\nparsed: {}\nreused from index: {}\nresolved links: {links}\nunresolved link targets: {unresolved}", st.files, st.notes, st.parsed, st.reused);
-                    let _ = writeln!(out, "index written: {saved}");
+                    let _ = writeln!(out, "archivos: {}\nnotas: {}\nanalizados: {}\nreutilizados del índice: {}\nenlaces resueltos: {links}\ndestinos de enlace sin resolver: {unresolved}", st.files, st.notes, st.parsed, st.reused);
+                    let _ = writeln!(out, "índice escrito: {saved}");
                     if a.flag("--profile") {
                         let _ = writeln!(
                             out,
-                            "open: {:?} (walk {:?}, load index {:?}, parse {:?}); save + graph: {:?}",
+                            "apertura: {:?} (recorrido {:?}, carga del índice {:?}, análisis {:?}); guardado + gráfico: {:?}",
                             st.total,
                             st.walk,
                             st.load_cache,
@@ -170,7 +170,7 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
         }
         "search" => {
             let (Some(root), Some(q)) = (vault_arg(1), a.pos.get(2)) else {
-                return fail("search: expected <vault> <query>");
+                return fail("search: se esperaba <bóveda> <consulta>");
             };
             let query = match Query::parse(q) {
                 Ok(q) => q,
@@ -197,17 +197,17 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
         }
         "export" => {
             let (Some(root), Some(note)) = (vault_arg(1), a.pos.get(2)) else {
-                return fail("export: expected <vault> <note>");
+                return fail("export: se esperaba <bóveda> <nota>");
             };
             export(&root, note, a.value("--format").unwrap_or("html"), a.value("-o"), out)
         }
         "doctor" => {
-            let Some(root) = vault_arg(1) else { return fail("doctor: expected a vault folder") };
+            let Some(root) = vault_arg(1) else { return fail("doctor: se esperaba una carpeta de bóveda") };
             doctor(&root, out)
         }
         "screenshot" => {
             let (Some(root), Some(png)) = (vault_arg(1), a.pos.get(2)) else {
-                return fail("screenshot: expected <vault> <out.png>");
+                return fail("screenshot: se esperaba <bóveda> <salida.png>");
             };
             let (w, h) = a
                 .value("--size")
@@ -230,7 +230,7 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
                     Some(key) => {
                         app.key(key);
                     }
-                    None => return fail(&format!("screenshot: bad key `{k}`")),
+                    None => return fail(&format!("screenshot: tecla no válida `{k}`")),
                 }
             }
             if let Some(t) = a.value("--type") {
@@ -258,7 +258,7 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
             }
             let mut fonts = rustsidian_ui::Fonts::new();
             let Some(mut pm) = rustsidian_ui::Pixmap::new(w.clamp(64, 8192), h.clamp(64, 8192)) else {
-                return fail("screenshot: bad size");
+                return fail("screenshot: tamaño no válido");
             };
             // Two frames so the perf overlay shows a warm-cache frame time; `--frames` renders
             // more, which is what a scroll animation and the block window need to settle.
@@ -270,7 +270,7 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
                 Ok(()) => {
                     let _ = writeln!(
                         out,
-                        "wrote {png} ({w}x{h}), frame {:.2} ms",
+                        "se escribió {png} ({w}x{h}), fotograma {:.2} ms",
                         app.last_frame_us as f64 / 1000.0
                     );
                     Outcome::Exit(0)
@@ -279,7 +279,7 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
             }
         }
         "welcome-screenshot" => {
-            let Some(png) = a.pos.get(1) else { return fail("welcome-screenshot: expected <out.png>") };
+            let Some(png) = a.pos.get(1) else { return fail("welcome-screenshot: se esperaba <salida.png>") };
             let mut w = crate::welcome::Welcome::new();
             for c in a.value("--run").unwrap_or("").split(',').filter(|c| !c.is_empty()) {
                 w.run(c.trim());
@@ -289,12 +289,12 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
             }
             let mut fonts = rustsidian_ui::Fonts::new();
             let Some(mut pm) = rustsidian_ui::Pixmap::new(1280, 800) else {
-                return fail("welcome-screenshot: bad size");
+                return fail("welcome-screenshot: tamaño no válido");
             };
             w.render(&mut fonts, &mut pm, 1.0);
             match pm.save_png(png) {
                 Ok(()) => {
-                    let _ = writeln!(out, "wrote {png}");
+                    let _ = writeln!(out, "se escribió {png}");
                     Outcome::Exit(0)
                 }
                 Err(e) => fail(&format!("welcome-screenshot: {e}")),
@@ -302,7 +302,7 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
         }
         "open" => match vault_arg(1) {
             Some(vault) => Outcome::Open { vault, note: a.pos.get(2).cloned(), profile: a.flag("--profile") },
-            None => fail("open: expected a vault folder"),
+            None => fail("open: se esperaba una carpeta de bóveda"),
         },
         _ if crate::uri::is_link(first) => match crate::uri::resolve(first, &crate::recent::load()) {
             Ok(t) => Outcome::Open { vault: t.vault, note: t.note, profile: false },
@@ -320,7 +320,7 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
                     Outcome::Open { vault, note: a.pos.get(1).cloned(), profile: a.flag("--profile") }
                 }
                 None => fail(&format!(
-                    "`{first}` is neither a command, a file nor a folder. Run `rustsidian help`."
+                    "`{first}` no es un comando, un archivo ni una carpeta. Ejecuta `rustsidian help`."
                 )),
             }
         }
@@ -357,7 +357,7 @@ fn export(
         Err(e) => return fail(&format!("export: {e}")),
     };
     let Some(id) = store.index.resolve(note, "") else {
-        return fail(&format!("export: note `{note}` not found"));
+        return fail(&format!("export: no se encontró la nota `{note}`"));
     };
     let rel = store.index.entry(id).map(|f| f.path.to_string()).unwrap_or_default();
     let text = match store.read(&rel) {
@@ -378,7 +378,7 @@ fn export(
                 .unwrap_or_else(|| PathBuf::from(format!("{}.html", path::stem(&rel))));
             match vault_core::fsio::atomic_write(&dest, html.as_bytes()) {
                 Ok(()) => {
-                    let _ = writeln!(out, "wrote {}", dest.display());
+                    let _ = writeln!(out, "se escribió {}", dest.display());
                     Outcome::Exit(0)
                 }
                 Err(e) => fail(&format!("export: {e}")),
@@ -420,7 +420,7 @@ fn export(
             let bundled = vault_core::apply_edits(&text, &edits);
             match vault_core::fsio::atomic_write(&dest.join(path::file_name(&rel)), bundled.as_bytes()) {
                 Ok(()) => {
-                    let _ = writeln!(out, "wrote {} (1 note, {copied} attachments)", dest.display());
+                    let _ = writeln!(out, "se escribió {} (1 nota, {copied} adjuntos)", dest.display());
                     Outcome::Exit(0)
                 }
                 Err(e) => fail(&format!("export: {e}")),
@@ -436,13 +436,13 @@ fn export(
             app.open_note(&rel);
             match crate::pdf::export(&mut app, &mut rustsidian_ui::Fonts::new(), &dest) {
                 Ok(pages) => {
-                    let _ = writeln!(out, "wrote {} ({pages} pages)", dest.display());
+                    let _ = writeln!(out, "se escribió {} ({pages} páginas)", dest.display());
                     Outcome::Exit(0)
                 }
                 Err(e) => fail(&format!("export: {e}")),
             }
         }
-        other => fail(&format!("export: unknown format `{other}`")),
+        other => fail(&format!("export: formato desconocido `{other}`")),
     }
 }
 
@@ -459,7 +459,7 @@ fn doctor(root: &Path, out: &mut dyn std::io::Write) -> Outcome {
             line(
                 true,
                 format!(
-                    ".obsidian config readable (link format {:?}, theme {})",
+                    "configuración de .obsidian legible (formato de enlaces {:?}, tema {})",
                     c.link_format(),
                     c.css_theme().unwrap_or("default")
                 ),
@@ -467,7 +467,7 @@ fn doctor(root: &Path, out: &mut dyn std::io::Write) -> Outcome {
             if let Some(t) = c.css_theme() {
                 line(
                     c.dir.join("themes").join(t).join("theme.css").is_file(),
-                    format!("theme `{t}` has a theme.css"),
+                    format!("el tema `{t}` tiene theme.css"),
                 );
             }
             for s in c.enabled_snippets() {
@@ -478,26 +478,28 @@ fn doctor(root: &Path, out: &mut dyn std::io::Write) -> Outcome {
                         line(
                             sheet.diagnostics.is_empty(),
                             format!(
-                                "snippet `{s}`: {} rules, {} unsupported or invalid constructs",
+                                "fragmento `{s}`: {} reglas, {} construcciones no compatibles o no válidas",
                                 sheet.rules.len(),
                                 sheet.diagnostics.len()
                             ),
                         );
                     }
-                    Err(_) => line(false, format!("snippet `{s}` is enabled but {} is missing", p.display())),
+                    Err(_) => {
+                        line(false, format!("el fragmento `{s}` está activado pero falta {}", p.display()))
+                    }
                 }
             }
         }
-        Err(e) => line(false, format!(".obsidian config: {e}")),
+        Err(e) => line(false, format!("configuración de .obsidian: {e}")),
     }
     let cache = VaultStore::cache_path(root);
     line(
         !cache.exists() || vault_core::cache::load(&cache).is_some(),
-        "persisted index is valid (or absent; it is rebuilt automatically)".into(),
+        "el índice guardado es válido (o no existe; se reconstruye automáticamente)".into(),
     );
     match VaultStore::open(root) {
         Ok((mut store, st)) => {
-            line(true, format!("{} files, {} notes indexed in {:?}", st.files, st.notes, st.total));
+            line(true, format!("{} archivos, {} notas indexadas en {:?}", st.files, st.notes, st.total));
             let bad: Vec<String> = store
                 .index
                 .notes()
@@ -507,30 +509,30 @@ fn doctor(root: &Path, out: &mut dyn std::io::Write) -> Outcome {
             line(
                 bad.is_empty(),
                 format!(
-                    "{} notes with unparsable front matter{}",
+                    "{} notas con front matter no analizable{}",
                     bad.len(),
-                    bad.first().map(|p| format!(" (first: {p})")).unwrap_or_default()
+                    bad.first().map(|p| format!(" (primera: {p})")).unwrap_or_default()
                 ),
             );
             let g = store.index.graph();
             let unresolved: usize = g.unresolved.iter().map(Vec::len).sum();
-            line(true, format!("{unresolved} unresolved link targets (informational)"));
+            line(true, format!("{unresolved} destinos de enlace sin resolver (informativo)"));
             let tmp = root.join(".rustsidian").join("doctor-write-test");
             let writable = vault_core::fsio::atomic_write(&tmp, b"ok").is_ok();
             let _ = std::fs::remove_file(&tmp);
-            line(writable, "vault is writable".into());
+            line(writable, "la bóveda es escribible".into());
         }
-        Err(e) => line(false, format!("vault cannot be opened: {e}")),
+        Err(e) => line(false, format!("no se pudo abrir la bóveda: {e}")),
     }
     let fonts = rustsidian_ui::Fonts::new();
-    line(fonts.font_count() > 0, format!("{} font faces available", fonts.font_count()));
+    line(fonts.font_count() > 0, format!("{} tipos de letra disponibles", fonts.font_count()));
     let _ = writeln!(
         out,
         "{}",
         if problems == 0 {
-            "No problems found.".to_string()
+            "No se encontraron problemas.".to_string()
         } else {
-            format!("{problems} problem(s) found.")
+            format!("{problems} problema(s) encontrado(s).")
         }
     );
     Outcome::Exit(i32::from(problems > 0))

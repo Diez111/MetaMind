@@ -159,7 +159,7 @@ fn font_accent_and_line_width_settings_style_notes() {
     app.run("settings:edit:accentColor");
     typed(&mut app, "zz");
     app.key(key("Enter"));
-    assert_eq!(app.notice.as_deref(), Some("\"#ff0000zz\" is not a color"));
+    assert_eq!(app.notice.as_deref(), Some("\"#ff0000zz\" no es un color"));
     let a = read_json(&d, ".obsidian/appearance.json");
     assert_eq!(
         (a["textFontFamily"].as_str(), a["accentColor"].as_str(), &a["lineWidth"]),
@@ -186,7 +186,7 @@ fn core_plugins_off_hide_and_block_their_commands() {
     let mut app = App::open(d.path()).unwrap();
     app.run("canvas:new");
     assert!(!app.canvas_active(), "canvas is not in the enabled list");
-    assert!(app.notice.as_deref().unwrap().contains("Canvas is turned off"));
+    assert!(app.notice.as_deref().unwrap().contains("Canvas está desactivado"));
     app.run("app:open-settings");
     app.run("settings:core:canvas");
     app.run("settings:core:graph");
@@ -207,7 +207,7 @@ fn settings_search_spans_sections_and_interface_toggles_apply() {
     let mut pm = rustsidian_ui::Pixmap::new(1200, 900).unwrap();
     app.run("app:open-settings");
     app.run("settings:edit:search");
-    typed(&mut app, "ribbon");
+    typed(&mut app, "barra de iconos");
     let frame = rustsidian_app::render(&mut app, &mut fonts, &mut pm, 1.0);
     let has = |a: &str| frame.dom.nodes.iter().any(|n| n.el.action.as_deref() == Some(a));
     assert!(has("settings:toggle:showRibbon"));

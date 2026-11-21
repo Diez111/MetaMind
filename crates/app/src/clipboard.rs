@@ -84,7 +84,7 @@ fn to_dib(pm: &rustsidian_ui::Pixmap) -> Vec<u8> {
 #[cfg_attr(not(windows), allow(dead_code))]
 fn dib_to_png(dib: &[u8]) -> Result<Vec<u8>, String> {
     let u32_at = |i: usize| dib.get(i..i + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
-    let bad = || "unreadable clipboard image".to_string();
+    let bad = || "imagen del portapapeles ilegible".to_string();
     let header = u32_at(0).ok_or_else(bad)? as usize;
     let width = u32_at(4).ok_or_else(bad)? as i32;
     let height = u32_at(8).ok_or_else(bad)? as i32;
@@ -96,11 +96,11 @@ fn dib_to_png(dib: &[u8]) -> Result<Vec<u8>, String> {
     match compression {
         0 => {}
         3 if (u32_at(40), u32_at(44), u32_at(48)) == (Some(0x00ff_0000), Some(0x0000_ff00), Some(0xff)) => {}
-        3 => return Err("clipboard image has an unusual pixel layout".into()),
-        _ => return Err(format!("clipboard image compression {compression} is not supported")),
+        3 => return Err("la imagen del portapapeles tiene una disposición de píxeles inusual".into()),
+        _ => return Err(format!("la compresión de imagen {compression} del portapapeles no es compatible")),
     }
     if bits != 24 && bits != 32 {
-        return Err(format!("{bits}-bit clipboard images are not supported"));
+        return Err(format!("las imágenes del portapapeles de {bits} bits no son compatibles"));
     }
     let (w, h) = (width.unsigned_abs(), height.unsigned_abs());
     let start = header + if compression == 3 && header == 40 { 12 } else { 0 } + colors * 4;
@@ -168,7 +168,7 @@ mod imp {
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
-        Err("the clipboard is in use by another program".into())
+        Err("otro programa está usando el portapapeles".into())
     }
 
     pub fn set(text: &str) -> Result<(), String> {
@@ -211,18 +211,18 @@ mod imp {
     unsafe fn put(format: u32, data: &[u8]) -> Result<(), String> {
         let mem = GlobalAlloc(GMEM_MOVEABLE, data.len());
         if mem.is_null() {
-            return Err("out of memory".to_string());
+            return Err("sin memoria".to_string());
         }
         let dst = GlobalLock(mem) as *mut u8;
         if dst.is_null() {
             GlobalFree(mem);
-            return Err("cannot lock clipboard memory".to_string());
+            return Err("no se pudo bloquear la memoria del portapapeles".to_string());
         }
         std::ptr::copy_nonoverlapping(data.as_ptr(), dst, data.len());
         GlobalUnlock(mem);
         if SetClipboardData(format, mem).is_null() {
             GlobalFree(mem);
-            return Err("cannot set clipboard data".to_string());
+            return Err("no se pudieron establecer los datos del portapapeles".to_string());
         }
         Ok(())
     }
@@ -238,7 +238,7 @@ mod imp {
             } else {
                 let src = GlobalLock(mem) as *const u16;
                 if src.is_null() {
-                    Err("cannot lock clipboard memory".to_string())
+                    Err("no se pudo bloquear la memoria del portapapeles".to_string())
                 } else {
                     let mut len = 0;
                     while *src.add(len) != 0 {
@@ -473,7 +473,7 @@ mod imp {
         let digit = |c: u8| (c as char).to_digit(16).map(|d| d as u8);
         let bytes: Option<Vec<u8>> =
             hex.chunks(2).map(|p| Some(digit(p[0])? << 4 | digit(*p.get(1)?)?)).collect();
-        bytes.map(Some).ok_or_else(|| "unreadable clipboard image".to_string())
+        bytes.map(Some).ok_or_else(|| "imagen del portapapeles ilegible".to_string())
     }
 }
 
@@ -546,7 +546,7 @@ mod tests {
         let mut odd = header(1, 1, 32, 3);
         odd.extend([0u8; 12]);
         odd.extend([0u8; 4]);
-        assert!(dib_to_png(&odd).unwrap_err().contains("unusual"));
+        assert!(dib_to_png(&odd).unwrap_err().contains("inusual"));
         assert!(dib_to_png(&header(1, 1, 8, 0)).is_err());
         assert!(dib_to_png(&dib[..10]).is_err());
     }

@@ -95,130 +95,130 @@ fn normalize_key(k: &str) -> String {
 
 /// (stable id, name shown in the palette, default hotkey)
 pub const COMMANDS: &[(&str, &str, &str)] = &[
-    ("command-palette:open", "Command palette: Open", "Ctrl+P"),
-    ("switcher:open", "Quick switcher: Open", "Ctrl+O"),
-    ("global-search:open", "Search: Search in all files", "Ctrl+Shift+F"),
-    ("file-explorer:open", "Files: Show file explorer", ""),
-    ("bookmarks:open", "Bookmarks: Show bookmarks", ""),
-    ("bookmarks:bookmark-current-view", "Bookmarks: Bookmark or unbookmark current note", ""),
-    ("bookmarks:bookmark-current-search", "Bookmarks: Bookmark current search", ""),
-    ("tag-pane:open", "Tags: Show tags", ""),
-    ("templates:insert-template", "Templates: Insert template", ""),
-    ("templates:insert-current-date", "Templates: Insert current date", ""),
-    ("templates:insert-current-time", "Templates: Insert current time", ""),
-    ("file-explorer:new-file", "Create new note", "Ctrl+N"),
-    ("file-explorer:new-folder", "Create new folder", ""),
-    ("workspace:edit-file-title", "Rename file", "F2"),
-    ("workspace:copy-path", "Copy file path", ""),
-    ("workspace:export-pdf", "Export to PDF", ""),
-    ("file-explorer:reveal-active-file", "Reveal current file in navigation", ""),
-    ("file-explorer:collapse-all", "Files: Collapse or expand all folders", ""),
-    ("editor:save-file", "Save current file", "Ctrl+S"),
-    ("workspace:close", "Close current tab", "Ctrl+W"),
-    ("workspace:close-others", "Close all other tabs", ""),
-    ("workspace:close-all", "Close all tabs", ""),
-    ("workspace:split-vertical", "Split right", ""),
-    ("workspace:split-horizontal", "Split down", ""),
-    ("workspace:move-to-new-window", "Move current tab to new window", ""),
-    ("workspace:toggle-stacked-tabs", "Toggle stacked tabs", ""),
-    ("workspaces:save", "Workspaces: Save current workspace", ""),
-    ("workspaces:load", "Workspaces: Load workspace", ""),
-    ("workspaces:delete", "Workspaces: Delete workspace", ""),
-    ("workspace:undo-close-pane", "Reopen closed tab", "Ctrl+Shift+T"),
-    ("workspace:next-tab", "Go to next tab", "Ctrl+Tab"),
-    ("workspace:previous-tab", "Go to previous tab", "Ctrl+Shift+Tab"),
-    ("app:go-back", "Navigate back", "Ctrl+Alt+ArrowLeft"),
-    ("app:go-forward", "Navigate forward", "Ctrl+Alt+ArrowRight"),
-    ("app:toggle-left-sidebar", "Toggle left sidebar", "Ctrl+\\"),
-    ("app:toggle-right-sidebar", "Toggle right sidebar", "Ctrl+Shift+\\"),
-    ("backlinks:open", "Backlinks: Show backlinks", ""),
-    ("outgoing-links:open", "Outgoing links: Show outgoing links", ""),
-    ("outline:open", "Outline: Show outline", ""),
-    ("markdown:toggle-preview", "Toggle reading view", "Ctrl+E"),
-    ("editor:toggle-source", "Toggle Live Preview/Source mode", ""),
-    ("editor:toggle-bold", "Toggle bold", "Ctrl+B"),
-    ("editor:toggle-italics", "Toggle italic", "Ctrl+I"),
-    ("editor:toggle-highlight", "Toggle highlight", ""),
-    ("editor:toggle-code", "Toggle code", ""),
-    ("editor:toggle-strikethrough", "Toggle strikethrough", ""),
-    ("editor:toggle-checklist-status", "Toggle checkbox status", "Ctrl+L"),
-    ("editor:toggle-blockquote", "Toggle blockquote", ""),
-    ("editor:set-heading-0", "Remove heading", ""),
-    ("editor:set-heading-1", "Set as heading 1", ""),
-    ("editor:set-heading-2", "Set as heading 2", ""),
-    ("editor:set-heading-3", "Set as heading 3", ""),
-    ("editor:cut", "Cut", "Ctrl+X"),
-    ("editor:copy", "Copy", "Ctrl+C"),
-    ("editor:paste", "Paste", "Ctrl+V"),
-    ("editor:insert-wikilink", "Add internal link", ""),
-    ("editor:undo", "Undo", "Ctrl+Z"),
-    ("editor:redo", "Redo", "Ctrl+Shift+Z"),
-    ("editor:select-all", "Select all", "Ctrl+A"),
-    ("editor:swap-line-up", "Move line up", "Alt+ArrowUp"),
-    ("editor:swap-line-down", "Move line down", "Alt+ArrowDown"),
-    ("editor:duplicate-line", "Duplicate line", ""),
-    ("editor:toggle-fold", "Toggle fold on the current line", ""),
-    ("editor:fold-all", "Fold all headings and lists", ""),
-    ("editor:unfold-all", "Unfold all headings and lists", ""),
-    ("editor:insert-table", "Insert table", ""),
-    ("editor:table-row-before", "Table: Add row before", ""),
-    ("editor:table-row-after", "Table: Add row after", ""),
-    ("editor:table-row-up", "Table: Move row up", ""),
-    ("editor:table-row-down", "Table: Move row down", ""),
-    ("editor:table-row-delete", "Table: Delete row", ""),
-    ("editor:table-col-before", "Table: Add column before", ""),
-    ("editor:table-col-after", "Table: Add column after", ""),
-    ("editor:table-col-left", "Table: Move column left", ""),
-    ("editor:table-col-right", "Table: Move column right", ""),
-    ("editor:table-col-delete", "Table: Delete column", ""),
-    ("editor:table-col-align-left", "Table: Align left", ""),
-    ("editor:table-col-align-center", "Table: Align center", ""),
-    ("editor:table-col-align-right", "Table: Align right", ""),
-    ("editor:table-sort-ascending", "Table: Sort by column (A to Z)", ""),
-    ("editor:table-sort-descending", "Table: Sort by column (Z to A)", ""),
-    ("editor:table-format", "Table: Align columns in the source", ""),
-    ("editor:toggle-vim", "Toggle Vim key bindings", ""),
-    ("editor:add-cursor-above", "Add cursor above", "Ctrl+Alt+ArrowUp"),
-    ("editor:add-cursor-below", "Add cursor below", "Ctrl+Alt+ArrowDown"),
-    ("editor:select-next-occurrence", "Select next occurrence", "Ctrl+D"),
-    ("editor:follow-link", "Follow link under cursor", "Alt+Enter"),
-    ("canvas:new", "Canvas: Create new canvas", ""),
-    ("bases:new", "Bases: Create new base", ""),
-    ("canvas:add-text", "Canvas: Add text node", ""),
-    ("canvas:delete-selected", "Canvas: Delete selected node", ""),
-    ("canvas:edit-selected", "Canvas: Edit selected text node", ""),
-    ("canvas:reset-view", "Canvas: Fit canvas to pane", ""),
-    ("canvas:focus", "Canvas: Show canvas", ""),
-    ("graph:open", "Graph view: Open graph view", "Ctrl+G"),
-    ("graph:open-local", "Graph view: Open local graph", ""),
-    ("graph:toggle-tags", "Graph view: Toggle tags", ""),
-    ("graph:toggle-attachments", "Graph view: Toggle attachments", ""),
-    ("graph:toggle-unresolved", "Graph view: Toggle existing files only", ""),
-    ("graph:toggle-orphans", "Graph view: Toggle orphans", ""),
-    ("graph:toggle-arrows", "Graph view: Toggle arrows", ""),
-    ("graph:cycle-depth", "Graph view: Change local graph depth", ""),
-    ("graph:reset-view", "Graph view: Fit graph to pane", ""),
-    ("graph:toggle-panel", "Graph view: Toggle settings panel", ""),
-    ("graph:animate", "Graph view: Animate layout", ""),
-    ("graph:reset-settings", "Graph view: Restore default settings", ""),
-    ("daily-notes", "Daily notes: Open today's daily note", ""),
-    ("daily-notes:goto-prev", "Daily notes: Open previous daily note", ""),
-    ("daily-notes:goto-next", "Daily notes: Open next daily note", ""),
-    ("zk-prefixer", "Unique note creator: Create new unique note", ""),
-    ("random-note", "Random note: Open random note", ""),
-    ("app:delete-file", "Delete current file", ""),
-    ("theme:toggle-light-dark", "Toggle light/dark mode", ""),
-    ("app:reload-theme", "Reload themes and snippets", ""),
-    ("app:toggle-perf-overlay", "Toggle performance overlay", "Ctrl+Shift+F12"),
-    ("app:open-settings", "Open settings", "Ctrl+,"),
-    ("properties:add", "Add file property", ""),
-    ("properties:toggle-source", "Toggle properties in document: table/source", ""),
-    ("plugins:list", "Plugins: List plugins and scripts", ""),
-    ("plugins:reload", "Plugins: Reload plugins", ""),
-    ("app:open-vault", "Open another vault", ""),
-    ("app:check-for-updates", "Check for updates", ""),
-    ("app:install-update", "Install available update", ""),
-    ("app:quit", "Quit", "Ctrl+Q"),
+    ("command-palette:open", "Paleta de comandos: Abrir", "Ctrl+P"),
+    ("switcher:open", "Selector rápido: Abrir", "Ctrl+O"),
+    ("global-search:open", "Buscar: Buscar en todos los archivos", "Ctrl+Shift+F"),
+    ("file-explorer:open", "Archivos: Mostrar explorador de archivos", ""),
+    ("bookmarks:open", "Marcadores: Mostrar marcadores", ""),
+    ("bookmarks:bookmark-current-view", "Marcadores: Añadir o quitar marcador de la nota actual", ""),
+    ("bookmarks:bookmark-current-search", "Marcadores: Añadir marcador de la búsqueda actual", ""),
+    ("tag-pane:open", "Etiquetas: Mostrar etiquetas", ""),
+    ("templates:insert-template", "Plantillas: Insertar plantilla", ""),
+    ("templates:insert-current-date", "Plantillas: Insertar fecha actual", ""),
+    ("templates:insert-current-time", "Plantillas: Insertar hora actual", ""),
+    ("file-explorer:new-file", "Crear nota", "Ctrl+N"),
+    ("file-explorer:new-folder", "Crear carpeta", ""),
+    ("workspace:edit-file-title", "Renombrar archivo", "F2"),
+    ("workspace:copy-path", "Copiar ruta del archivo", ""),
+    ("workspace:export-pdf", "Exportar a PDF", ""),
+    ("file-explorer:reveal-active-file", "Mostrar archivo actual en la navegación", ""),
+    ("file-explorer:collapse-all", "Archivos: Contraer o expandir todas las carpetas", ""),
+    ("editor:save-file", "Guardar archivo actual", "Ctrl+S"),
+    ("workspace:close", "Cerrar pestaña actual", "Ctrl+W"),
+    ("workspace:close-others", "Cerrar las demás pestañas", ""),
+    ("workspace:close-all", "Cerrar todas las pestañas", ""),
+    ("workspace:split-vertical", "Dividir a la derecha", ""),
+    ("workspace:split-horizontal", "Dividir abajo", ""),
+    ("workspace:move-to-new-window", "Mover pestaña actual a una ventana nueva", ""),
+    ("workspace:toggle-stacked-tabs", "Alternar pestañas apiladas", ""),
+    ("workspaces:save", "Espacios de trabajo: Guardar espacio actual", ""),
+    ("workspaces:load", "Espacios de trabajo: Cargar espacio", ""),
+    ("workspaces:delete", "Espacios de trabajo: Eliminar espacio", ""),
+    ("workspace:undo-close-pane", "Reabrir pestaña cerrada", "Ctrl+Shift+T"),
+    ("workspace:next-tab", "Ir a la pestaña siguiente", "Ctrl+Tab"),
+    ("workspace:previous-tab", "Ir a la pestaña anterior", "Ctrl+Shift+Tab"),
+    ("app:go-back", "Ir atrás", "Ctrl+Alt+ArrowLeft"),
+    ("app:go-forward", "Ir adelante", "Ctrl+Alt+ArrowRight"),
+    ("app:toggle-left-sidebar", "Alternar barra lateral izquierda", "Ctrl+\\"),
+    ("app:toggle-right-sidebar", "Alternar barra lateral derecha", "Ctrl+Shift+\\"),
+    ("backlinks:open", "Retroenlaces: Mostrar retroenlaces", ""),
+    ("outgoing-links:open", "Enlaces salientes: Mostrar enlaces salientes", ""),
+    ("outline:open", "Esquema: Mostrar esquema", ""),
+    ("markdown:toggle-preview", "Alternar vista de lectura", "Ctrl+E"),
+    ("editor:toggle-source", "Alternar vista previa en vivo / código fuente", ""),
+    ("editor:toggle-bold", "Alternar negrita", "Ctrl+B"),
+    ("editor:toggle-italics", "Alternar cursiva", "Ctrl+I"),
+    ("editor:toggle-highlight", "Alternar resaltado", ""),
+    ("editor:toggle-code", "Alternar código", ""),
+    ("editor:toggle-strikethrough", "Alternar tachado", ""),
+    ("editor:toggle-checklist-status", "Alternar estado de la casilla", "Ctrl+L"),
+    ("editor:toggle-blockquote", "Alternar cita en bloque", ""),
+    ("editor:set-heading-0", "Quitar encabezado", ""),
+    ("editor:set-heading-1", "Establecer como encabezado 1", ""),
+    ("editor:set-heading-2", "Establecer como encabezado 2", ""),
+    ("editor:set-heading-3", "Establecer como encabezado 3", ""),
+    ("editor:cut", "Cortar", "Ctrl+X"),
+    ("editor:copy", "Copiar", "Ctrl+C"),
+    ("editor:paste", "Pegar", "Ctrl+V"),
+    ("editor:insert-wikilink", "Añadir enlace interno", ""),
+    ("editor:undo", "Deshacer", "Ctrl+Z"),
+    ("editor:redo", "Rehacer", "Ctrl+Shift+Z"),
+    ("editor:select-all", "Seleccionar todo", "Ctrl+A"),
+    ("editor:swap-line-up", "Mover línea arriba", "Alt+ArrowUp"),
+    ("editor:swap-line-down", "Mover línea abajo", "Alt+ArrowDown"),
+    ("editor:duplicate-line", "Duplicar línea", ""),
+    ("editor:toggle-fold", "Alternar plegado en la línea actual", ""),
+    ("editor:fold-all", "Plegar todos los encabezados y listas", ""),
+    ("editor:unfold-all", "Desplegar todos los encabezados y listas", ""),
+    ("editor:insert-table", "Insertar tabla", ""),
+    ("editor:table-row-before", "Tabla: Añadir fila antes", ""),
+    ("editor:table-row-after", "Tabla: Añadir fila después", ""),
+    ("editor:table-row-up", "Tabla: Mover fila arriba", ""),
+    ("editor:table-row-down", "Tabla: Mover fila abajo", ""),
+    ("editor:table-row-delete", "Tabla: Eliminar fila", ""),
+    ("editor:table-col-before", "Tabla: Añadir columna antes", ""),
+    ("editor:table-col-after", "Tabla: Añadir columna después", ""),
+    ("editor:table-col-left", "Tabla: Mover columna a la izquierda", ""),
+    ("editor:table-col-right", "Tabla: Mover columna a la derecha", ""),
+    ("editor:table-col-delete", "Tabla: Eliminar columna", ""),
+    ("editor:table-col-align-left", "Tabla: Alinear a la izquierda", ""),
+    ("editor:table-col-align-center", "Tabla: Centrar", ""),
+    ("editor:table-col-align-right", "Tabla: Alinear a la derecha", ""),
+    ("editor:table-sort-ascending", "Tabla: Ordenar por columna (A a Z)", ""),
+    ("editor:table-sort-descending", "Tabla: Ordenar por columna (Z a A)", ""),
+    ("editor:table-format", "Tabla: Alinear columnas en el código fuente", ""),
+    ("editor:toggle-vim", "Alternar atajos de Vim", ""),
+    ("editor:add-cursor-above", "Añadir cursor arriba", "Ctrl+Alt+ArrowUp"),
+    ("editor:add-cursor-below", "Añadir cursor abajo", "Ctrl+Alt+ArrowDown"),
+    ("editor:select-next-occurrence", "Seleccionar siguiente aparición", "Ctrl+D"),
+    ("editor:follow-link", "Seguir enlace bajo el cursor", "Alt+Enter"),
+    ("canvas:new", "Canvas: Crear lienzo nuevo", ""),
+    ("bases:new", "Bases: Crear base nueva", ""),
+    ("canvas:add-text", "Canvas: Añadir nodo de texto", ""),
+    ("canvas:delete-selected", "Canvas: Eliminar nodo seleccionado", ""),
+    ("canvas:edit-selected", "Canvas: Editar nodo de texto seleccionado", ""),
+    ("canvas:reset-view", "Canvas: Ajustar lienzo al panel", ""),
+    ("canvas:focus", "Canvas: Mostrar lienzo", ""),
+    ("graph:open", "Vista de gráfico: Abrir gráfico", "Ctrl+G"),
+    ("graph:open-local", "Vista de gráfico: Abrir gráfico local", ""),
+    ("graph:toggle-tags", "Vista de gráfico: Alternar etiquetas", ""),
+    ("graph:toggle-attachments", "Vista de gráfico: Alternar adjuntos", ""),
+    ("graph:toggle-unresolved", "Vista de gráfico: Alternar solo archivos existentes", ""),
+    ("graph:toggle-orphans", "Vista de gráfico: Alternar huérfanos", ""),
+    ("graph:toggle-arrows", "Vista de gráfico: Alternar flechas", ""),
+    ("graph:cycle-depth", "Vista de gráfico: Cambiar profundidad del gráfico local", ""),
+    ("graph:reset-view", "Vista de gráfico: Ajustar gráfico al panel", ""),
+    ("graph:toggle-panel", "Vista de gráfico: Alternar panel de ajustes", ""),
+    ("graph:animate", "Vista de gráfico: Animar disposición", ""),
+    ("graph:reset-settings", "Vista de gráfico: Restaurar ajustes predeterminados", ""),
+    ("daily-notes", "Notas diarias: Abrir la nota diaria de hoy", ""),
+    ("daily-notes:goto-prev", "Notas diarias: Abrir nota diaria anterior", ""),
+    ("daily-notes:goto-next", "Notas diarias: Abrir nota diaria siguiente", ""),
+    ("zk-prefixer", "Creador de notas únicas: Crear nota única nueva", ""),
+    ("random-note", "Nota aleatoria: Abrir nota aleatoria", ""),
+    ("app:delete-file", "Eliminar archivo actual", ""),
+    ("theme:toggle-light-dark", "Alternar modo claro/oscuro", ""),
+    ("app:reload-theme", "Recargar temas y fragmentos CSS", ""),
+    ("app:toggle-perf-overlay", "Alternar superposición de rendimiento", "Ctrl+Shift+F12"),
+    ("app:open-settings", "Abrir ajustes", "Ctrl+,"),
+    ("properties:add", "Añadir propiedad al archivo", ""),
+    ("properties:toggle-source", "Alternar propiedades en el documento: tabla/código", ""),
+    ("plugins:list", "Plugins: Listar plugins y scripts", ""),
+    ("plugins:reload", "Plugins: Recargar plugins", ""),
+    ("app:open-vault", "Abrir otra bóveda", ""),
+    ("app:check-for-updates", "Buscar actualizaciones", ""),
+    ("app:install-update", "Instalar actualización disponible", ""),
+    ("app:quit", "Salir", "Ctrl+Q"),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -900,7 +900,7 @@ impl App {
             self.active = i;
         } else {
             if path::kind_of(&rel) != FileKind::Markdown {
-                self.notice = Some(format!("{rel}: only Markdown notes can be opened in this build"));
+                self.notice = Some(format!("{rel}: solo se pueden abrir notas Markdown en esta compilación"));
                 return;
             }
             match self.store.read(&rel) {
@@ -910,7 +910,7 @@ impl App {
                     self.init_new_tab();
                 }
                 Err(e) => {
-                    self.notice = Some(format!("Cannot open {rel}: {e}"));
+                    self.notice = Some(format!("No se pudo abrir {rel}: {e}"));
                     return;
                 }
             }
@@ -956,13 +956,13 @@ impl App {
             }
             Err(WriteError::Conflict { .. }) => {
                 self.notice = Some(format!(
-                    "{} was changed outside Rustsidian. Not saved; your text is kept in this tab.",
+                    "{} se cambió fuera de Rustsidian. No se guardó; tu texto se conserva en esta pestaña.",
                     tab.path
                 ));
                 false
             }
             Err(WriteError::Io(e)) => {
-                self.notice = Some(format!("Save failed: {e}"));
+                self.notice = Some(format!("No se pudo guardar: {e}"));
                 false
             }
         }
@@ -1038,7 +1038,7 @@ impl App {
             }
             let open = |t: &&mut Tab| t.path.eq_ignore_ascii_case(p);
             if self.all_tabs_mut().filter(open).any(|t| t.editor.buf.is_modified()) {
-                self.notice = Some(format!("{p} changed on disk while it has unsaved edits here."));
+                self.notice = Some(format!("{p} cambió en el disco y aquí tiene cambios sin guardar."));
             } else if let Ok((text, stamp)) = self.store.read(p) {
                 for tab in self.all_tabs_mut().filter(open) {
                     let head = tab.editor.buf.sels[0].head;
@@ -1114,7 +1114,7 @@ impl App {
                 {
                     items.push(PromptItem {
                         label: query.trim().to_string(),
-                        aux: "Enter to create".into(),
+                        aux: "Intro para crear".into(),
                         action: format!("create:{}", query.trim()),
                     });
                 }
@@ -1136,17 +1136,17 @@ impl App {
                     Vec::new()
                 } else if kind == PromptKind::Rename {
                     vec![PromptItem {
-                        label: format!("Rename to \u{201c}{name}\u{201d}"),
+                        label: format!("Renombrar a \u{201c}{name}\u{201d}"),
                         aux: "Enter".into(),
                         action: format!("rename:{target}|{name}"),
                     }]
                 } else {
                     vec![PromptItem {
-                        label: format!("Create folder \u{201c}{name}\u{201d}"),
+                        label: format!("Crear carpeta \u{201c}{name}\u{201d}"),
                         aux: if target.is_empty() {
-                            "in the vault root".into()
+                            "en la raíz de la bóveda".into()
                         } else {
-                            format!("in {target}")
+                            format!("en {target}")
                         },
                         action: format!("mkdir:{target}|{name}"),
                     }]
@@ -1253,7 +1253,7 @@ impl App {
     pub fn run(&mut self, command: &str) {
         let now = fsio::now_ms();
         if let Some(name) = self.disabled_by(command) {
-            self.notice = Some(format!("{name} is turned off in Settings → Core plugins"));
+            self.notice = Some(format!("{name} está desactivado en Ajustes → Plugins principales"));
             return;
         }
         if matches!(command.split(':').next(), Some("create" | "file-explorer" | "daily-notes" | "app")) {
@@ -1279,7 +1279,7 @@ impl App {
         }
         if let Some(word) = command.strip_prefix("spell:add:") {
             if let Err(e) = crate::spell::add(word) {
-                self.notice = Some(format!("Cannot add \"{word}\" to the dictionary: {e}"));
+                self.notice = Some(format!("No se pudo añadir \"{word}\" al diccionario: {e}"));
             }
             return;
         }
@@ -1296,7 +1296,7 @@ impl App {
             let rel = format!("{}.md", path::sanitize_file_name(name, path::SanitizePolicy::Strip));
             if self.store.index.id(&rel).is_none() {
                 if let Err(e) = self.store.create(&rel, "") {
-                    self.notice = Some(format!("Cannot create {rel}: {e}"));
+                    self.notice = Some(format!("No se pudo crear {rel}: {e}"));
                     return;
                 }
                 self.plugins.push(ext_api::Event::Create { path: rel.clone() });
@@ -1394,7 +1394,7 @@ impl App {
                 let rel = path::join(&self.new_note_dir(), &self.unique_untitled());
                 match self.store.create(&rel, "") {
                     Ok(_) => self.open_note(&rel),
-                    Err(e) => self.notice = Some(format!("Cannot create note: {e}")),
+                    Err(e) => self.notice = Some(format!("No se pudo crear la nota: {e}")),
                 }
             }
             "bases:new" => {
@@ -1406,7 +1406,7 @@ impl App {
                 self.tree = None;
                 match self.store.create(&name, "views:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - file.mtime\n") {
                     Ok(_) => self.open_base(&name),
-                    Err(e) => self.notice = Some(format!("Cannot create base: {e}")),
+                    Err(e) => self.notice = Some(format!("No se pudo crear la base: {e}")),
                 }
             }
             "canvas:new" => {
@@ -1425,7 +1425,7 @@ impl App {
                 self.tree = None;
                 match self.store.create(&name, "{\"nodes\":[],\"edges\":[]}\n") {
                     Ok(_) => self.open_canvas(&name),
-                    Err(e) => self.notice = Some(format!("Cannot create canvas: {e}")),
+                    Err(e) => self.notice = Some(format!("No se pudo crear el lienzo: {e}")),
                 }
             }
             "editor:save-file" => {
@@ -1489,11 +1489,11 @@ impl App {
             }
             "app:check-for-updates" => {
                 self.update.start_check(true);
-                self.notice = Some("Checking for updates…".into());
+                self.notice = Some("Buscando actualizaciones…".into());
             }
             "app:install-update" => match self.update.start_install() {
-                Ok(()) => self.notice = Some("Downloading the update…".into()),
-                Err(e) => self.notice = Some(format!("Cannot update: {e}")),
+                Ok(()) => self.notice = Some("Descargando la actualización…".into()),
+                Err(e) => self.notice = Some(format!("No se pudo actualizar: {e}")),
             },
             "app:open-vault" => {
                 self.save_all();
@@ -1525,7 +1525,7 @@ impl App {
             c if c.starts_with("file-explorer:sort:") => {
                 self.config.app.set("fileSortOrder", c["file-explorer:sort:".len()..].into());
                 if let Err(e) = self.config.app.save() {
-                    self.notice = Some(format!("Cannot save the sort order: {e}"));
+                    self.notice = Some(format!("No se pudo guardar el orden: {e}"));
                 }
                 self.tree = None;
             }
@@ -1584,9 +1584,9 @@ impl App {
                         Ok(_) => {
                             self.plugins.push(ext_api::Event::Delete { path: p.clone() });
                             self.retain_tabs(|t| !t.path.eq_ignore_ascii_case(&p));
-                            self.notice = Some(format!("Moved {p} to trash"));
+                            self.notice = Some(format!("Se movió {p} a la papelera"));
                         }
-                        Err(e) => self.notice = Some(format!("Cannot delete {p}: {e}")),
+                        Err(e) => self.notice = Some(format!("No se pudo eliminar {p}: {e}")),
                     }
                 }
             }

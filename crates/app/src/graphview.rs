@@ -119,7 +119,7 @@ pub const COLOR_CLASSES: [&str; 9] = [
 
 /// Collapsible sections of the settings panel: (`graph.json` key suffix, title).
 pub const SECTIONS: [(&str, &str); 4] =
-    [("filter", "Filters"), ("color-groups", "Groups"), ("display", "Display"), ("forces", "Forces")];
+    [("filter", "Filtros"), ("color-groups", "Grupos"), ("display", "Pantalla"), ("forces", "Fuerzas")];
 
 pub struct Slider {
     pub key: &'static str,
@@ -133,17 +133,17 @@ const fn slider(key: &'static str, label: &'static str, min: f32, max: f32, step
     Slider { key, label, min, max, step }
 }
 
-pub const DEPTH: Slider = slider("depth", "Depth", 1.0, 3.0, 1.0);
+pub const DEPTH: Slider = slider("depth", "Profundidad", 1.0, 3.0, 1.0);
 pub const DISPLAY_SLIDERS: [Slider; 3] = [
-    slider("text-fade", "Text fade threshold", -3.0, 3.0, 0.01),
-    slider("node-size", "Node size", 0.1, 5.0, 0.01),
-    slider("line-size", "Link thickness", 0.1, 5.0, 0.01),
+    slider("text-fade", "Umbral de desvanecimiento del texto", -3.0, 3.0, 0.01),
+    slider("node-size", "Tamaño de nodo", 0.1, 5.0, 0.01),
+    slider("line-size", "Grosor de enlaces", 0.1, 5.0, 0.01),
 ];
 pub const FORCE_SLIDERS: [Slider; 4] = [
-    slider("center", "Center force", 0.0, 1.0, 0.01),
-    slider("repel", "Repel force", 0.0, 20.0, 0.01),
-    slider("link", "Link force", 0.0, 1.0, 0.01),
-    slider("distance", "Link distance", 30.0, 500.0, 1.0),
+    slider("center", "Fuerza central", 0.0, 1.0, 0.01),
+    slider("repel", "Fuerza de repulsión", 0.0, 20.0, 0.01),
+    slider("link", "Fuerza de enlaces", 0.0, 1.0, 0.01),
+    slider("distance", "Distancia entre enlaces", 30.0, 500.0, 1.0),
 ];
 
 /// Colors given to new groups, in turn.
@@ -392,8 +392,8 @@ impl GraphView {
 
     pub fn title(&self) -> String {
         match &self.local {
-            Some(p) => format!("Graph of {}", vault_core::path::stem(p)),
-            None => "Graph view".to_string(),
+            Some(p) => format!("Gráfico de {}", vault_core::path::stem(p)),
+            None => "Vista de gráfico".to_string(),
         }
     }
 
@@ -715,7 +715,7 @@ impl App {
         view.settings.write_into(&mut self.config.graph.value);
         view.panel.write_into(&mut self.config.graph.value);
         if let Err(e) = self.config.graph.save() {
-            self.notice = Some(format!("Cannot save graph.json: {e}"));
+            self.notice = Some(format!("No se pudo guardar graph.json: {e}"));
         }
     }
 
@@ -851,7 +851,7 @@ impl App {
             "graph:open" => self.open_graph(None),
             "graph:open-local" => match self.tabs.get(self.active).map(|t| t.path.clone()) {
                 Some(p) => self.open_graph(Some(p)),
-                None => self.notice = Some("Open a note first to see its local graph.".into()),
+                None => self.notice = Some("Abre una nota primero para ver su gráfico local.".into()),
             },
             "graph:focus" => self.show_graph = self.graph_view.is_some(),
             "graph:toggle-tags" => self.graph_setting(|v| v.settings.filters.show_tags ^= true),

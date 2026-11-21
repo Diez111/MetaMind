@@ -101,7 +101,7 @@ fn new_window(
         .with_window_icon(icon)
         .with_inner_size(size)
         .with_visible(visible);
-    let window = el.create_window(attrs).map_err(|e| format!("cannot create a window: {e}"))?;
+    let window = el.create_window(attrs).map_err(|e| format!("no se pudo crear una ventana: {e}"))?;
     window.set_ime_allowed(true);
     Ok(Arc::new(window))
 }
@@ -109,7 +109,7 @@ fn new_window(
 fn new_surface(window: &Arc<Window>) -> Result<softbuffer::Surface<Arc<Window>, Arc<Window>>, String> {
     softbuffer::Context::new(window.clone())
         .and_then(|cx| softbuffer::Surface::new(&cx, window.clone()))
-        .map_err(|e| format!("cannot create a drawing surface: {e}"))
+        .map_err(|e| format!("no se pudo crear una superficie de dibujo: {e}"))
 }
 
 fn named(k: &NamedKey) -> Option<&'static str> {
@@ -312,7 +312,7 @@ impl Win {
                     // Without a window the pane goes back to the main one.
                     if let Some(app) = &mut self.app {
                         app.dock_window(id);
-                        app.notice = Some(format!("Cannot open a new window: {e}"));
+                        app.notice = Some(format!("No se pudo abrir una ventana nueva: {e}"));
                     }
                     self.request_redraw();
                     continue;
@@ -374,7 +374,7 @@ impl Win {
         std::thread::spawn(move || {
             let store = VaultStore::open_with_progress(&root, &progress)
                 .map(|(store, _)| store)
-                .map_err(|e| format!("Cannot open {}: {e}", root.display()));
+                .map_err(|e| format!("No se pudo abrir {}: {e}", root.display()));
             let _ = proxy.send_event(UserEvent::Indexed(root, note, store));
         });
     }
@@ -382,7 +382,7 @@ impl Win {
     fn indexed(&mut self, root: &Path, note: Option<&str>, store: Result<VaultStore, String>) {
         self.indexing = None;
         let app = store.and_then(|store| {
-            App::with_store(root, store).map_err(|e| format!("Cannot open {}: {e}", root.display()))
+            App::with_store(root, store).map_err(|e| format!("No se pudo abrir {}: {e}", root.display()))
         });
         match app {
             Ok(app) => self.install(prepare(app, root, note, self.profile, self.started)),
@@ -787,9 +787,9 @@ impl Win {
             if let (Some(p), Some(w)) = (&self.indexing, &mut self.welcome) {
                 let (done, total) = (p.done.load(Ordering::Relaxed), p.total.load(Ordering::Relaxed));
                 let text = if total == 0 {
-                    "Indexing your vault...".to_string()
+                    "Indexando tu bóveda…".to_string()
                 } else {
-                    format!("Indexing your vault... {done}/{total}")
+                    format!("Indexando tu bóveda… {done}/{total}")
                 };
                 if w.notice.as_ref() != Some(&text) {
                     w.notice = Some(text);
@@ -863,7 +863,7 @@ fn needs_index(vault: &Path) -> bool {
 
 /// Open a vault and prepare it for a window.
 fn load(vault: &Path, note: Option<&str>, profile: bool, started: Instant) -> Result<App, String> {
-    let app = App::open(vault).map_err(|e| format!("Cannot open {}: {e}", vault.display()))?;
+    let app = App::open(vault).map_err(|e| format!("No se pudo abrir {}: {e}", vault.display()))?;
     Ok(prepare(app, vault, note, profile, started))
 }
 

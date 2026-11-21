@@ -135,7 +135,8 @@ impl Welcome {
 
     fn create_sample(&mut self) -> Option<PathBuf> {
         let Some(root) = Self::sample_path() else {
-            self.error = Some("Cannot find your home folder to put the sample vault in.".to_string());
+            self.error =
+                Some("No se pudo encontrar tu carpeta personal para crear la bóveda de ejemplo.".to_string());
             return None;
         };
         for (rel, text) in SAMPLE {
@@ -148,7 +149,7 @@ impl Welcome {
                 .map_or(Ok(()), std::fs::create_dir_all)
                 .and_then(|()| std::fs::write(&file, text));
             if let Err(e) = made {
-                self.error = Some(format!("Cannot create {}: {e}", root.display()));
+                self.error = Some(format!("No se pudo crear {}: {e}", root.display()));
                 return None;
             }
         }
@@ -159,25 +160,25 @@ impl Welcome {
     fn create_named(&mut self) -> Option<PathBuf> {
         let name = self.name.trim();
         let Some(dir) = &self.dir else {
-            self.error = Some("Pick a folder to create the vault in first.".to_string());
+            self.error = Some("Elige primero una carpeta donde crear la bóveda.".to_string());
             return None;
         };
         if name.is_empty() {
-            self.error = Some("Type a name for the new vault.".to_string());
+            self.error = Some("Escribe un nombre para la bóveda nueva.".to_string());
             return None;
         }
         if name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|']) || name.starts_with('.') {
-            self.error = Some("That name has characters a folder name cannot have.".to_string());
+            self.error = Some("Ese nombre tiene caracteres que no puede tener una carpeta.".to_string());
             return None;
         }
         let root = dir.join(name);
         if root.exists() {
             self.error =
-                Some(format!("{} already exists. Use \"Open folder as vault\" for it.", root.display()));
+                Some(format!("{} ya existe. Usa \"Abrir carpeta como bóveda\" para ella.", root.display()));
             return None;
         }
         if let Err(e) = std::fs::create_dir_all(&root) {
-            self.error = Some(format!("Cannot create {}: {e}", root.display()));
+            self.error = Some(format!("No se pudo crear {}: {e}", root.display()));
             return None;
         }
         Some(root)
@@ -220,7 +221,7 @@ impl Welcome {
             "welcome:choose" => match self.screen {
                 Screen::Open => {
                     if self.dir.is_none() {
-                        self.error = Some("Pick a folder first.".to_string());
+                        self.error = Some("Elige primero una carpeta.".to_string());
                     }
                     return self.dir.clone();
                 }
@@ -280,17 +281,22 @@ impl Welcome {
         for (icon, title, text, action) in [
             (
                 "folder",
-                "Open folder as vault",
-                "Use a folder of Markdown notes, or an existing vault.",
+                "Abrir carpeta como bóveda",
+                "Usa una carpeta de notas Markdown o una bóveda existente.",
                 "welcome:open",
             ),
             (
                 "folder-plus",
-                "Create new vault",
-                "Start with an empty folder for your notes.",
+                "Crear bóveda nueva",
+                "Empieza con una carpeta vacía para tus notas.",
                 "welcome:create",
             ),
-            ("help", "Try the sample vault", "A few notes that show how things work.", "welcome:sample"),
+            (
+                "help",
+                "Probar la bóveda de ejemplo",
+                "Unas pocas notas que muestran cómo funciona todo.",
+                "welcome:sample",
+            ),
         ] {
             let row = dom.add(main, El::div().class("welcome-action").action(action));
             dom.add(row, icons::el(icon).class("welcome-action-icon"));
@@ -302,7 +308,7 @@ impl Welcome {
         if self.recents.is_empty() {
             return;
         }
-        dom.add(main, El::div().class("welcome-section-title").text("Recent vaults"));
+        dom.add(main, El::div().class("welcome-section-title").text("Bóvedas recientes"));
         let list = dom.add(main, El::div().class("welcome-list").id("recents"));
         for (i, p) in self.recents.iter().enumerate() {
             let row = dom.add(list, El::div().class("welcome-row").action(format!("recent:{i}")));
@@ -324,18 +330,18 @@ impl Welcome {
         let header = dom.add(main, El::div().class("welcome-browser-header"));
         let back = dom.add(header, El::div().class("clickable-icon").action("welcome:back"));
         dom.add(back, icons::el("arrow-left"));
-        let title = if create { "Create new vault" } else { "Open folder as vault" };
+        let title = if create { "Crear bóveda nueva" } else { "Abrir carpeta como bóveda" };
         dom.add(header, El::div().class("welcome-browser-title").text(title));
         let bar = dom.add(main, El::div().class("welcome-path"));
         for (icon, action) in [("arrow-up", "welcome:up"), ("home", "welcome:home")] {
             let b = dom.add(bar, El::div().class("clickable-icon").action(action));
             dom.add(b, icons::el(icon));
         }
-        let shown = self.dir.as_ref().map_or("This PC".to_string(), |d| d.to_string_lossy().into_owned());
+        let shown = self.dir.as_ref().map_or("Este equipo".to_string(), |d| d.to_string_lossy().into_owned());
         dom.add(bar, El::div().class("welcome-path-text").text(shown));
         let list = dom.add(main, El::div().class("welcome-list welcome-folders").id("folders"));
         if self.folders.is_empty() {
-            dom.add(list, El::div().class("welcome-empty").text("No folders in here."));
+            dom.add(list, El::div().class("welcome-empty").text("No hay carpetas aquí."));
         }
         for (i, f) in self.folders.iter().enumerate() {
             let row = dom.add(list, El::div().class("welcome-row").action(format!("enter:{i}")));
@@ -349,22 +355,22 @@ impl Welcome {
             dom.add(row, icons::el(icon).class(if f.vault { "is-vault" } else { "" }));
             dom.add(row, El::div().class("welcome-row-title").text(f.name.clone()));
             if f.vault {
-                dom.add(row, El::div().class("welcome-tag").text("vault"));
+                dom.add(row, El::div().class("welcome-tag").text("bóveda"));
             }
             dom.add(row, icons::el("chevron-right"));
         }
         let footer = dom.add(main, El::div().class("welcome-footer"));
         if create {
-            let shown =
-                if self.name.is_empty() { "Vault name▏".to_string() } else { format!("{}▏", self.name) };
+            let shown = if self.name.is_empty() {
+                "Nombre de la bóveda▏".to_string()
+            } else {
+                format!("{}▏", self.name)
+            };
             dom.add(
                 footer,
                 El::div().class("welcome-input").class_if(self.name.is_empty(), "is-empty").text(shown),
             );
-            dom.add(
-                footer,
-                El::div().class("welcome-button mod-cta").text("Create").action("welcome:choose"),
-            );
+            dom.add(footer, El::div().class("welcome-button mod-cta").text("Crear").action("welcome:choose"));
         } else {
             let here =
                 self.dir.as_ref().and_then(|d| d.file_name()).map(|n| n.to_string_lossy().into_owned());
@@ -372,9 +378,9 @@ impl Welcome {
                 footer,
                 El::div()
                     .class("welcome-footer-hint")
-                    .text("Go into the folder that holds your notes, then open it."),
+                    .text("Entra en la carpeta que contiene tus notas y ábrela."),
             );
-            let label = here.map_or("Open this folder".to_string(), |n| format!("Open \"{n}\""));
+            let label = here.map_or("Abrir esta carpeta".to_string(), |n| format!("Abrir \"{n}\""));
             dom.add(footer, El::div().class("welcome-button mod-cta").text(label).action("welcome:choose"));
         }
     }
@@ -398,13 +404,13 @@ impl Welcome {
         dom.add(brand, El::div().class("welcome-name").text("Rustsidian"));
         dom.add(
             brand,
-            El::div().class("welcome-version").text(format!("Version {}", env!("CARGO_PKG_VERSION"))),
+            El::div().class("welcome-version").text(format!("Versión {}", env!("CARGO_PKG_VERSION"))),
         );
         dom.add(
             brand,
             El::div()
                 .class("welcome-tagline")
-                .text("Your notes are plain Markdown files in a folder you choose."),
+                .text("Tus notas son archivos Markdown sin formato en una carpeta que tú eliges."),
         );
         let s = self.anims.t("screen");
         let mut main = El::div().class("welcome-main");

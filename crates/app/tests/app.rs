@@ -48,7 +48,7 @@ fn edit_save_and_conflict() {
     typed(&mut app, "!");
     fs::write(d.path().join("Home.md"), "changed elsewhere, different length").unwrap();
     assert!(!app.save());
-    assert!(app.notice.as_deref().unwrap().contains("outside Rustsidian"));
+    assert!(app.notice.as_deref().unwrap().contains("fuera de Rustsidian"));
     assert_eq!(fs::read_to_string(d.path().join("Home.md")).unwrap(), "changed elsewhere, different length");
     assert!(
         app.tab().unwrap().editor.buf.text().ends_with("new line!"),
@@ -76,7 +76,7 @@ fn palette_switcher_and_hotkeys() {
     assert!(!app.dark, "appearance.json theme=moonstone is light");
     app.key(key("Ctrl+P"));
     assert_eq!(app.focus, Focus::Prompt);
-    typed(&mut app, "toggle light");
+    typed(&mut app, "modo claro");
     assert_eq!(app.prompt.as_ref().unwrap().items[0].action, "theme:toggle-light-dark");
     app.key(key("Enter"));
     assert!(app.dark && app.prompt.is_none());
@@ -205,7 +205,7 @@ fn cli_commands() {
     };
     let (code, out) = call(&["index", &v]);
     assert_eq!(code, 0);
-    assert!(out.contains("notes: 3") && out.contains("resolved links: 2"), "{out}");
+    assert!(out.contains("notas: 3") && out.contains("enlaces resueltos: 2"), "{out}");
     let (code, out) = call(&["search", &v, "path:dir links"]);
     assert_eq!((code, out.lines().next()), (0, Some("dir/Second.md")));
     assert_eq!(call(&["search", &v, "(unclosed"]).0, 2);
@@ -347,7 +347,7 @@ fn mermaid_blocks_are_drawn_or_explained() {
     assert_eq!(frame.info.rich.len(), 1);
     assert!(frame.dom.nodes[frame.info.rich[0].node].draw.len() > 5);
     let texts: Vec<&str> = frame.dom.nodes.iter().filter_map(|n| n.el.text.as_deref()).collect();
-    assert!(texts.iter().any(|t| t.contains("`pie` diagrams are not supported")), "{texts:?}");
+    assert!(texts.iter().any(|t| t.contains("`pie` no son compatibles")), "{texts:?}");
     assert!(frame.info.blocks.iter().any(|b| b.display.contains("pie title x")));
     // Source mode shows the fence untouched.
     app.tabs[0].mode = ViewMode::Source;
@@ -591,7 +591,10 @@ fn copy_screenshot_crops_the_open_pane() {
     assert_eq!(shot.pixel(5, 5), pm.pixel(x + 5, y + 5));
     app.copy_screenshot(&frame, &pm, 2.0);
     assert!(!app.screenshot);
-    assert_eq!(app.notice.as_deref(), Some("Cannot copy screenshot: the system clipboard is off"));
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("No se pudo copiar la captura de pantalla: el portapapeles del sistema está desactivado")
+    );
 }
 
 #[test]
@@ -662,7 +665,10 @@ fn status_bar_shows_word_goal_and_reading_time() {
     };
     app.run("open:Goal.md");
     let s = status(&mut app);
-    assert!(s.contains(&"450 / 1000 palabras".to_string()) && s.contains(&"3 min de lectura".to_string()), "{s:?}");
+    assert!(
+        s.contains(&"450 / 1000 palabras".to_string()) && s.contains(&"3 min de lectura".to_string()),
+        "{s:?}"
+    );
     app.run("open:Plain.md");
     let s = status(&mut app);
     assert!(s.contains(&"3 palabras".to_string()) && s.contains(&"1 min de lectura".to_string()), "{s:?}");

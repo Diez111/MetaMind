@@ -47,8 +47,8 @@ fn file_menu_renames_and_updates_links() {
     let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
     let (x, y) = center(&frame, "open:B.md");
     app.context_menu(&frame, &mut fonts, x, y);
-    assert!(labels(&app).iter().any(|l| l == "Delete"));
-    pick(&mut app, &mut fonts, &mut pm, "Rename…");
+    assert!(labels(&app).iter().any(|l| l == "Eliminar"));
+    pick(&mut app, &mut fonts, &mut pm, "Renombrar…");
     assert!(app.menu.is_none());
     assert_eq!(app.prompt.as_ref().unwrap().query, "B");
     app.key(Key::parse("Backspace").unwrap());
@@ -90,7 +90,9 @@ fn editor_menu_cut_copy_paste_without_system_clipboard() {
     app.context_menu(&frame, &mut fonts, editor.x + 80.0, editor.y + 20.0);
     let shown = labels(&app);
     assert!(
-        ["Cut", "Copy", "Paste", "Bold", "Select all"].iter().all(|l| shown.iter().any(|s| s == l)),
+        ["Cortar", "Copiar", "Pegar", "Negrita", "Seleccionar todo"]
+            .iter()
+            .all(|l| shown.iter().any(|s| s == l)),
         "{shown:?}"
     );
     // Escape closes the menu without running anything.
@@ -119,7 +121,7 @@ fn menu_keys_and_tab_menu() {
     let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
     let (x, y) = center(&frame, "tab:0");
     app.context_menu(&frame, &mut fonts, x, y);
-    assert_eq!(labels(&app)[..3], ["Close", "Close others", "Close tabs to the right"]);
+    assert_eq!(labels(&app)[..3], ["Cerrar", "Cerrar las demás", "Cerrar las pestañas a la derecha"]);
     // The menu is drawn and stays inside the window.
     let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
     let menu = frame.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == "menu")).unwrap();
@@ -160,7 +162,10 @@ fn spellcheck_marks_prose_and_fixes_from_the_menu() {
     let r = fonts.range_rects(&bv.display, &node.el.spans, &node.style.text, Some(cb.w), at, at + 1)[0];
     app.context_menu(&frame, &mut fonts, cb.x + r.x + 1.0, cb.y + r.y + 5.0);
     let shown = labels(&app);
-    assert!(shown.iter().any(|l| l == "word") && shown.iter().any(|l| l == "Add to dictionary"), "{shown:?}");
+    assert!(
+        shown.iter().any(|l| l == "word") && shown.iter().any(|l| l == "Añadir al diccionario"),
+        "{shown:?}"
+    );
     pick(&mut app, &mut fonts, &mut pm, "word");
     assert!(app.tab().unwrap().editor.buf.text().starts_with("A word in `codde`"));
 

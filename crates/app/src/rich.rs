@@ -99,9 +99,9 @@ pub fn notice(tree: &Tree, src: &str, root_start: u32) -> Option<String> {
     match mermaid_core::render(text, &mut mermaid_core::Approx) {
         Ok(_) => None,
         Err(mermaid_core::Error::Unsupported(k)) => {
-            Some(format!("Mermaid `{k}` diagrams are not supported; showing the source"))
+            Some(format!("Los diagramas Mermaid `{k}` no son compatibles; se muestra el código"))
         }
-        Err(mermaid_core::Error::Syntax(e)) => Some(format!("Mermaid: {e}; showing the source")),
+        Err(mermaid_core::Error::Syntax(e)) => Some(format!("Mermaid: {e}; se muestra el código")),
     }
 }
 
