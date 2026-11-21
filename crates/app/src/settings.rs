@@ -36,13 +36,7 @@ const SECTIONS: [(Section, &str, &str, &str, &str); 5] = [
         "Escritura, sangría, propiedades y corrección ortográfica.",
         "edit",
     ),
-    (
-        Section::Ai,
-        "ai",
-        "IA",
-        "Asistente, proveedor y corrección con modelos de lenguaje.",
-        "sparkles",
-    ),
+    (Section::Ai, "ai", "IA", "Asistente, proveedor y corrección con modelos de lenguaje.", "sparkles"),
     (
         Section::Plugins,
         "plugins",
@@ -71,7 +65,9 @@ fn section_for_slug(slug: &str) -> Option<Section> {
     })
 }
 
-fn section_meta(section: Section) -> &'static (Section, &'static str, &'static str, &'static str, &'static str) {
+fn section_meta(
+    section: Section,
+) -> &'static (Section, &'static str, &'static str, &'static str, &'static str) {
     SECTIONS.iter().find(|s| s.0 == section).unwrap_or(&SECTIONS[0])
 }
 
@@ -716,7 +712,8 @@ impl App {
                     self.settings.as_ref().map(|s| s.filter.clone()).unwrap_or_default()
                 } else if arg == "search" {
                     self.settings.as_ref().map(|s| s.search.clone()).unwrap_or_default()
-                } else if let Some((plugin, setting)) = arg.strip_prefix('@').and_then(|r| r.split_once(':')) {
+                } else if let Some((plugin, setting)) = arg.strip_prefix('@').and_then(|r| r.split_once(':'))
+                {
                     match self.plugin_registry().get(plugin).cloned() {
                         Some(p) => self.plugin_setting(&p, setting).as_str().unwrap_or("").to_string(),
                         None => return true,
@@ -1075,7 +1072,10 @@ fn items_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, section
                 input(dom, ctl, it.key, file.str(it.key).unwrap_or(""), ui.edit.as_ref());
                 match it.key {
                     "accentColor" => {
-                        let color = file.str(it.key).filter(|c| !c.trim().is_empty()).unwrap_or("var(--interactive-accent)");
+                        let color = file
+                            .str(it.key)
+                            .filter(|c| !c.trim().is_empty())
+                            .unwrap_or("var(--interactive-accent)");
                         dom.add(
                             ctl,
                             El::div()
@@ -1116,10 +1116,7 @@ fn appearance_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     let ctl = row(dom, parent, "Recargar", "Vuelve a leer temas, fragmentos y ajustes del disco.");
     button(dom, ctl, "Recargar", "settings:reload".into(), false);
     if ui.snippets.is_empty() {
-        dom.add(
-            parent,
-            El::div().class("settings-note").text("No hay fragmentos en .obsidian/snippets."),
-        );
+        dom.add(parent, El::div().class("settings-note").text("No hay fragmentos en .obsidian/snippets."));
     }
     let enabled = app.config.enabled_snippets();
     for s in &ui.snippets {
@@ -1193,7 +1190,8 @@ fn community_plugins_view(app: &App, dom: &mut Dom, parent: NodeId) {
     if list.is_empty() {
         dom.add(
             parent,
-            El::div().class("settings-note")
+            El::div()
+                .class("settings-note")
                 .text("No hay plugins ni scripts en esta bóveda. Añádelos en .obsidian/plugins."),
         );
         return;
@@ -1218,7 +1216,10 @@ fn plugin_matches(needle: &str, p: &PluginInfo) -> bool {
 fn plugin_card(app: &App, dom: &mut Dom, parent: NodeId, p: &PluginInfo) {
     let card = dom.add(
         parent,
-        El::div().class("plugin-card").class_if(p.enabled, "is-enabled").action(format!("settings:plugin:{}", p.id)),
+        El::div()
+            .class("plugin-card")
+            .class_if(p.enabled, "is-enabled")
+            .action(format!("settings:plugin:{}", p.id)),
     );
     let head = dom.add(card, El::div().class("plugin-card-head"));
     let icon = dom.add(head, El::div().class("plugin-icon"));
@@ -1232,11 +1233,7 @@ fn plugin_card(app: &App, dom: &mut Dom, parent: NodeId, p: &PluginInfo) {
     toggle(dom, ctl, p.enabled, format!("settings:penable:{}", p.id));
     button(dom, ctl, "Configurar", format!("settings:plugin:{}", p.id), false);
     if !p.settings.is_empty() {
-        dom.add(
-            card,
-            El::div().class("plugin-card-meta")
-                .text(format!("{} ajustes", p.settings.len())),
-        );
+        dom.add(card, El::div().class("plugin-card-meta").text(format!("{} ajustes", p.settings.len())));
     }
     let _ = app;
 }
@@ -1247,10 +1244,9 @@ fn plugin_list_view(app: &App, dom: &mut Dom, parent: NodeId, needle: &str) {
     let summary = dom.add(parent, El::div().class("plugin-summary"));
     dom.add(
         summary,
-        El::div().class("plugin-summary-text").text(format!(
-            "{active} de {} plugins integrados activos",
-            reg.plugins.len()
-        )),
+        El::div()
+            .class("plugin-summary-text")
+            .text(format!("{active} de {} plugins integrados activos", reg.plugins.len())),
     );
     for p in reg.plugins.iter().filter(|p| needle.is_empty() || plugin_matches(needle, p)) {
         plugin_card(app, dom, parent, p);
@@ -1284,7 +1280,8 @@ fn plugin_detail_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi,
     if p.settings.is_empty() {
         dom.add(
             parent,
-            El::div().class("settings-note")
+            El::div()
+                .class("settings-note")
                 .text("Este plugin no tiene ajustes propios: se activa y se desactiva con el interruptor."),
         );
         return;
@@ -1352,8 +1349,10 @@ fn search_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, needle
             usize::MAX
         } else {
             match sec {
-                Section::Plugins => reg.plugins.iter().filter(|p| plugin_matches(needle, p)).count()
-                    + CORE_PLUGINS.iter().filter(|c| matches(needle, c.1, c.2)).count(),
+                Section::Plugins => {
+                    reg.plugins.iter().filter(|p| plugin_matches(needle, p)).count()
+                        + CORE_PLUGINS.iter().filter(|c| matches(needle, c.1, c.2)).count()
+                }
                 _ => ITEMS.iter().filter(|i| i.section == sec && matches(needle, i.name, i.desc)).count(),
             }
         };
@@ -1374,7 +1373,8 @@ fn search_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, needle
     } else {
         dom.add(
             parent,
-            El::div().class("settings-note")
+            El::div()
+                .class("settings-note")
                 .text("Se muestran los ajustes que coinciden con la búsqueda en todas las categorías."),
         );
     }
@@ -1424,7 +1424,8 @@ fn advanced_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, need
 fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     dom.add(
         parent,
-        El::div().class("settings-note")
+        El::div()
+            .class("settings-note")
             .text("El módulo de IA todavía no está conectado: estos ajustes se guardan para cuando llegue."),
     );
     items_view(app, dom, parent, ui, Section::Ai, "");
@@ -1497,9 +1498,7 @@ pub fn modal(app: &App, dom: &mut Dom) {
     }
     dom.add(
         container,
-        El::div()
-            .class("setting-footer")
-            .text("Los cambios se guardan en .obsidian a medida que los haces."),
+        El::div().class("setting-footer").text("Los cambios se guardan en .obsidian a medida que los haces."),
     );
     let _ = TrashMode::Vault;
 }

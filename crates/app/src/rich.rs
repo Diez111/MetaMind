@@ -231,7 +231,7 @@ pub fn add(dom: &mut Dom, parent: NodeId, kind: Kind, info: &mut Vec<Item>) -> N
     // is always above what they need (see `inline` for the numbers). A block is never thinner
     // than a line of prose, though, so a formula cannot come out as a band a few pixels tall.
     let h = approx_height(&kind).max(TEXT_SIZE * LINE_EM).ceil();
-    let mut el = El::div().class("cm-line rich-block").style(&format!("height: {h}px"));
+    let mut el = El::div().class("cm-line rich-block").style(&format!("height: {h}px; width: 100%"));
     if matches!(kind, Kind::Mermaid(_)) {
         // A click opens the diagram on its own, at the width of the window.
         el = el.class("mermaid-block").action("mermaid:zoom");
