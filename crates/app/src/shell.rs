@@ -1283,6 +1283,10 @@ impl App {
             }
             return;
         }
+        if command == "notice:dismiss" {
+            self.notice = None;
+            return;
+        }
         if let Some(p) = command.strip_prefix("open:") {
             self.close_prompt();
             return self.open_note(p);

@@ -251,6 +251,7 @@ impl App {
                 self.put_clip(link);
             }
             "reveal" => self.reveal(arg),
+            "open-external" => self.open_external(arg),
             "close-others" => {
                 if let Ok(i) = arg.parse::<usize>() {
                     self.active = i.min(self.tabs.len().saturating_sub(1));
@@ -472,6 +473,21 @@ impl App {
         };
         if let Err(e) = result {
             self.notice = Some(format!("Cannot open the file manager: {e}"));
+        }
+    }
+
+    /// Open a file with whatever the system uses for it: the only way this build plays a video.
+    fn open_external(&mut self, rel: &str) {
+        let abs = self.store.abs(rel);
+        let result = if cfg!(windows) {
+            std::process::Command::new("cmd").args(["/C", "start", ""]).arg(&abs).spawn()
+        } else if cfg!(target_os = "macos") {
+            std::process::Command::new("open").arg(&abs).spawn()
+        } else {
+            std::process::Command::new("xdg-open").arg(&abs).spawn()
+        };
+        if let Err(e) = result {
+            self.notice = Some(format!("No se pudo abrir {}: {e}", abs.display()));
         }
     }
 

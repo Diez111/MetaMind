@@ -241,9 +241,13 @@ fn instantiate(d: &Discovered, root: &Path) -> Result<Box<dyn Extension>, String
         #[cfg(feature = "scripting")]
         ext_api::PluginKind::Script => scripting::load_file(plugin_info(d), &root.join(&d.entry))
             .map(|p| Box::new(p) as Box<dyn Extension>),
-        kind => {
+        _kind => {
             let _ = root;
-            Err(format!("no runtime for {kind:?} plugins in this build ({})", d.entry))
+            Err(format!(
+                "Este build nativo no ejecuta plugins JS: {} ({})",
+                d.manifest.name,
+                d.entry.trim_start_matches(".obsidian/plugins/")
+            ))
         }
     }
 }
@@ -317,7 +321,9 @@ impl App {
             }
             if let Some(e) = &st.error {
                 if on {
-                    self.notice = Some(format!("Plugin {}: {e}", st.id));
+                    // A plugin that cannot run says so once, in the toast; the settings list
+                    // keeps the error next to the plugin.
+                    self.notice = Some(e.clone());
                 }
             }
             statuses.push(st);

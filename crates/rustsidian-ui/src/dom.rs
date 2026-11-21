@@ -57,6 +57,8 @@ pub struct Style {
     pub inset: [Option<f32>; 4],
     pub text: TextStyle,
     pub center_text: bool,
+    /// `text-overflow: ellipsis`: text that does not fit ends in `…` instead of being cut.
+    pub ellipsis: bool,
     pub opacity: f32,
 }
 
@@ -97,6 +99,7 @@ impl Default for Style {
                 family: None,
             },
             center_text: false,
+            ellipsis: false,
             opacity: 1.0,
         }
     }
@@ -194,6 +197,7 @@ impl Style {
                 family: family_list.map(Into::into),
             },
             center_text: c.get("text-align").is_some_and(|v| v.trim() == "center"),
+            ellipsis: c.get("text-overflow").is_some_and(|v| v.trim() == "ellipsis"),
             opacity: c.number("opacity").unwrap_or(1.0).clamp(0.0, 1.0),
         }
     }
@@ -278,6 +282,8 @@ pub struct Node {
     pub hover: bool,
     pub focus: bool,
     pub active: bool,
+    /// Text drawn instead of `el.text` when it had to be shortened to fit (see `Style::ellipsis`).
+    pub shown: Option<String>,
     /// Extra rectangles painted under the text, relative to the content box (selections, carets
     /// are painted above via `overlays_top`).
     pub overlays: Vec<(Rect, Color)>,
@@ -359,6 +365,7 @@ impl Dom {
             hover: false,
             focus: false,
             active: false,
+            shown: None,
             overlays: Vec::new(),
             overlays_top: Vec::new(),
             draw: Vec::new(),
@@ -451,10 +458,14 @@ impl Dom {
         } else {
             let kids = self.flow_children(id);
             let gaps = s.gap * kids.len().saturating_sub(1) as f32;
+            // Each child's preferred width, kept so a row can measure the height its children
+            // really get once they are squeezed (wrapped text needs another line).
+            let mut preferred: Vec<(f32, f32)> = Vec::with_capacity(kids.len());
             for &c in &kids {
                 let m = &self.nodes[c].style.margin;
                 let (cw, ch) =
                     self.intrinsic(fonts, c, if s.row { f32::INFINITY } else { avail - m[1] - m[3] });
+                preferred.push((cw, ch));
                 let (cw, ch) = (cw + m[1] + m[3], ch + m[0] + m[2]);
                 if s.row {
                     w += cw;
@@ -466,6 +477,9 @@ impl Dom {
             }
             if s.row {
                 w += gaps;
+                if avail.is_finite() && w > avail {
+                    h = self.row_height(fonts, &kids, &preferred, avail, w);
+                }
             } else {
                 h += gaps;
             }
@@ -479,15 +493,87 @@ impl Dom {
         (w, h)
     }
 
+    /// Height of a flex row that is narrower than its children's preferred sizes. `place`
+    /// squeezes those that can give up width, and wrapped text needs another line at the width
+    /// it finally gets; without measuring again the row stays one line tall and the next block
+    /// is drawn over the text that wrapped.
+    fn row_height(
+        &self,
+        fonts: &mut Fonts,
+        kids: &[NodeId],
+        preferred: &[(f32, f32)],
+        avail: f32,
+        total: f32,
+    ) -> f32 {
+        let mut h = 0.0f32;
+        for (&c, &(cw, ch)) in kids.iter().zip(preferred) {
+            let cs = &self.nodes[c].style;
+            let m = cs.margin;
+            let mut ch = ch;
+            if self.nodes[c].el.text.is_some() && cs.text.wrap && cs.shrink > 0.0 {
+                let squeezed = if total > 0.0 { cw + (avail - total) * cw / total } else { cw };
+                if squeezed < cw {
+                    ch = self.intrinsic(fonts, c, squeezed.max(0.0)).1;
+                }
+            }
+            h = h.max(ch + m[0] + m[2]);
+        }
+        h
+    }
+
     /// Lay out the tree for a viewport of `w` x `h` logical pixels.
     pub fn layout(&mut self, fonts: &mut Fonts, w: f32, h: f32) {
         self.place(fonts, 0, Rect::new(0.0, 0.0, w, h));
     }
 
     /// Assign `rect` (border box) to `id` and lay out its children inside it.
+    /// The longest prefix of `text` that fits in `avail` once `…` is added, or `None` when the
+    /// whole text fits already.
+    fn shorten(
+        &self,
+        fonts: &mut Fonts,
+        id: NodeId,
+        text: &str,
+        avail: f32,
+    ) -> Option<String> {
+        let n = &self.nodes[id];
+        let (w, _) = fonts.measure(text, &n.el.spans, &n.style.text, None);
+        if w <= avail || avail <= 0.0 {
+            return None;
+        }
+        let fits = |fonts: &mut Fonts, upto: usize| {
+            let mut s = text[..upto].trim_end().to_string();
+            s.push('…');
+            fonts.measure(&s, &n.el.spans, &n.style.text, None).0 <= avail
+        };
+        let chars = text.char_indices().map(|(i, c)| i + c.len_utf8()).collect::<Vec<_>>();
+        let (mut lo, mut hi) = (0usize, chars.len());
+        while lo < hi {
+            let mid = (lo + hi).div_ceil(2);
+            if fits(fonts, chars[mid - 1]) {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        let mut s = text[..chars.get(lo.saturating_sub(1)).copied().unwrap_or(0)].trim_end().to_string();
+        s.push('…');
+        Some(s)
+    }
+
     fn place(&mut self, fonts: &mut Fonts, id: NodeId, rect: Rect) {
         self.nodes[id].rect = rect;
         let s = self.nodes[id].style.clone();
+        if s.ellipsis && !s.text.wrap {
+            if let Some(text) = self.nodes[id].el.text.clone() {
+                if self.nodes[id].el.spans.is_empty() {
+                    let avail = (rect.w - Self::h_extra(&s)).max(0.0);
+                    if let Some(short) = self.shorten(fonts, id, &text, avail) {
+                        self.nodes[id].shown = Some(short);
+                    }
+                }
+            }
+        }
         let inner = Rect::new(
             rect.x + s.border[3] + s.padding[3],
             rect.y + s.border[0] + s.padding[0],
@@ -508,10 +594,11 @@ impl Dom {
             let cross_avail = if s.row { f32::INFINITY } else { inner.w - m[1] - m[3] };
             let (mut cw, mut ch) = self.intrinsic(fonts, c, cross_avail);
             if let Dim::Pct(p) = cs.height {
-                ch = inner.h * p / 100.0;
+                ch = (inner.h * p / 100.0).clamp(cs.min_h, cs.max_h);
             }
             if let Dim::Pct(p) = cs.width {
-                cw = inner.w * p / 100.0;
+                // A percentage is a suggestion: `min-width` and `max-width` still bound it.
+                cw = (inner.w * p / 100.0).clamp(cs.min_w, cs.max_w);
             }
             if !s.row && (s.align == Align::Stretch || cs.width != Dim::Auto) && cs.width == Dim::Auto {
                 cw = (inner.w - m[1] - m[3]).clamp(cs.min_w, cs.max_w);
@@ -735,15 +822,16 @@ impl Dom {
         if let Some(image) = &n.el.image {
             scene.cmds.push(Cmd::Image { rect: cb, image: image.clone() });
         }
-        if let Some(text) = &n.el.text {
+        if let Some(text) = n.shown.as_ref().or(n.el.text.as_ref()) {
             let mut style = s.text.clone();
             style.color = fade(style.color);
+            let spans = if n.shown.is_some() { Vec::new() } else { n.el.spans.clone() };
             scene.cmds.push(Cmd::Text {
                 x: cb.x + text_dx,
                 y: cb.y,
                 width: s.text.wrap.then_some(cb.w),
                 text: text.clone(),
-                spans: n.el.spans.clone(),
+                spans,
                 style,
             });
         }
