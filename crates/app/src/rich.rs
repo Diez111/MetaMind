@@ -62,8 +62,9 @@ const INLINE_METRICS: math_core::Metrics =
     math_core::Metrics { padding_x: 3.0, padding_y: 1.0, run_gap: 0.0 };
 /// A display block's tag sits against the right margin, this far in.
 const TAG_INSET: f32 = 6.0;
-/// Smallest fraction of [`BLOCK_SIZE`] a display formula is shrunk to before it is allowed to
-/// overflow: past this the formula stops being readable, so the block scrolls instead.
+/// Smallest fraction of [`BLOCK_SIZE`] a display formula is drawn at: past this the glyphs stop
+/// being readable, so a formula that does not fit is allowed to run under the edge of the pane
+/// rather than turn into a band of a few pixels tall.
 const MATH_MIN_SCALE: f32 = 0.55;
 
 /// The widget a top-level block is drawn as, if it is one. `src` is the text of the block's
@@ -131,8 +132,13 @@ pub fn inline(tree: &Tree, block_text: &str, scale: f32) -> Vec<Inline> {
             let want = l.width * 1.05 + 3.0;
             let count = ((want / (NBSP_EM * size).max(0.5)).round() as usize).max(1);
             // A line of prose is `LINE_EM` tall; a formula taller than that pushes the line down
-            // instead of running over the line above and below.
-            let lh = ((l.height() / TEXT_SIZE) / LINE_EM).max(1.0);
+            // instead of running over the line above and below. The height comes from the plain
+            // box, not from the one with inline padding: `Approx` reports the padded box shorter
+            // than the formula the fonts really set (26 px against 27 for a sum with limits, 17
+            // against 24 for a fraction), and a line that under-measures its formula draws it
+            // over the line below.
+            let tall = math_core::render(src, size, false, &mut math_core::Approx).height();
+            let lh = ((tall / TEXT_SIZE) / LINE_EM).max(1.0);
             Inline { start, end, src: src.to_string(), filler: "\u{a0}".repeat(count), scale, lh }
         })
         .collect()
@@ -169,7 +175,10 @@ fn approx_height(kind: &Kind) -> f32 {
 }
 
 pub fn add(dom: &mut Dom, parent: NodeId, kind: Kind, info: &mut Vec<Item>) -> NodeId {
-    let h = approx_height(&kind).ceil();
+    // The commands are produced after layout, with the real font metrics, from an estimate that
+    // is always above what they need (see `inline` for the numbers). A block is never thinner
+    // than a line of prose, though, so a formula cannot come out as a band a few pixels tall.
+    let h = approx_height(&kind).max(TEXT_SIZE * LINE_EM).ceil();
     let node = dom.add(parent, El::div().class("cm-line rich-block").style(&format!("height: {h}px")));
     info.push(Item { node, kind });
     node
@@ -432,7 +441,10 @@ fn emit_math(
     }
     let tag_room = tag.map_or(0.0, |t| t.width + TAG_INSET);
     let room = (r.w - 2.0 * TAG_INSET - tag_room).max(1.0);
-    let sc = (room / l.width.max(1.0)).clamp(0.2, 1.0);
+    // Shrink to the room the line has rather than clip the end of the formula, but not past
+    // [`MATH_MIN_SCALE`]: a long formula that still does not fit is drawn under the right edge of
+    // the pane, which is readable, instead of being squeezed into an unreadable strip.
+    let sc = (room / l.width.max(1.0)).clamp(MATH_MIN_SCALE, 1.0);
     let x = r.x + ((r.w - l.width * sc) / 2.0).max(0.0);
     let y = r.y + ((r.h - l.height() * sc) / 2.0).max(0.0);
     emit(&l, x, y, sc, base, color, out);
@@ -452,7 +464,12 @@ fn paint_inline(dom: &mut Dom, it: &InlineItem, fonts: &mut Fonts) {
     let base = st.text.clone();
     let spans = dom.nodes[it.node].el.spans.clone();
     let color = st.text.color.with_alpha(st.opacity);
-    let width = st.text.wrap.then(|| dom.content_rect(it.node).w);
+    // The text origin, in the scene's own coordinates: the commands of a node are drawn where they
+    // are and are not moved by it (see `Dom::paint_node`), so the boxes `range_box` reports -- which
+    // are relative to the text -- have to be lifted to the node's content box here. Leaving them
+    // relative drew every formula at the top left of the window, where the pane's clip took it out.
+    let cb = dom.content_rect(it.node);
+    let width = st.text.wrap.then_some(cb.w);
     let mut cmds = Vec::new();
     let mut fm = Fm { fonts, base: &base };
     for (i, (a, b)) in nbsp_runs(&text).into_iter().enumerate() {
@@ -464,8 +481,8 @@ fn paint_inline(dom: &mut Dom, it: &InlineItem, fonts: &mut Fonts) {
         // The blanks were counted before the real font metrics were known; if they came up short
         // the formula shrinks into the room it has instead of running under the next word.
         let sc = if l.width > at.rect.w { (at.rect.w / l.width).clamp(0.4, 1.0) } else { 1.0 };
-        let x = at.rect.x + (at.rect.w - l.width * sc) / 2.0;
-        emit(l, x, at.baseline - l.ascent * sc, sc, &base, color, &mut cmds);
+        let x = cb.x + at.rect.x + (at.rect.w - l.width * sc) / 2.0;
+        emit(l, x, cb.y + at.baseline - l.ascent * sc, sc, &base, color, &mut cmds);
     }
     dom.nodes[it.node].draw = cmds;
 }
