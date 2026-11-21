@@ -151,6 +151,10 @@ impl App {
         self.hover_preview = None;
         if let Some((node, action)) = frame.dom.action_at(x, y) {
             let action = action.to_string();
+            if action == "video:scrub" {
+                self.video.scrub_press(frame.dom.nodes[node].rect, x);
+                return;
+            }
             if !action.starts_with("prop:") && !action.starts_with("settings:") {
                 self.commit_prop_edit();
             }
@@ -241,6 +245,9 @@ impl App {
         if self.explorer_drag.is_some() {
             return self.explorer_drag_to(frame, x, y);
         }
+        if self.video.scrub_drag(x) {
+            return;
+        }
         if self.graph_slider_drag(x) {
             return;
         }
@@ -308,6 +315,9 @@ impl App {
 
     /// The left button was released.
     pub fn release(&mut self) {
+        if self.video.scrub_release() {
+            return;
+        }
         if self.pane_drag.take().is_some() {
             return;
         }
