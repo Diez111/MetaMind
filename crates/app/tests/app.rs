@@ -317,8 +317,13 @@ fn math_blocks_are_typeset_and_editable() {
     let mut fonts = Fonts::new();
     let mut pm = Pixmap::new(900, 700).unwrap();
     let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
-    assert_eq!(frame.info.rich.len(), 2);
+    // The display block is a widget; the inline formula is drawn into the flow of its line.
+    assert_eq!(frame.info.rich.len(), 1);
+    assert_eq!(frame.info.inline.len(), 1);
     for it in &frame.info.rich {
+        assert!(!frame.dom.nodes[it.node].draw.is_empty());
+    }
+    for it in &frame.info.inline {
         assert!(!frame.dom.nodes[it.node].draw.is_empty());
     }
     let block = &frame.info.rich[0];
@@ -327,7 +332,8 @@ fn math_blocks_are_typeset_and_editable() {
     app.click(&frame, &mut fonts, r.x + r.w / 2.0, r.y + r.h / 2.0, false);
     let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
     assert!(frame.info.blocks.iter().any(|b| b.display.contains("\\frac{a}{b}")));
-    assert_eq!(frame.info.rich.len(), 1);
+    assert!(frame.info.rich.is_empty());
+    assert_eq!(frame.info.inline.len(), 1);
 }
 
 #[test]

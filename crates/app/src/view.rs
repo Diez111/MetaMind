@@ -182,6 +182,8 @@ pub struct ViewInfo {
     pub rich: Vec<crate::rich::Item>,
     /// `.excalidraw` boards embedded in notes, painted after layout.
     pub exc: Vec<crate::excalidraw::Item>,
+    /// Inline formulas, painted into the blanks their own line of text kept for them.
+    pub inline: Vec<crate::rich::InlineItem>,
     /// Each note view, to scroll once its blocks are laid out.
     pub scrolled: Vec<Scrolled>,
     /// (block, first node it added) for each block `note_blocks` visited.
@@ -244,10 +246,14 @@ fn code_spans(
 }
 
 /// Turn a block's source and decorations into display text and styled spans.
+///
+/// `math` are the block's inline formulas: each one keeps its place in the text as blanks, which
+/// the painter fills once the line's real metrics are known.
 pub fn block_display(
     src: &str,
     src_start: usize,
     decos: &[Deco],
+    math: &[crate::rich::Inline],
     pal: &Palette,
 ) -> (String, Vec<Span>, Vec<(usize, usize, usize)>) {
     let end = src_start + src.len();
@@ -255,6 +261,10 @@ pub fn block_display(
     for d in decos {
         cuts.push(d.start.clamp(src_start, end));
         cuts.push(d.end.clamp(src_start, end));
+    }
+    for m in math {
+        cuts.push(m.start.clamp(src_start, end));
+        cuts.push(m.end.clamp(src_start, end));
     }
     cuts.sort_unstable();
     cuts.dedup();
@@ -265,6 +275,23 @@ pub fn block_display(
         let (a, b) = (w[0], w[1]);
         let (ra, rb) = (a - src_start, b - src_start);
         if !src.is_char_boundary(ra) || !src.is_char_boundary(rb) {
+            continue;
+        }
+        // A formula takes its place in the line as blanks of its own width; the source it stands
+        // for is not shown at all here (it comes back when the caret enters the block).
+        if let Some(m) = math.iter().find(|m| m.start <= a && m.end >= b) {
+            if a == m.start {
+                let at = display.len();
+                display.push_str(&m.filler);
+                spans.push(Span {
+                    start: at,
+                    end: display.len(),
+                    scale: m.scale,
+                    lh_scale: m.lh,
+                    ..Span::default()
+                });
+                map.push((m.start, at, m.end - m.start));
+            }
             continue;
         }
         let mut span =
@@ -539,6 +566,18 @@ fn display_of(map: &[(usize, usize, usize)], src: usize) -> usize {
     map.iter().find(|&&(s, _, len)| src >= s && src <= s + len).map_or(0, |&(s, d, _)| d + src - s)
 }
 
+/// The size multiplier of a block's own text: a heading sets its words larger than the body, and
+/// a formula inside it has to grow with them.
+fn block_scale(decos: &[Deco], pal: &Palette) -> f32 {
+    decos
+        .iter()
+        .filter_map(|d| match d.style {
+            Deco_::Heading(l) => Some(pal.heading_scale[(l.clamp(1, 6) - 1) as usize]),
+            _ => None,
+        })
+        .fold(1.0, f32::max)
+}
+
 /// Draw a rendered block that holds list items one line at a time: the bullet or number in a
 /// gutter and the item's text beside it, so the wrapped lines of an item start under its text
 /// and not under the marker. A callout gets a box and one child per line, which also keeps the
@@ -549,6 +588,7 @@ fn list_block(
     block: usize,
     lines: Vec<BlockLine>,
     callout: Option<(Color, usize, usize)>,
+    math: &[crate::rich::Inline],
     info: &mut ViewInfo,
 ) {
     let parent = match callout {
@@ -561,7 +601,11 @@ fn list_block(
         ),
         None => view,
     };
+    let mut next = 0usize;
     for BlockLine { display, mut spans, map, start, end, marker } in lines {
+        // Read before the line's text goes into its block: the blanks are what says how many
+        // formulas it holds.
+        let shown = display.clone();
         if let Some((color, ts, te)) = callout {
             let (d0, d1) = (display_of(&map, ts), display_of(&map, te));
             for sp in spans.iter_mut().filter(|sp| sp.start >= d0 && sp.end <= d1) {
@@ -596,8 +640,32 @@ fn list_block(
                     .spans(spans),
             ),
         };
-        info.blocks.push(BlockView { block, node, src_start: start, src_end: end, display, map });
+        info.blocks.push(BlockView {
+            block,
+            node,
+            src_start: start,
+            src_end: end,
+            display: shown.clone(),
+            map,
+        });
+        attach_math(&shown, math, &mut next, node, info);
     }
+}
+
+/// Record the formulas whose blanks a text node holds, in the order they appear in it.
+fn attach_math(
+    display: &str,
+    math: &[crate::rich::Inline],
+    next: &mut usize,
+    node: NodeId,
+    info: &mut ViewInfo,
+) {
+    let n = crate::rich::slots_in(display).min(math.len() - *next);
+    if n == 0 {
+        return;
+    }
+    info.inline.push(crate::rich::InlineItem { node, slots: math[*next..*next + n].to_vec() });
+    *next += n;
 }
 
 /// Mark the characters that carry meaning on their own: the stars that rate a note and the `·`
@@ -1302,10 +1370,25 @@ pub(crate) fn note_blocks(
             let style = if rendered { Deco_::Hide } else { Deco_::Markup };
             block_decos.push(Deco { start: s, end: s + marker, style });
         }
+        // Inline math is typeset in the flow of its own line, never in a row of its own: each
+        // `$..$` gets blanks the width of the formula in the text, and the painter fills them in
+        // once the line has real metrics. While the caret is in the block its source shows, as
+        // tables and fences do.
+        let mut math = if rendered && !class.ends_with("cm-hr") {
+            crate::rich::inline(&b.tree, &buf.slice(b.start, b.end()), block_scale(&block_decos, pal))
+        } else {
+            Vec::new()
+        };
+        // The formulas' ranges are block-local; the display is built in document offsets.
+        for m in &mut math {
+            m.start += b.start;
+            m.end += b.start;
+        }
+        math.retain(|m| m.start >= s && m.end <= e && m.end > m.start);
         let (mut display, mut spans, mut map) = if class.ends_with("cm-hr") {
             (String::new(), Vec::new(), Vec::new())
         } else {
-            block_display(&src, s, &block_decos, pal)
+            block_display(&src, s, &block_decos, &math, pal)
         };
         if marker > 0 && !rendered {
             // Shown to edit it: at the size of the text, not of the heading.
@@ -1336,7 +1419,7 @@ pub(crate) fn note_blocks(
         // A rendered list is drawn item by item: a single text run cannot hang the wrapped
         // lines under the item's text, and the bullet would be the source's own `-`.
         if rendered && !folded_here && has_list_lines(&display) {
-            list_block(dom, view, first + i, cut_lines(&display, &spans, &map), callout, info);
+            list_block(dom, view, first + i, cut_lines(&display, &spans, &map), callout, &math, info);
         } else {
             let mut el =
                 El::div().class(class).attr("data-block", &(first + i).to_string()).text(display.clone());
@@ -1365,6 +1448,9 @@ pub(crate) fn note_blocks(
             }
             code_spans(&b.tree, b.start, &src, s, &bv.map, pal, &mut spans);
             bv.node = dom.add(view, el.spans(spans));
+            if !math.is_empty() {
+                info.inline.push(crate::rich::InlineItem { node: bv.node, slots: math.clone() });
+            }
             if !print && matches!(root.kind, NodeKind::Heading { level, .. } if level > 0) {
                 let folded = tab.folds.is_folded(b.start);
                 dom.add(
@@ -1388,10 +1474,6 @@ pub(crate) fn note_blocks(
             }
             if let Some(n) = crate::rich::notice(&b.tree, &src, root.span.start) {
                 dom.add(view, El::div().class("rich-notice").text(n));
-            }
-            let math = crate::rich::inline_math(&b.tree, &buf.slice(b.start, b.end()));
-            if !math.is_empty() {
-                crate::rich::add(dom, view, crate::rich::Kind::MathRow(math), &mut info.rich);
             }
         }
     }
@@ -1460,7 +1542,7 @@ fn table(
             let text = raw.trim();
             let cell_decos: Vec<Deco> =
                 decos.iter().filter(|d| d.start < start + text.len() && d.end > start).copied().collect();
-            let (display, spans, map) = block_display(text, start, &cell_decos, pal);
+            let (display, spans, map) = block_display(text, start, &cell_decos, &[], pal);
             cells.push(Cell {
                 start,
                 end: start + text.len(),
@@ -1542,7 +1624,7 @@ fn embedded_blocks(dom: &mut Dom, parent: NodeId, text: &str, action: &str, pal:
         if class.ends_with("cm-quote") {
             hide_quote_markers(src, s, &mut block_decos);
         }
-        let (display, mut spans, map) = block_display(src, s, &block_decos, pal);
+        let (display, mut spans, map) = block_display(src, s, &block_decos, &[], pal);
         code_spans(&b.tree, b.start, src, s, &map, pal, &mut spans);
         dom.add(parent, El::div().class(class).text(display).spans(spans).action(action));
     }

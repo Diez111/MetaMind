@@ -8,13 +8,34 @@ use rustsidian_ui::{Cmd, Color, Dom, El, Fonts, NodeId, Rect, TextStyle};
 
 #[derive(Clone, Debug)]
 pub enum Kind {
-    Math {
-        src: String,
-        display: bool,
-    },
-    /// Inline formulas of a paragraph, typeset in a row below it.
-    MathRow(Vec<String>),
+    Math { src: String, display: bool },
     Mermaid(String),
+}
+
+/// A `$..$` of a block, typeset inside the flow of its own line of text.
+///
+/// The text keeps the formula's place as blanks ([`Inline::filler`]); once the layout has
+/// measured the line, [`paint`] draws the formula into that gap, on the line's baseline.
+#[derive(Clone, Debug)]
+pub struct Inline {
+    /// Source range of the whole `$..$`, from the start of the block's text.
+    pub start: usize,
+    pub end: usize,
+    /// The formula between the dollars.
+    pub src: String,
+    /// What stands in for it in the text: blanks as wide as the formula is drawn.
+    pub filler: String,
+    /// Size of the run it sits in, as a multiple of the text size (a heading's scale).
+    pub scale: f32,
+    /// How much taller than its line the formula is, as a multiple of the line height.
+    pub lh: f32,
+}
+
+/// The formulas of one text node, in the order their blanks appear in it.
+#[derive(Clone, Debug)]
+pub struct InlineItem {
+    pub node: NodeId,
+    pub slots: Vec<Inline>,
 }
 
 #[derive(Clone, Debug)]
@@ -24,11 +45,23 @@ pub struct Item {
 }
 
 const BLOCK_SIZE: f32 = 20.0;
-const ROW_SIZE: f32 = 17.0;
 const PAD: f32 = 8.0;
-const ROW_GAP: f32 = 28.0;
 const BASELINE: f32 = 0.99;
 const DIAGRAM_MAX_W: f32 = 760.0;
+/// Text size of a block of prose (`--font-text-size`), to size a formula's place in the flow
+/// before the real font metrics are known.
+const TEXT_SIZE: f32 = 16.0;
+/// `line-height` of a line of prose in `base.css`, in em.
+const LINE_EM: f32 = 1.7;
+/// Advance of U+00A0 in the text faces, in em (4.2 px at the 16 px body size). The blanks that
+/// hold a formula's place are made of it: no ink, and no line break, so a formula never lands
+/// half on each of two lines.
+const NBSP_EM: f32 = 0.2625;
+/// Spacing of a formula set inside a line of prose: tighter than a display block.
+const INLINE_METRICS: math_core::Metrics =
+    math_core::Metrics { padding_x: 3.0, padding_y: 1.0, run_gap: 0.0 };
+/// A display block's tag sits against the right margin, this far in.
+const TAG_INSET: f32 = 6.0;
 
 /// The widget a top-level block is drawn as, if it is one. `src` is the text of the block's
 /// root node and `root_start` that node's start within its top-level block.
@@ -72,15 +105,52 @@ pub fn notice(tree: &Tree, src: &str, root_start: u32) -> Option<String> {
     }
 }
 
-/// Source of the inline formulas of a paragraph-like block.
-pub fn inline_math(tree: &Tree, block_text: &str) -> Vec<String> {
+/// The inline formulas of a block, with the blanks that hold their place in its text.
+///
+/// `scale` is the size multiplier of the block's own text (a heading's), so a formula set in a
+/// heading is as big as the words around it.
+pub fn inline(tree: &Tree, block_text: &str, scale: f32) -> Vec<Inline> {
+    let scale = if scale > 0.0 { scale } else { 1.0 };
     tree.iter()
         .filter_map(|(_, n)| match n.kind {
-            NodeKind::InlineMath { content, .. } => Some(content.of(block_text).trim().to_string()),
+            NodeKind::InlineMath { content, .. } => {
+                Some((n.span.start as usize, n.span.end as usize, content.of(block_text).trim()))
+            }
             _ => None,
         })
-        .filter(|s| !s.is_empty())
+        .filter(|(_, _, src)| !src.is_empty())
+        .map(|(start, end, src)| {
+            let size = TEXT_SIZE * scale;
+            let l = math_core::render_full(src, size, false, &INLINE_METRICS, &mut math_core::Approx).layout;
+            // The blanks are counted in a character's advance, and the face that draws them is
+            // not the one the box was measured with: keep air, so the formula can never run
+            // under what follows it. `paint` shrinks it if the guess was too small anyway.
+            let want = l.width * 1.05 + 3.0;
+            let count = ((want / (NBSP_EM * size).max(0.5)).round() as usize).max(1);
+            // A line of prose is `LINE_EM` tall; a formula taller than that pushes the line down
+            // instead of running over the line above and below.
+            let lh = ((l.height() / TEXT_SIZE) / LINE_EM).max(1.0);
+            Inline { start, end, src: src.to_string(), filler: "\u{a0}".repeat(count), scale, lh }
+        })
         .collect()
+}
+
+/// How many formulas a text node holds, read from the blanks left for them.
+pub fn slots_in(text: &str) -> usize {
+    nbsp_runs(text).len()
+}
+
+/// The byte ranges of each run of U+00A0, the blanks a formula's place is made of.
+fn nbsp_runs(text: &str) -> Vec<(usize, usize)> {
+    let mut out: Vec<(usize, usize)> = Vec::new();
+    for (i, c) in text.char_indices() {
+        match (c == '\u{a0}', out.last_mut()) {
+            (true, Some(last)) if last.1 == i => last.1 = i + c.len_utf8(),
+            (true, _) => out.push((i, i + c.len_utf8())),
+            _ => {}
+        }
+    }
+    out
 }
 
 fn approx_height(kind: &Kind) -> f32 {
@@ -92,13 +162,6 @@ fn approx_height(kind: &Kind) -> f32 {
             Ok(d) => d.height * (DIAGRAM_MAX_W / d.width).min(1.0) + 2.0 * PAD,
             Err(_) => 0.0,
         },
-        Kind::MathRow(items) => {
-            items
-                .iter()
-                .map(|s| math_core::render(s, ROW_SIZE, false, &mut math_core::Approx).height())
-                .fold(0.0, f32::max)
-                + PAD
-        }
     }
 }
 
@@ -304,13 +367,21 @@ fn face_style(base: &TextStyle, size: f32, face: math_core::Face) -> TextStyle {
     st
 }
 
-fn emit(l: &math_core::Layout, ox: f32, oy: f32, base: &TextStyle, color: Color, out: &mut Vec<Cmd>) {
+fn emit(
+    l: &math_core::Layout,
+    ox: f32,
+    oy: f32,
+    sc: f32,
+    base: &TextStyle,
+    color: Color,
+    out: &mut Vec<Cmd>,
+) {
     for g in &l.glyphs {
-        let mut style = face_style(base, g.size, g.face);
+        let mut style = face_style(base, g.size * sc, g.face);
         style.color = color;
         out.push(Cmd::Text {
-            x: ox + g.x,
-            y: oy + g.y - BASELINE * g.size,
+            x: ox + g.x * sc,
+            y: oy + g.y * sc - BASELINE * g.size * sc,
             width: None,
             text: g.text.clone(),
             spans: Vec::new(),
@@ -328,14 +399,76 @@ fn emit(l: &math_core::Layout, ox: f32, oy: f32, base: &TextStyle, color: Color,
             .segs
             .iter()
             .filter(|s| (s.width - w).abs() < 0.01)
-            .map(|s| [ox + s.x0, oy + s.y0, ox + s.x1, oy + s.y1])
+            .map(|s| [ox + s.x0 * sc, oy + s.y0 * sc, ox + s.x1 * sc, oy + s.y1 * sc])
             .collect();
-        out.push(Cmd::Lines { segs, width: w.max(1.0), color });
+        out.push(Cmd::Lines { segs, width: (w * sc).max(1.0), color });
     }
 }
 
-/// Fill in the display lists of the rich blocks after layout.
-pub fn paint(dom: &mut Dom, items: &[Item], fonts: &mut Fonts) {
+/// Draw a display formula in `r`: centered in the room it has, its `\tag` against the right
+/// margin of the line, and scaled down if the formula is wider than the column (nothing here
+/// scrolls sideways, so the alternative would be drawing it under the edge of the pane).
+#[allow(clippy::too_many_arguments)]
+fn emit_math(
+    r: Rect,
+    rendered: &math_core::Rendered,
+    base: &TextStyle,
+    color: Color,
+    fm: &mut Fm,
+    out: &mut Vec<Cmd>,
+) {
+    let tag = rendered.tag.as_ref();
+    let mut l = rendered.layout.clone();
+    if let Some(t) = tag {
+        // The box draws the tag as a run one em past the formula; its real place is the margin of
+        // the line, so that run comes out of the flow and the label is drawn where amsmath puts
+        // it. What is left is the formula itself, which is what gets centered.
+        l.glyphs
+            .retain(|g| !(g.x >= t.x - 0.01 && (g.y - t.y).abs() < 0.01 && (g.size - t.size).abs() < 0.01));
+        l.width = (t.x - t.size).max(0.0);
+    }
+    let tag_room = tag.map_or(0.0, |t| t.width + TAG_INSET);
+    let room = (r.w - 2.0 * TAG_INSET - tag_room).max(1.0);
+    let sc = (room / l.width.max(1.0)).clamp(0.2, 1.0);
+    let x = r.x + ((r.w - l.width * sc) / 2.0).max(0.0);
+    let y = r.y + ((r.h - l.height() * sc) / 2.0).max(0.0);
+    emit(&l, x, y, sc, base, color, out);
+    if let Some(t) = tag {
+        let label = math_core::render_full(&t.label(), t.size, false, &math_core::Metrics::ZERO, fm);
+        let x = r.x + r.w - label.layout.width - TAG_INSET;
+        let y = y + l.ascent * sc - label.layout.ascent;
+        emit(&label.layout, x, y, 1.0, base, color, out);
+    }
+}
+
+/// Draw the formulas of the flow into the blanks their text kept for them, on the baseline of
+/// the line each one sits in.
+fn paint_inline(dom: &mut Dom, it: &InlineItem, fonts: &mut Fonts) {
+    let Some(text) = dom.nodes[it.node].el.text.clone() else { return };
+    let st = &dom.nodes[it.node].style;
+    let base = st.text.clone();
+    let spans = dom.nodes[it.node].el.spans.clone();
+    let color = st.text.color.with_alpha(st.opacity);
+    let width = st.text.wrap.then(|| dom.content_rect(it.node).w);
+    let mut cmds = Vec::new();
+    let mut fm = Fm { fonts, base: &base };
+    for (i, (a, b)) in nbsp_runs(&text).into_iter().enumerate() {
+        let Some(slot) = it.slots.get(i) else { break };
+        let Some(at) = fm.fonts.range_box(&text, &spans, &base, width, a, b) else { continue };
+        let size = base.size * slot.scale;
+        let r = math_core::render_full(&slot.src, size, false, &INLINE_METRICS, &mut fm);
+        let l = &r.layout;
+        // The blanks were counted before the real font metrics were known; if they came up short
+        // the formula shrinks into the room it has instead of running under the next word.
+        let sc = if l.width > at.rect.w { (at.rect.w / l.width).clamp(0.4, 1.0) } else { 1.0 };
+        let x = at.rect.x + (at.rect.w - l.width * sc) / 2.0;
+        emit(l, x, at.baseline - l.ascent * sc, sc, &base, color, &mut cmds);
+    }
+    dom.nodes[it.node].draw = cmds;
+}
+
+/// Fill in the display lists of the rich blocks and the formulas of the text flow after layout.
+pub fn paint(dom: &mut Dom, items: &[Item], inline: &[InlineItem], fonts: &mut Fonts) {
     for it in items {
         let r: Rect = dom.content_rect(it.node);
         let st = &dom.nodes[it.node].style;
@@ -355,23 +488,14 @@ pub fn paint(dom: &mut Dom, items: &[Item], fonts: &mut Fonts) {
             dom.nodes[it.node].draw = cmds;
             continue;
         }
-        match &it.kind {
-            Kind::Mermaid(_) => {}
-            Kind::Math { src, display } => {
-                let l = math_core::render(src, BLOCK_SIZE, *display, &mut fm);
-                let x = r.x + ((r.w - l.width) / 2.0).max(0.0);
-                let y = r.y + ((r.h - l.height()) / 2.0).max(0.0);
-                emit(&l, x, y, &base, color, &mut cmds);
-            }
-            Kind::MathRow(rows) => {
-                let mut x = r.x;
-                for s in rows {
-                    let l = math_core::render(s, ROW_SIZE, false, &mut fm);
-                    emit(&l, x, r.y + PAD / 2.0, &base, color, &mut cmds);
-                    x += l.width + ROW_GAP;
-                }
-            }
+        if let Kind::Math { src, display } = &it.kind {
+            let metrics = math_core::Metrics::default();
+            let rendered = math_core::render_full(src, BLOCK_SIZE, *display, &metrics, &mut fm);
+            emit_math(r, &rendered, &base, color, &mut fm, &mut cmds);
         }
         dom.nodes[it.node].draw = cmds;
+    }
+    for it in inline {
+        paint_inline(dom, it, fonts);
     }
 }

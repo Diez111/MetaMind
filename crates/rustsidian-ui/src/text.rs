@@ -22,6 +22,9 @@ pub struct Span {
     pub underline: bool,
     /// Font size multiplier (headings).
     pub scale: f32,
+    /// Extra line height multiplier: the line grows to hold what this run draws inside it (a
+    /// typeset formula taller than the text).
+    pub lh_scale: f32,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -44,6 +47,14 @@ pub struct TextRect {
     pub y: f32,
     pub w: f32,
     pub h: f32,
+}
+
+/// Where a byte range of the text sits, with the baseline of the line it starts on.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct TextBox {
+    pub rect: TextRect,
+    /// Baseline of the line holding the range, from the text origin.
+    pub baseline: f32,
 }
 
 pub struct Fonts {
@@ -101,7 +112,7 @@ fn key(text: &str, spans: &[Span], style: &TextStyle, width: Option<f32>) -> u64
     let mut h = std::collections::hash_map::DefaultHasher::new();
     text.hash(&mut h);
     for s in spans {
-        (s.start, s.end, s.bold, s.italic, s.mono, s.scale.to_bits()).hash(&mut h);
+        (s.start, s.end, s.bold, s.italic, s.mono, s.scale.to_bits(), s.lh_scale.to_bits()).hash(&mut h);
         s.color.map(|c| (c.r, c.g, c.b, c.a)).hash(&mut h);
     }
     (style.size.to_bits(), style.line_height.to_bits(), style.bold, style.italic, style.mono, style.wrap)
@@ -197,8 +208,10 @@ impl Fonts {
                     style.italic || s.italic,
                     style.mono || s.mono,
                 );
-                if s.scale > 0.0 && (s.scale - 1.0).abs() > 0.01 {
-                    at = at.metrics(Metrics::new(style.size * s.scale, style.line_height * s.scale));
+                let sc = if s.scale > 0.0 { s.scale } else { 1.0 };
+                let lh = if s.lh_scale > 0.0 { s.lh_scale } else { 1.0 };
+                if (sc - 1.0).abs() > 0.01 || (lh - 1.0).abs() > 0.01 {
+                    at = at.metrics(Metrics::new(style.size * sc, style.line_height * sc * lh));
                 }
                 runs.push((&text[a..b], at));
                 pos = b;
@@ -286,6 +299,45 @@ impl Fonts {
             out.push(caret.unwrap_or(TextRect { x: 0.0, y: 0.0, w: 0.0, h: style.line_height }));
         }
         out
+    }
+
+    /// Where the byte range `start..end` sits and the baseline of the line it starts on. The box
+    /// is the first line box the range covers, so a range that wraps reports its first line.
+    pub fn range_box(
+        &mut self,
+        text: &str,
+        spans: &[Span],
+        style: &TextStyle,
+        width: Option<f32>,
+        start: usize,
+        end: usize,
+    ) -> Option<TextBox> {
+        if text.is_empty() {
+            return None;
+        }
+        let k = self.buffer(text, spans, style, width);
+        let buf = self.cache.get(&k)?;
+        let mut line_starts = vec![0usize];
+        for (i, b) in text.bytes().enumerate() {
+            if b == b'\n' {
+                line_starts.push(i + 1);
+            }
+        }
+        for run in buf.layout_runs() {
+            let base = line_starts.get(run.line_i).copied().unwrap_or(0);
+            let (mut x0, mut x1) = (f32::MAX, f32::MIN);
+            for g in run.glyphs {
+                if base + g.start < end && base + g.end > start {
+                    x0 = x0.min(g.x);
+                    x1 = x1.max(g.x + g.w);
+                }
+            }
+            if x1 > x0 {
+                let rect = TextRect { x: x0, y: run.line_top, w: x1 - x0, h: run.line_height };
+                return Some(TextBox { rect, baseline: run.line_y });
+            }
+        }
+        None
     }
 
     /// Byte offset in `text` nearest to the point (x, y), relative to the text origin.
