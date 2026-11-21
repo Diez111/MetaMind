@@ -346,7 +346,24 @@ pub fn block_display(
             continue;
         }
         map.push((a, display.len(), b - a));
-        display.push_str(&src[ra..rb]);
+        // HTML tags (center, div, span, br) are markup: they carry alignment, not content.
+        let raw = &src[ra..rb];
+        if raw.contains('<') && raw.contains('>') {
+            // Strip common HTML tags from the display: the content between them is what matters.
+            let cleaned = raw
+                .replace("<center>", "")
+                .replace("</center>", "")
+                .replace("<div>", "")
+                .replace("</div>", "")
+                .replace("<span>", "")
+                .replace("</span>", "")
+                .replace("<br>", "\n")
+                .replace("<br/>", "\n")
+                .replace("<hr>", "\n---\n");
+            display.push_str(&cleaned);
+        } else {
+            display.push_str(raw);
+        }
         if styled {
             spans.push(span);
         }
