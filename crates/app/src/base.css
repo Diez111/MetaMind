@@ -179,6 +179,10 @@ body {
 .table-row.is-header .table-cell { font-size: 0.85em }
 .table-cell.is-center { text-align: center }
 .image-embed { margin: 4px 0 14px 0 }
+/* A board drawn in place of its `![[…]]` embed: the picture is painted by the app, this is the
+   row it gets. The board keeps its own page colour, so it reads as a sheet on either theme. */
+.exc-embed { margin: 4px 0 14px 0 }
+.exc-board { width: 100% }
 .markdown-embed { margin: 0 0 14px 0; border-left: 2px solid var(--interactive-accent); padding: 6px 16px; background-color: var(--rs-card); border-radius: var(--radius-s) }
 .markdown-embed-title { font-weight: 600; color: var(--text-normal); font-size: var(--font-text-size); margin-bottom: 4px }
 .embed-line { font-size: var(--font-text-size); font-family: var(--font-text); line-height: var(--line-height-normal); color: var(--text-normal); margin-bottom: 6px }

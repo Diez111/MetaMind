@@ -18,7 +18,7 @@ USAGE:
   rustsidian search <vault> <query> [--limit N] Search with the query syntax
   rustsidian export <vault> <note> [--format html|md|pdf] [-o <path>]
   rustsidian doctor <vault>                     Diagnose configuration, index and notes
-  rustsidian screenshot <vault> <out.png> [--note <path>] [--size WxH] [--keys \"Ctrl+P ...\"] [--type <text>] [--run <command id>,...] [--light]
+  rustsidian screenshot <vault> <out.png> [--note <path>] [--size WxH] [--keys \"Ctrl+P ...\"] [--type <text>] [--run <command id>,...] [--frames N] [--scroll-to <text>] [--light]
   rustsidian welcome-screenshot <out.png> [--run <action>,...] [--type <text>]
   rustsidian commands                           List command ids and default hotkeys
   rustsidian update [--check]                   Install the latest release, or only report it
@@ -35,8 +35,18 @@ struct Args {
 }
 
 fn parse_args(args: &[String]) -> Args {
-    const WITH_VALUE: &[&str] =
-        &["--limit", "--format", "-o", "--note", "--size", "--keys", "--type", "--run"];
+    const WITH_VALUE: &[&str] = &[
+        "--limit",
+        "--format",
+        "-o",
+        "--note",
+        "--size",
+        "--keys",
+        "--type",
+        "--run",
+        "--frames",
+        "--scroll-to",
+    ];
     let mut out = Args { pos: Vec::new(), flags: Vec::new() };
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -231,6 +241,18 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
             for c in a.value("--run").unwrap_or("").split(',').filter(|c| !c.is_empty()) {
                 app.run(c.trim());
             }
+            // A long note is laid out around the block at the top of the view, so a shot of a
+            // note's last section needs the anchor moved there before the first frame.
+            if let (Some(needle), Some(tab)) = (a.value("--scroll-to"), app.tab_mut()) {
+                let doc = tab.editor.buf.doc();
+                let at = doc
+                    .blocks
+                    .iter()
+                    .position(|b| tab.editor.buf.slice(b.start, b.end()).contains(needle))
+                    .unwrap_or(0);
+                tab.top_block = at;
+                tab.scroll_px = 0.0;
+            }
             if let Some(g) = &mut app.graph_view {
                 g.settle();
             }
@@ -238,9 +260,12 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
             let Some(mut pm) = rustsidian_ui::Pixmap::new(w.clamp(64, 8192), h.clamp(64, 8192)) else {
                 return fail("screenshot: bad size");
             };
-            crate::render(&mut app, &mut fonts, &mut pm, 1.0);
-            // Second frame so the perf overlay shows a warm-cache frame time.
-            crate::render(&mut app, &mut fonts, &mut pm, 1.0);
+            // Two frames so the perf overlay shows a warm-cache frame time; `--frames` renders
+            // more, which is what a scroll animation and the block window need to settle.
+            let frames = a.value("--frames").and_then(|v| v.parse().ok()).unwrap_or(2).max(1);
+            for _ in 0..frames {
+                crate::render(&mut app, &mut fonts, &mut pm, 1.0);
+            }
             match pm.save_png(png) {
                 Ok(()) => {
                     let _ = writeln!(

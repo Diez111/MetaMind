@@ -10,6 +10,7 @@ pub mod clipboard;
 pub mod dataview;
 pub mod datetime;
 pub mod editing;
+pub mod excalidraw;
 pub mod graphview;
 pub mod icon;
 pub mod icons;
@@ -92,6 +93,7 @@ pub fn render_window(
     view::add_graph(app, &mut dom, &info);
     canvasview::add_canvas(app, &mut dom, &info);
     rich::paint(&mut dom, &info.rich, fonts);
+    excalidraw::paint(&mut dom, &info.exc, fonts);
     let scene = dom.paint();
     let clear = dom.nodes[0].style.background;
     rustsidian_ui::render(&scene, fonts, pixmap, scale, clear);

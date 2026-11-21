@@ -180,6 +180,8 @@ pub struct ViewInfo {
     pub stack: Vec<(usize, usize, NodeId, Option<NodeId>)>,
     /// Math and diagram blocks painted after layout.
     pub rich: Vec<crate::rich::Item>,
+    /// `.excalidraw` boards embedded in notes, painted after layout.
+    pub exc: Vec<crate::excalidraw::Item>,
     /// Each note view, to scroll once its blocks are laid out.
     pub scrolled: Vec<Scrolled>,
     /// (block, first node it added) for each block `note_blocks` visited.
@@ -346,8 +348,13 @@ fn list_marker(line: &str) -> Option<(String, usize, usize)> {
     let rest = &line[indent..];
     let task = |tail: &str| {
         let b = tail.as_bytes();
-        (b.len() >= 4 && b[0] == b'[' && b[2] == b']' && b[3] == b' ')
-            .then(|| if b[1] == b' ' { "☐" } else { "☑" })
+        (b.len() >= 4 && b[0] == b'[' && b[2] == b']' && b[3] == b' ').then(|| {
+            if b[1] == b' ' {
+                "☐"
+            } else {
+                "☑"
+            }
+        })
     };
     for bullet in ["- ", "* ", "+ "] {
         if let Some(tail) = rest.strip_prefix(bullet) {
@@ -382,7 +389,10 @@ fn cut_lines(display: &str, spans: &[Span], map: &[(usize, usize, usize)]) -> Ve
             display: text.to_string(),
             spans: Vec::new(),
             map: Vec::new(),
-            start: map.iter().find(|&&(_, d, len)| d <= lo && d + len > lo).map_or(0, |&(s, d, _)| s + (lo - d)),
+            start: map
+                .iter()
+                .find(|&&(_, d, len)| d <= lo && d + len > lo)
+                .map_or(0, |&(s, d, _)| s + (lo - d)),
             end: 0,
             marker: None,
         };
@@ -526,9 +536,7 @@ fn heading_marker(src: &str) -> usize {
 /// Display offset of a source offset inside one line, for recolouring a range (the callout
 /// title) once the line's own spans have been shifted.
 fn display_of(map: &[(usize, usize, usize)], src: usize) -> usize {
-    map.iter()
-        .find(|&&(s, _, len)| src >= s && src <= s + len)
-        .map_or(0, |&(s, d, _)| d + src - s)
+    map.iter().find(|&&(s, _, len)| src >= s && src <= s + len).map_or(0, |&(s, d, _)| d + src - s)
 }
 
 /// Draw a rendered block that holds list items one line at a time: the bullet or number in a
@@ -614,12 +622,7 @@ fn mark_symbols(display: &str, spans: &mut Vec<Span>, pal: &Palette) {
             }
         }
         if c == '·' && display[line_start..i].trim().is_empty() {
-            extra.push(Span {
-                start: i,
-                end: i + c.len_utf8(),
-                color: Some(pal.muted),
-                ..Span::default()
-            });
+            extra.push(Span { start: i, end: i + c.len_utf8(), color: Some(pal.muted), ..Span::default() });
         }
         prev = c;
     }
@@ -1032,6 +1035,7 @@ fn pane(
         let mut own = ViewInfo::default();
         editor(app, dom, leaf, pal, &mut own, open.get(active).map(|t| (pane, active, t)), false);
         info.rich.append(&mut own.rich);
+        info.exc.append(&mut own.exc);
         info.scrolled.append(&mut own.scrolled);
         info.panes.push((pane, leaf, own.editor));
         return;
@@ -1334,49 +1338,49 @@ pub(crate) fn note_blocks(
         if rendered && !folded_here && has_list_lines(&display) {
             list_block(dom, view, first + i, cut_lines(&display, &spans, &map), callout, info);
         } else {
-        let mut el =
-            El::div().class(class).attr("data-block", &(first + i).to_string()).text(display.clone());
-        if let NodeKind::Heading { level: level @ 1.., .. } = root.kind {
-            el = el.attr("aria-level", &level.to_string());
-        }
-        let mut bv = BlockView { block: first + i, node: 0, src_start: s, src_end: e, display, map };
-        if let Some((color, ts, te)) = callout {
-            let (d0, d1) = (bv.to_display(ts), bv.to_display(te));
-            for sp in spans.iter_mut().filter(|sp| sp.start >= d0 && sp.end <= d1) {
-                sp.color = Some(color);
+            let mut el =
+                El::div().class(class).attr("data-block", &(first + i).to_string()).text(display.clone());
+            if let NodeKind::Heading { level: level @ 1.., .. } = root.kind {
+                el = el.attr("aria-level", &level.to_string());
             }
-            el = el.style(&format!(
-                "border-left-color: rgb({0},{1},{2}); background-color: rgba({0},{1},{2},0.1)",
-                color.r, color.g, color.b
-            ));
-        } else if matches!(root.kind, NodeKind::Callout { .. }) {
-            let kind = match root.kind {
-                NodeKind::Callout { kind, .. } => {
-                    buf.slice(b.start + kind.start as usize, b.start + kind.end as usize)
+            let mut bv = BlockView { block: first + i, node: 0, src_start: s, src_end: e, display, map };
+            if let Some((color, ts, te)) = callout {
+                let (d0, d1) = (bv.to_display(ts), bv.to_display(te));
+                for sp in spans.iter_mut().filter(|sp| sp.start >= d0 && sp.end <= d1) {
+                    sp.color = Some(color);
                 }
-                _ => "".into(),
-            };
-            let c = callout_color(&kind);
-            el = el.style(&format!("border-left-color: rgb({},{},{})", c.r, c.g, c.b));
-        }
-        code_spans(&b.tree, b.start, &src, s, &bv.map, pal, &mut spans);
-        bv.node = dom.add(view, el.spans(spans));
-        if !print && matches!(root.kind, NodeKind::Heading { level, .. } if level > 0) {
-            let folded = tab.folds.is_folded(b.start);
-            dom.add(
-                bv.node,
-                El::div()
-                    .class("cm-fold-indicator")
-                    .class_if(folded, "is-collapsed")
-                    .text(if folded { "▸" } else { "▾" })
-                    .attr("aria-label", if folded { "Unfold heading" } else { "Fold heading" })
-                    .action(format!("fold:{}", b.start)),
-            );
-        }
-        info.blocks.push(bv);
+                el = el.style(&format!(
+                    "border-left-color: rgb({0},{1},{2}); background-color: rgba({0},{1},{2},0.1)",
+                    color.r, color.g, color.b
+                ));
+            } else if matches!(root.kind, NodeKind::Callout { .. }) {
+                let kind = match root.kind {
+                    NodeKind::Callout { kind, .. } => {
+                        buf.slice(b.start + kind.start as usize, b.start + kind.end as usize)
+                    }
+                    _ => "".into(),
+                };
+                let c = callout_color(&kind);
+                el = el.style(&format!("border-left-color: rgb({},{},{})", c.r, c.g, c.b));
+            }
+            code_spans(&b.tree, b.start, &src, s, &bv.map, pal, &mut spans);
+            bv.node = dom.add(view, el.spans(spans));
+            if !print && matches!(root.kind, NodeKind::Heading { level, .. } if level > 0) {
+                let folded = tab.folds.is_folded(b.start);
+                dom.add(
+                    bv.node,
+                    El::div()
+                        .class("cm-fold-indicator")
+                        .class_if(folded, "is-collapsed")
+                        .text(if folded { "▸" } else { "▾" })
+                        .attr("aria-label", if folded { "Unfold heading" } else { "Fold heading" })
+                        .action(format!("fold:{}", b.start)),
+                );
+            }
+            info.blocks.push(bv);
         }
         if mode != ViewMode::Source {
-            embeds(app, dom, view, &tab.path, &b.tree, &buf.slice(b.start, b.end()));
+            embeds(app, dom, view, &tab.path, &b.tree, &buf.slice(b.start, b.end()), rendered, info);
         }
         if rendered {
             if let Some(n) = dataview_error {
@@ -1492,10 +1496,7 @@ fn table(
         }
         let row = dom.add(
             grid,
-            El::div()
-                .class("table-row")
-                .class_if(header, "is-header")
-                .class_if(!header && band, "is-band"),
+            El::div().class("table-row").class_if(header, "is-header").class_if(!header && band, "is-band"),
         );
         for (c, cell) in cells.into_iter().enumerate() {
             let node = dom.add(
@@ -1551,8 +1552,20 @@ fn embedded_blocks(dom: &mut Dom, parent: NodeId, text: &str, action: &str, pal:
 }
 const IMAGE_MAX_WIDTH: f32 = 640.0;
 
-/// Images and note embeds referenced by a block, shown below it.
-fn embeds(app: &App, dom: &mut Dom, view: NodeId, source: &str, tree: &md_engine::Tree, block_text: &str) {
+/// Images, note embeds and `.excalidraw` boards referenced by a block, shown below it. A board is
+/// drawn only where the note is rendered: while the caret is on the line its `![[…]]` stays
+/// editable, the same rule the dataview and Mermaid blocks follow.
+#[allow(clippy::too_many_arguments)]
+fn embeds(
+    app: &App,
+    dom: &mut Dom,
+    view: NodeId,
+    source: &str,
+    tree: &md_engine::Tree,
+    block_text: &str,
+    rendered: bool,
+    info: &mut ViewInfo,
+) {
     for (_, n) in tree.iter() {
         let (target, subpath, size) = match n.kind {
             NodeKind::WikiLink { target, subpath, alias, embed: true } => {
@@ -1605,6 +1618,11 @@ fn embeds(app: &App, dom: &mut Dom, view: NodeId, source: &str, tree: &md_engine
                     .style(&format!("width: {:.0}px; height: {:.0}px", w * k, h * k))
                     .image(img),
             );
+        } else if path::extension(rel).eq_ignore_ascii_case("excalidraw") {
+            // While the caret is on the line the `![[…]]` stays, so it can still be edited.
+            if rendered {
+                board_embed(app, dom, view, rel, info);
+            }
         } else {
             // Video, audio and anything else this build does not decode: a card that names the
             // file and hands it to the system player, instead of a line of raw English.
@@ -1620,6 +1638,35 @@ fn embeds(app: &App, dom: &mut Dom, view: NodeId, source: &str, tree: &md_engine
                     .text("Abrir con el reproductor del sistema")
                     .action(format!("open-external:{rel}")),
             );
+        }
+    }
+}
+
+/// A `.excalidraw` board drawn where its embed is, or the reason it could not be: the raw
+/// `![[…]]` line stays above it, so a board this build cannot read is never lost.
+fn board_embed(app: &App, dom: &mut Dom, view: NodeId, rel: &str, info: &mut ViewInfo) {
+    let board = app.media.borrow_mut().board(&app.store, rel);
+    let holder = dom.add(view, El::div().class("exc-embed"));
+    let name = path::file_name(rel);
+    let notice = |dom: &mut Dom, text: String| {
+        dom.add(holder, El::div().class("rich-notice").text(text));
+    };
+    let Some(board) = board else {
+        notice(dom, format!("Excalidraw: {name} is not in the vault"));
+        return;
+    };
+    match &*board {
+        crate::excalidraw::Loaded::Failed(e) => {
+            notice(dom, format!("Excalidraw: {name} could not be read ({e}); showing the text"))
+        }
+        crate::excalidraw::Loaded::Board(b) if b.list.ops.is_empty() => {
+            notice(dom, format!("Excalidraw: {name} is an empty board"))
+        }
+        crate::excalidraw::Loaded::Board(b) => {
+            crate::excalidraw::add(dom, holder, b.clone(), &mut info.exc);
+            if let Some(note) = crate::excalidraw::skipped_note(&b.list) {
+                notice(dom, note);
+            }
         }
     }
 }
@@ -1955,6 +2002,7 @@ fn stack(
             let mut own = ViewInfo::default();
             editor(app, dom, col, pal, &mut own, Some((pane, i, t)), false);
             info.rich.append(&mut own.rich);
+            info.exc.append(&mut own.exc);
             info.scrolled.append(&mut own.scrolled);
             info.stack.push((pane, i, col, own.editor));
         }
@@ -2501,7 +2549,10 @@ mod tests {
         let (out, _) = join_soft_breaks("a\n- b\n  more", false).expect("one soft break");
         assert_eq!(out, "a\n- b more");
         // A line that starts a heading, a quote, a fence or a table keeps its own break.
-        assert_eq!(join_soft_breaks("body\ntext\n# heading", false).map(|(s, _)| s), Some("body text\n# heading".into()));
+        assert_eq!(
+            join_soft_breaks("body\ntext\n# heading", false).map(|(s, _)| s),
+            Some("body text\n# heading".into())
+        );
         assert_eq!(join_soft_breaks("line  \nnext", false), None);
         // A callout's title is its own line even when the body starts on the next one.
         assert_eq!(join_soft_breaks("Title\nbody", true).map(|(s, _)| s), None);

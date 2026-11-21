@@ -169,7 +169,7 @@ impl Pen {
     }
 }
 
-fn dashed(pts: &[(f32, f32)], on: f32, off: f32) -> Vec<[f32; 4]> {
+pub(crate) fn dashed(pts: &[(f32, f32)], on: f32, off: f32) -> Vec<[f32; 4]> {
     let mut out = Vec::new();
     let mut draw = true;
     let mut left = on;

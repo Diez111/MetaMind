@@ -2573,6 +2573,7 @@ dependencies = [
  "canvas-core",
  "dataview-core",
  "editor-core",
+ "excalidraw-core",
  "ext-api",
  "graph-core",
  "highlight-core",
