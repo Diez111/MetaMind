@@ -52,6 +52,11 @@ fn dump(l: &Layout) -> String {
         );
         s = s + "\n" + &line;
     }
+    // The tag is not part of the formula box: it is reported so the caller can hit the right margin.
+    if let Some(t) = &l.tag {
+        let line = format!("tag {} star={} x={:.2} y={:.2} w={:.2}", t.label(), t.star, t.x, t.y, t.width);
+        s = s + "\n" + &line;
+    }
     s
 }
 
@@ -264,6 +269,174 @@ s 54.07 39.82 59.69 24.94 0.80 -
 s 59.69 24.94 70.25 24.94 0.80 -
 s 49.04 20.58 71.21 20.58 0.72 -"#,
     ),
+    // `\boxed` around a whole line: the frame is the box, edge to edge, with the metrics padding
+    // as the frame's breathing room.
+    (
+        r#"\boxed{\int\frac{dx}{x^2+x} = \ln\left\lvert\frac{x}{x+1}\right\rvert + C}"#,
+        true,
+        r#"box w=197.39 a=26.34 d=19.98
+g 6.48 29.14 27.20 R - ∫
+g 44.51 18.78 16.00 I - d
+g 53.31 18.78 16.00 I - x
+g 32.51 40.05 16.00 I - x
+g 41.79 33.97 11.20 R - 2
+g 52.16 40.05 16.00 R - +
+g 65.31 40.05 16.00 I - x
+g 80.16 26.34 16.00 R - =
+g 94.21 26.34 16.00 R - ln
+g 133.54 18.78 16.00 I - x
+g 120.55 37.42 16.00 I - x
+g 132.90 37.42 16.00 R - +
+g 146.06 37.42 16.00 R - 1
+g 166.56 26.34 16.00 R - +
+g 179.71 26.34 16.00 I - C
+s 31.55 22.34 75.07 22.34 0.72 -
+s 115.92 6.46 115.92 38.22 0.80 -
+s 119.59 22.34 156.30 22.34 0.72 -
+s 159.97 6.46 159.97 38.22 0.80 -
+s 0.48 0.48 196.91 0.48 0.96 -
+s 0.48 45.85 196.91 45.85 0.96 -
+s 0.48 0.48 0.48 45.85 0.96 -
+s 196.91 0.48 196.91 45.85 0.96 -"#,
+    ),
+    (
+        r#"\boxed{c=\frac{3}{2}\in(0;3)}"#,
+        true,
+        r#"box w=111.66 a=24.56 d=16.56
+g 6.48 24.56 16.00 I - c
+g 19.73 24.56 16.00 R - =
+g 35.38 17.00 16.00 R - 3
+g 35.38 35.64 16.00 R - 2
+g 50.70 24.56 16.00 R - ∈
+g 67.95 24.56 16.00 R - (
+g 73.71 24.56 16.00 R - 0
+g 82.99 24.56 16.00 R - ;
+g 90.14 24.56 16.00 R - 3
+g 99.42 24.56 16.00 R - )
+s 34.42 20.56 45.62 20.56 0.72 -
+s 0.48 0.48 111.18 0.48 0.96 -
+s 0.48 40.64 111.18 40.64 0.96 -
+s 0.48 0.48 0.48 40.64 0.96 -
+s 111.18 0.48 111.18 40.64 0.96 -"#,
+    ),
+    // A boxed result in the middle of a line: it keeps its own frame and its own padding, and the
+    // outer box grows around it.
+    (
+        r#"\lim\limits_{b\to\infty}\left[-\tfrac12e^{-x^2}\right]_0^b = 0+\tfrac12 = \boxed{\tfrac12} \;\text{CV}"#,
+        true,
+        r#"box w=260.56 a=25.43 d=17.43
+g 6.00 25.43 16.00 R - lim
+g 34.43 28.15 11.20 I - b
+g 40.59 28.15 11.20 R - →
+g 49.55 28.15 11.20 R - ∞
+g 64.67 25.43 16.00 R - −
+g 79.07 19.47 12.48 R - 1
+g 79.07 32.37 12.48 R - 2
+g 87.91 25.43 16.00 I - e
+g 97.19 19.35 11.20 R - −
+g 106.15 19.35 11.20 I - x
+g 112.65 15.09 7.84 R - 2
+g 124.06 14.56 11.20 I - b
+g 124.06 35.01 11.20 R - 0
+g 135.32 25.43 16.00 R - =
+g 149.37 25.43 16.00 R - 0
+g 162.20 25.43 16.00 R - +
+g 176.95 19.47 12.48 R - 1
+g 176.95 32.37 12.48 R - 2
+g 190.24 25.43 16.00 R - =
+g 212.37 19.47 12.48 R - 1
+g 212.37 32.37 12.48 R - 2
+g 232.16 25.43 16.00 R - CV
+s 60.06 9.44 62.60 9.44 0.80 -
+s 60.06 33.41 62.60 33.41 0.80 -
+s 60.06 9.44 60.06 33.41 0.80 -
+s 78.11 21.43 87.27 21.43 0.72 -
+s 122.35 9.44 119.81 9.44 0.80 -
+s 122.35 33.41 119.81 33.41 0.80 -
+s 122.35 9.44 122.35 33.41 0.80 -
+s 175.99 21.43 185.15 21.43 0.72 -
+s 211.41 21.43 220.56 21.43 0.72 -
+s 204.77 5.48 227.20 5.48 0.96 -
+s 204.77 37.37 227.20 37.37 0.96 -
+s 204.77 5.48 204.77 37.37 0.96 -
+s 227.20 5.48 227.20 37.37 0.96 -"#,
+    ),
+    // `\xrightarrow[n\to\infty]{}`: the bracket label goes below the shaft, and the shaft is as wide
+    // as the label asks for.
+    (
+        r#"\sum_{n=0}^{\infty}\frac{n\,4^n}{4^n+1} = \sum_{n=0}^{\infty}\frac{n}{1+4^{-n}} \xrightarrow[n\to\infty]{}\infty"#,
+        true,
+        r#"box w=226.58 a=31.70 d=23.14
+g 11.21 13.06 11.20 R - ∞
+g 6.00 49.29 11.20 I - n
+g 12.16 49.29 11.20 R - =
+g 18.88 49.29 11.20 R - 0
+g 6.41 35.13 23.20 R - ∑
+g 36.88 24.14 16.00 I - n
+g 48.40 24.14 16.00 R - 4
+g 58.16 17.74 11.20 I - n
+g 29.65 42.82 16.00 R - 4
+g 39.41 36.42 11.20 I - n
+g 49.44 42.82 16.00 R - +
+g 62.59 42.82 16.00 R - 1
+g 77.92 31.70 16.00 R - =
+g 97.18 13.06 11.20 R - ∞
+g 91.97 49.29 11.20 I - n
+g 98.13 49.29 11.20 R - =
+g 104.85 49.29 11.20 R - 0
+g 92.38 35.13 23.20 R - ∑
+g 136.81 24.14 16.00 I - n
+g 115.62 44.38 16.00 R - 1
+g 128.45 44.38 16.00 R - +
+g 141.60 44.38 16.00 R - 4
+g 151.36 37.42 11.20 R - −
+g 160.32 37.42 11.20 I - n
+g 176.05 37.69 11.20 I - n
+g 182.21 37.69 11.20 R - →
+g 191.17 37.69 11.20 R - ∞
+g 207.78 31.70 16.00 R - ∞
+s 28.69 27.70 72.83 27.70 0.72 -
+s 114.66 27.70 167.76 27.70 0.72 -
+s 172.85 27.70 203.33 27.70 0.80 -
+s 200.77 26.26 203.33 27.70 0.80 -
+s 200.77 29.14 203.33 27.70 0.80 -"#,
+    ),
+    // `\tag{1}`: the number is drawn one em past the formula and reported in `Layout::tag` so the
+    // caller can put it against the right margin of the line.
+    (
+        r#"4a+2=2b \quad\Longrightarrow\quad -4a+2b=2 \tag{1}"#,
+        true,
+        r#"box w=276.58 a=17.16 d=8.84
+g 6.00 17.16 16.00 R - 4
+g 15.28 17.16 16.00 I - a
+g 27.63 17.16 16.00 R - +
+g 40.78 17.16 16.00 R - 2
+g 54.51 17.16 16.00 R - =
+g 68.56 17.16 16.00 R - 2
+g 77.84 17.16 16.00 I - b
+g 107.09 17.16 16.00 R - ⟹
+g 140.34 17.16 16.00 R - −
+g 153.14 17.16 16.00 R - 4
+g 162.42 17.16 16.00 I - a
+g 174.77 17.16 16.00 R - +
+g 187.92 17.16 16.00 R - 2
+g 197.20 17.16 16.00 I - b
+g 210.45 17.16 16.00 R - =
+g 224.50 17.16 16.00 R - 2
+g 249.78 17.16 16.00 R - (1)
+tag (1) star=false x=249.78 y=17.16 w=20.80"#,
+    ),
+    // `\not\to`: a slash over the arrow, inside the arrow's own advance.
+    (
+        r#"a_n\not\to 0"#,
+        false,
+        r#"box w=58.74 a=16.52 d=11.00
+g 6.00 16.52 16.00 I - a
+g 15.28 19.72 11.20 I - n
+g 26.21 16.52 16.00 R - →
+g 43.46 16.52 16.00 R - 0
+s 26.98 22.12 38.24 7.72 0.80 -"#,
+    ),
 ];
 
 #[test]
@@ -278,6 +451,12 @@ fn the_snapshots_are_the_padded_box() {
     // Every case carries its `Metrics::default()` padding, so a painter can draw the box as it
     // comes back without adding room of its own.
     for (src, display, _) in CASES {
+        // A `\boxed` spends the same knobs on its frame, so its padding enters the box more than
+        // once and this equality cannot hold: the frame cases are measured by the tests in
+        // `tests.rs` instead (`boxed_uses_the_metrics_padding_for_the_frame`).
+        if src.contains(r"\boxed") {
+            continue;
+        }
         let tight = render(src, 16.0, *display, &mut Approx);
         let padded = render_full(src, 16.0, *display, &Metrics::ZERO, &mut Approx).layout;
         assert!((tight.width - padded.width - 2.0 * Metrics::default().padding_x).abs() < 0.001, "{src}");

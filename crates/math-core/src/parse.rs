@@ -1,4 +1,5 @@
 use crate::color::Color;
+use crate::layout::Tag;
 use crate::syms::{self, Kind};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -35,6 +36,16 @@ pub enum Node {
     Stack { over: bool, small: Vec<Node>, base: Vec<Node> },
     // `\textcolor{c}{..}`, and the rest of a group after `\color{c}`.
     Color { color: Color, body: Vec<Node> },
+    // `\boxed{..}`: a rectangular frame around the body.
+    Boxed(Vec<Node>),
+    // `\xrightarrow[below]{above}` and `\xleftarrow[below]{above}`: an extensible arrow with an
+    // optional label on each side of the shaft.
+    ExtArrow { left: bool, above: Vec<Node>, below: Option<Vec<Node>> },
+    // `\not` puts a slash through the symbol that follows it (`\not=`, `\not\equiv`).
+    Not(Box<Node>),
+    // `\tag{..}`: the equation number of a display line. `star` is `\tag*{..}`, which drops the
+    // parentheses amsmath adds around a plain `\tag`.
+    Tag { text: String, star: bool },
     Unknown(String),
 }
 
@@ -45,11 +56,16 @@ pub struct Diagnostic {
     pub command: String,
 }
 
-/// What `parse_full` returns: the tree plus the commands that were kept as source text.
+/// What `parse_full` returns: the tree, the commands that were kept as source text, and the
+/// equation number when the source carries a `\tag`.
+///
+/// In `tag` only `text` and `star` are meaningful: there is no layout yet, so the position and
+/// width are zero. [`crate::layout_nodes_with`] fills them in on [`crate::Layout::tag`].
 #[derive(Clone, Default, Debug)]
 pub struct Parsed {
     pub nodes: Vec<Node>,
     pub diagnostics: Vec<Diagnostic>,
+    pub tag: Option<Tag>,
 }
 
 #[derive(PartialEq, Debug)]
@@ -70,7 +86,7 @@ pub fn parse(src: &str) -> Vec<Node> {
 pub fn parse_full(src: &str) -> Parsed {
     let mut p = Parser::new(src);
     let nodes = p.run();
-    Parsed { nodes, diagnostics: p.diags }
+    Parsed { nodes, diagnostics: p.diags, tag: p.tag }
 }
 
 struct Parser {
@@ -80,6 +96,8 @@ struct Parser {
     /// Byte offset of `c[0]` in the source this parser is reading; non-zero for a fragment.
     base: usize,
     diags: Vec<Diagnostic>,
+    /// The first `\tag` seen, kept flat so the caller does not have to walk the tree for it.
+    tag: Option<Tag>,
 }
 
 fn atom(text: impl Into<String>, kind: Kind, face: Face) -> Node {
@@ -88,7 +106,7 @@ fn atom(text: impl Into<String>, kind: Kind, face: Face) -> Node {
 
 impl Parser {
     fn new(src: &str) -> Self {
-        Parser { c: src.chars().collect(), i: 0, depth: 0, base: 0, diags: Vec::new() }
+        Parser { c: src.chars().collect(), i: 0, depth: 0, base: 0, diags: Vec::new(), tag: None }
     }
 
     fn run(&mut self) -> Vec<Node> {
@@ -330,6 +348,59 @@ impl Parser {
         Color::parse(&raw)
     }
 
+    /// `\xrightarrow[below]{above}` and `\xleftarrow[below]{above}`.
+    ///
+    /// amsmath puts the arrow shaft length under the control of both labels, so the bracket and the
+    /// brace are read in that order. The vault also writes the label as a lone trailing `_{..}` or
+    /// `^{..}`; that form is accepted too.
+    fn ext_arrow(&mut self, left: bool, face: Option<Face>) -> Node {
+        // The bracket comes first in the source: `\xrightarrow[below]{above}`.
+        let below = self.bracket_arg();
+        let mut above = self.arg(face);
+        let below = below.or_else(|| leading_underscore(&mut above));
+        Node::ExtArrow { left, above, below }
+    }
+
+    /// `\not`: the slash applies to the single symbol or command that follows it.
+    fn not(&mut self, face: Option<Face>) -> Node {
+        let mut base = self.arg(face);
+        let node = match base.len() {
+            0 => return Node::Space(0.0),
+            1 => base.remove(0),
+            _ => Node::Group(base),
+        };
+        Node::Not(Box::new(node))
+    }
+
+    fn tag(&mut self) -> Node {
+        let star = self.peek() == Some('*');
+        if star {
+            self.i += 1;
+        }
+        let text = self.raw_group().trim().to_string();
+        if self.tag.is_none() {
+            self.tag = Some(Tag { text: text.clone(), star, ..Tag::default() });
+        }
+        Node::Tag { text, star }
+    }
+
+    /// The optional `[...]` argument of `\xrightarrow` and friends, parsed as math.
+    fn bracket_arg(&mut self) -> Option<Vec<Node>> {
+        self.skip_ws();
+        if self.peek() != Some('[') {
+            return None;
+        }
+        self.i += 1;
+        let start = self.i;
+        while self.peek().is_some_and(|c| c != ']') {
+            self.i += 1;
+        }
+        let sub: String = self.c[start..self.i.min(self.c.len())].iter().collect();
+        let base = self.byte_at(start);
+        self.i += 1;
+        Some(self.fragment(&sub, base))
+    }
+
     fn command(&mut self, n: &str, face: Option<Face>, start: usize) -> Node {
         if let Some((s, kind)) = syms::lookup(n) {
             let f = if syms::is_greek_lower(s) { face.unwrap_or(Face::Italic) } else { Face::Roman };
@@ -458,6 +529,10 @@ impl Parser {
                     None => Node::Group(body),
                 }
             }
+            "boxed" => Node::Boxed(self.arg(face)),
+            "xrightarrow" | "xleftarrow" => self.ext_arrow(n == "xleftarrow", face),
+            "not" => self.not(face),
+            "tag" => self.tag(),
             "begin" => self.environment(start),
             "mathbin" | "mathrel" | "mathop" | "mathord" => Node::Group(self.arg(face)),
             _ => self.unknown(start, format!("\\{n}")),
@@ -545,4 +620,19 @@ fn map_text(nodes: &mut [Node], f: fn(char) -> char) {
             _ => {}
         }
     }
+}
+
+/// Peel the `_`/`^` off a lone label argument: `\xrightarrow{_{n\to\infty}}` is a below-label.
+///
+/// The parser turns a leading `_` with no base into `Script` over an empty group, so that shape is
+/// the signal. Returns the below-label and leaves `above` holding whatever the `^` carried.
+fn leading_underscore(above: &mut Vec<Node>) -> Option<Vec<Node>> {
+    let [Node::Script { base, sup, sub }] = above.as_slice() else { return None };
+    if !matches!(base.as_ref(), Node::Group(g) if g.is_empty()) || (sup.is_none() && sub.is_none()) {
+        return None;
+    }
+    let below = sub.clone();
+    let rest = sup.clone();
+    *above = rest.unwrap_or_default();
+    below
 }

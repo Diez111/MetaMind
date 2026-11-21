@@ -84,6 +84,38 @@ pub struct Layout {
     pub descent: f32,
     pub glyphs: Vec<Glyph>,
     pub segs: Vec<Seg>,
+    /// The `\tag` of the formula, when it has one at its top level.
+    ///
+    /// The tag is also drawn, as a run one em past the last item, because the box model has no
+    /// right margin of its own to push it against. The painter should take `text`/`size` from here
+    /// and place it at the right edge of the line, moving the run away from `x`.
+    pub tag: Option<Tag>,
+}
+
+/// An equation number: `\tag{1}` (drawn as `(1)`, as amsmath does) or `\tag*{1}` (verbatim).
+///
+/// `Parsed::tag` carries the text and `star` only; once laid out, `x`/`y`/`width` say where the
+/// fallback run landed, so the caller can move it to the right margin instead of drawing it there.
+#[derive(Clone, Default, PartialEq, Debug)]
+pub struct Tag {
+    pub text: String,
+    pub star: bool,
+    pub x: f32,
+    /// Baseline of the run, measured from the top of the box like every other `y`.
+    pub y: f32,
+    pub size: f32,
+    pub width: f32,
+}
+
+impl Tag {
+    /// What to draw: `\tag{x}` gets the parentheses amsmath adds, `\tag*{x}` does not.
+    pub fn label(&self) -> String {
+        if self.star {
+            self.text.clone()
+        } else {
+            format!("({})", self.text)
+        }
+    }
 }
 
 impl Layout {
@@ -129,12 +161,24 @@ struct St {
 }
 
 const AXIS: f32 = 0.25;
+/// Stroke of the `\boxed` frame, in ems. Heavier than a fraction rule so the frame reads as chrome.
+const FRAME: f32 = 0.06;
+/// Shortest `\xrightarrow` shaft, in ems; longer labels stretch it.
+const ARROW_MIN: f32 = 1.5;
+/// Air on each side of an arrow label before the shaft has to grow, in ems.
+const ARROW_PAD: f32 = 0.2;
+/// Length of the arrow head, in ems.
+const ARROW_HEAD: f32 = 0.16;
+/// How far below the baseline a `\not` slash reaches, in ems.
+const NOT_DROP: f32 = 0.35;
 
 pub struct Ctx<'a> {
     pub m: &'a mut dyn Measure,
     metrics: Metrics,
     /// Nesting level of the node lists being laid out; the metrics only touch level 0.
     depth: usize,
+    /// The top-level `\tag`, if the formula has one.
+    tag: Option<Tag>,
 }
 
 fn extents(text: &str) -> (f32, f32) {
@@ -175,6 +219,10 @@ fn kind_of(n: &Node) -> Kind {
             [only] => kind_of(only),
             _ => Kind::Ord,
         },
+        // `\not=` and `\not\to` are relations because what they sit on is.
+        Node::Not(base) => kind_of(base),
+        // An extensible arrow is a relation, whatever its labels are.
+        Node::ExtArrow { .. } => Kind::Rel,
         _ => Kind::Ord,
     }
 }
@@ -223,10 +271,22 @@ impl Ctx<'_> {
         let mut out = B::default();
         let mut prev: Option<Kind> = None;
         let mut x = 0.0;
+        let mut tag: Option<Tag> = None;
         for (i, n) in nodes.iter().enumerate() {
             if matches!(n, Node::Space(_)) {
                 if let Node::Space(f) = n {
                     x += f * st.size;
+                }
+                continue;
+            }
+            // A display tag is not part of the formula: it goes past the end of it, and the box
+            // reports where it landed so the painter can move it to the right margin.
+            if let (Node::Tag { text, star }, true) = (n, top) {
+                if tag.is_none() {
+                    let mut t = Tag { text: text.clone(), star: *star, ..Tag::default() };
+                    t.size = st.size;
+                    t.width = self.m.width(&t.label(), st.size, Face::Roman);
+                    tag = Some(t);
                 }
                 continue;
             }
@@ -251,6 +311,17 @@ impl Ctx<'_> {
             out.put(b, x, 0.0);
             x += w;
             prev = Some(k);
+        }
+        if let Some(mut t) = tag {
+            // One em of air, then the tag. amsmath pushes it to the right margin of the line; the
+            // box model has no line to measure, so this is the closest honest approximation.
+            t.x = x + st.size;
+            let b = self.text(&t.label(), st.size, Face::Roman);
+            out.a = out.a.max(b.a);
+            out.d = out.d.max(b.d);
+            x = t.x + b.w;
+            out.put(b, t.x, 0.0);
+            self.tag = Some(t);
         }
         out.w = x;
         out
@@ -314,7 +385,94 @@ impl Ctx<'_> {
                 }
                 b
             }
+            Node::Boxed(body) => self.boxed(body, st),
+            Node::ExtArrow { left, above, below } => self.ext_arrow(*left, above, below.as_deref(), st),
+            Node::Not(base) => self.not(base, st),
+            // A tag that is not at the top level (inside a group, say) is not an equation number;
+            // draw it where it stands rather than moving it.
+            Node::Tag { text, star } => self.tag_run(text, *star, st),
         }
+    }
+
+    /// The tag run itself: `(text)`, or `text` for `\tag*`.
+    fn tag_run(&mut self, text: &str, star: bool, st: St) -> B {
+        let label = Tag { text: text.to_string(), star, ..Tag::default() }.label();
+        self.text(&label, st.size, Face::Roman)
+    }
+
+    /// `\boxed{..}`: a rectangular frame around the body, drawn edge to edge of the box it returns.
+    ///
+    /// The frame's breathing room is the caller's [`Metrics`] padding and the stroke is [`FRAME`],
+    /// a little heavier than a fraction rule; the box grows by both, so the frame is never outside
+    /// the box and the painter never has to inset it.
+    fn boxed(&mut self, body: &[Node], st: St) -> B {
+        let s = st.size;
+        let b = self.list(body, st);
+        let (px, py) = (self.metrics.padding_x.max(0.0), self.metrics.padding_y.max(0.0));
+        let t = FRAME * s;
+        let half = t / 2.0;
+        let mut out =
+            B { w: b.w + 2.0 * (px + half), a: b.a + py + half, d: b.d + py + half, ..B::default() };
+        let (bw, ba, bd) = (b.w, b.a, b.d);
+        out.put(b, px + half, 0.0);
+        let (x0, x1) = (half, bw + 2.0 * px + half);
+        let (top, bot) = (-(ba + py), bd + py);
+        out.seg(x0, top, x1, top, t);
+        out.seg(x0, bot, x1, bot, t);
+        out.seg(x0, top, x0, bot, t);
+        out.seg(x1, top, x1, bot, t);
+        out
+    }
+
+    /// `\xrightarrow[below]{above}` / `\xleftarrow[below]{above}`: a shaft with a head, as wide as
+    /// its labels need and centred under and over it.
+    fn ext_arrow(&mut self, left: bool, above: &[Node], below: Option<&[Node]>, st: St) -> B {
+        let s = st.size;
+        let sst = self.sub_st(st);
+        let up = (!above.is_empty()).then(|| self.list(above, sst));
+        let dn = below.filter(|b| !b.is_empty()).map(|b| self.list(b, sst));
+        let label_w = up.iter().chain(dn.iter()).map(|b| b.w).fold(0.0, f32::max);
+        let w = (label_w + 2.0 * ARROW_PAD * s).max(ARROW_MIN * s);
+        let t = 0.05 * s;
+        let y = -AXIS * s;
+        let head = ARROW_HEAD * s;
+        let spread = 0.09 * s;
+        let (a, d) = ((-y).max(0.0) + spread + t / 2.0, y.max(0.0) + spread + t / 2.0);
+        let mut out = B { w, a, d, ..B::default() };
+        let (tail, inner, tip) = if left { (w, head, 0.0) } else { (0.0, w - head, w) };
+        out.seg(tail.min(tip), y, tail.max(tip), y, t);
+        out.seg(inner.min(tip), y - spread, inner.max(tip), y, t);
+        out.seg(inner.min(tip), y + spread, inner.max(tip), y, t);
+        let gap = 0.12 * s;
+        if let Some(u) = up {
+            let yy = y - gap - u.d;
+            out.a = out.a.max(-yy + u.a);
+            let dx = (w - u.w) / 2.0;
+            out.put(u, dx, yy);
+        }
+        if let Some(l) = dn {
+            let yy = y + gap + l.a;
+            out.d = out.d.max(yy + l.d);
+            let dx = (w - l.w) / 2.0;
+            out.put(l, dx, yy);
+        }
+        out
+    }
+
+    /// `\not`: a slash laid over the base symbol, inside the base's own width.
+    fn not(&mut self, base: &Node, st: St) -> B {
+        let s = st.size;
+        let mut out = self.node(base, st);
+        let t = 0.05 * s;
+        // The slash keeps a readable angle even over a short, flat symbol like `=`, so the box
+        // grows to hold it instead of letting the ink spill out.
+        let aim_a = out.a.max(0.45 * s);
+        let aim_d = out.d.max(NOT_DROP * s);
+        let (x0, x1) = if out.w > 0.01 { (out.w * 0.06, out.w * 0.94) } else { (0.0, 0.4 * s) };
+        out.seg(x0, aim_d, x1, -aim_a, t);
+        out.a = aim_a + t / 2.0;
+        out.d = aim_d + t / 2.0;
+        out
     }
 
     fn big(&mut self, sym: &str, st: St) -> B {
@@ -802,10 +960,16 @@ pub fn layout_with(
     metrics: &Metrics,
     m: &mut dyn Measure,
 ) -> Layout {
-    let mut cx = Ctx { m, metrics: *metrics, depth: 0 };
+    let mut cx = Ctx { m, metrics: *metrics, depth: 0, tag: None };
     let b = cx.list(nodes, St { size, display, script: false });
-    let px = metrics.padding_x.max(0.0);
-    let py = metrics.padding_y.max(0.0);
+    // A formula that is one `\boxed` gets its frame breathing room from the metrics themselves, so
+    // the outer padding would double it: skip it and let the frame sit on the edges of the box.
+    let framed = matches!(
+        nodes.iter().filter(|n| !matches!(n, Node::Space(_))).collect::<Vec<_>>()[..],
+        [Node::Boxed(_)]
+    );
+    let px = if framed { 0.0 } else { metrics.padding_x.max(0.0) };
+    let py = if framed { 0.0 } else { metrics.padding_y.max(0.0) };
     let (a, d) = (b.a.max(0.7 * size) + py, b.d.max(0.2 * size) + py);
     let mut l = Layout { width: b.w + 2.0 * px, ascent: a, descent: d, ..Layout::default() };
     l.glyphs =
@@ -826,5 +990,10 @@ pub fn layout_with(
                 s
             })
             .collect();
+    l.tag = cx.tag.map(|mut t| {
+        t.x += px;
+        t.y += a;
+        t
+    });
     l
 }
