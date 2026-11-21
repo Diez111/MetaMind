@@ -253,8 +253,9 @@ fn block_widgets() {
     let mut pm = Pixmap::new(1000, 800).unwrap();
     let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
     let shown: Vec<&str> = frame.info.blocks.iter().map(|b| b.display.as_str()).collect();
-    // Quote markers are hidden; a folded callout shows only its title; an untitled one its type.
-    assert!(shown.contains(&"quoted\nlines"), "{shown:?}");
+    // Quote markers are hidden, and the wrap the source used is a space: it is one paragraph.
+    assert!(shown.contains(&"quoted lines"), "{shown:?}");
+    // A folded callout shows only its title; an untitled one shows its type, then its body.
     assert!(shown.contains(&"Folded title"), "{shown:?}");
     assert!(shown.contains(&"tip\ntip body"), "{shown:?}");
     // The table is a grid of cells without the delimiter row or pipes.

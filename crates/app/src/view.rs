@@ -22,6 +22,8 @@ pub struct Palette {
     pub selection: Color,
     pub caret: Color,
     pub tag: Color,
+    pub star: Color,
+    pub link: Color,
     pub error: Color,
     pub heading_scale: [f32; 6],
     /// Syntax colors indexed by `highlight_core::Class as usize`.
@@ -107,14 +109,18 @@ pub fn palette(app: &App) -> Palette {
         selection: col("--text-selection", Color { r: 138, g: 92, b: 245, a: 90 }),
         caret: col("--caret-color", Color::rgb(220, 220, 220)),
         tag: col("--tag-color", Color::rgb(138, 92, 245)),
+        star: col("--star-color", Color { r: 208, g: 160, b: 74, a: 255 }),
+        link: col("--link-color", Color { r: 138, g: 162, b: 247, a: 255 }),
         error: syn("--text-error", (251, 70, 76), (233, 49, 71)),
+        // A theme may make a heading bigger than the text; none may make it the size of the
+        // text, which is what `--h1-size: 1.125em` in Minimal does. Headings keep a floor.
         heading_scale: [
-            num("--h1-size", 1.8),
-            num("--h2-size", 1.5),
-            num("--h3-size", 1.3),
-            num("--h4-size", 1.15),
-            num("--h5-size", 1.05),
-            num("--h6-size", 1.0),
+            num("--h1-size", 1.8).max(1.7),
+            num("--h2-size", 1.5).max(1.35),
+            num("--h3-size", 1.3).max(1.15),
+            num("--h4-size", 1.15).max(1.05),
+            num("--h5-size", 1.05).max(1.0),
+            num("--h6-size", 1.0).max(1.0),
         ],
     }
 }
@@ -288,8 +294,9 @@ pub fn block_display(
                     span.color = Some(pal.code);
                 }
                 Deco_::Link | Deco_::WikiLink | Deco_::Embed => {
-                    span.color = Some(pal.accent);
-                    span.underline = true;
+                    // Colour alone carries the link: an underline under every other word reads as
+                    // a spelling error, which is what a link used to look like.
+                    span.color = Some(pal.link);
                 }
                 Deco_::Tag => span.color = Some(pal.tag),
                 Deco_::Url
@@ -316,6 +323,314 @@ pub fn block_display(
         }
     }
     (display, spans, map)
+}
+
+/// One line of a rendered block, ready to become an element of its own.
+pub(crate) struct BlockLine {
+    /// What the line shows, without the line break.
+    pub display: String,
+    pub spans: Vec<Span>,
+    pub map: Vec<(usize, usize, usize)>,
+    /// Source range the line shows.
+    pub start: usize,
+    pub end: usize,
+    /// Bullet or number for a list item, how many levels the item is nested under, and the
+    /// source range the marker itself came from.
+    pub marker: Option<(String, usize, usize, usize)>,
+}
+
+/// What a list line starts with, when it is a list item: the glyph drawn in the gutter and where
+/// the item's own text starts.
+fn list_marker(line: &str) -> Option<(String, usize, usize)> {
+    let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
+    let rest = &line[indent..];
+    let task = |tail: &str| {
+        let b = tail.as_bytes();
+        (b.len() >= 4 && b[0] == b'[' && b[2] == b']' && b[3] == b' ')
+            .then(|| if b[1] == b' ' { "☐" } else { "☑" })
+    };
+    for bullet in ["- ", "* ", "+ "] {
+        if let Some(tail) = rest.strip_prefix(bullet) {
+            let glyph = task(tail).unwrap_or("•");
+            let n = if task(tail).is_some() { 6 } else { 2 };
+            return Some((glyph.to_string(), indent + n, indent));
+        }
+    }
+    // `1. `, `10) `: the number is the marker, as it is in the source.
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    if digits > 0 && digits <= 9 {
+        let tail = &rest[digits..];
+        if let Some(after) = tail.strip_prefix('.').or_else(|| tail.strip_prefix(')')) {
+            if after.starts_with(' ') {
+                return Some((rest[..digits + 1].to_string(), indent + digits + 2, indent));
+            }
+        }
+    }
+    None
+}
+
+/// Cut a block's rendered text at its line breaks. Spans and the source map are clipped and
+/// shifted per line, so every line can be drawn as its own element and still map back to the
+/// source offsets it came from.
+fn cut_lines(display: &str, spans: &[Span], map: &[(usize, usize, usize)]) -> Vec<BlockLine> {
+    let mut out = Vec::new();
+    let mut at = 0usize;
+    for text in display.split('\n') {
+        let (lo, hi) = (at, at + text.len());
+        at = hi + 1;
+        let mut line = BlockLine {
+            display: text.to_string(),
+            spans: Vec::new(),
+            map: Vec::new(),
+            start: map.iter().find(|&&(_, d, len)| d <= lo && d + len > lo).map_or(0, |&(s, d, _)| s + (lo - d)),
+            end: 0,
+            marker: None,
+        };
+        for sp in spans.iter().filter(|sp| sp.start < hi && sp.end > lo) {
+            let mut sp = sp.clone();
+            sp.start = sp.start.max(lo) - lo;
+            sp.end = sp.end.min(hi) - lo;
+            line.spans.push(sp);
+        }
+        for &(src, d, len) in map.iter().filter(|&&(_, d, len)| d < hi && d + len > lo) {
+            let (a, b) = (d.max(lo), (d + len).min(hi));
+            line.map.push((src + (a - d), a - lo, b - a));
+        }
+        if let Some(&(s, _, len)) = line.map.last() {
+            line.end = s + len;
+        } else {
+            line.end = line.start;
+        }
+        if let Some((glyph, len, indent)) = list_marker(text) {
+            let marker_start = line.start;
+            // The item's own text is what wraps; the marker is drawn apart, in a gutter.
+            line.display = text[len..].to_string();
+            let drop = |v: &mut Vec<(usize, usize, usize)>| {
+                v.retain_mut(|e| {
+                    if e.1 + e.2 <= len {
+                        return false;
+                    }
+                    let cut = len.saturating_sub(e.1);
+                    e.0 += cut;
+                    e.1 = e.1.saturating_sub(len);
+                    e.2 = e.2.saturating_sub(cut);
+                    e.2 > 0
+                });
+            };
+            drop(&mut line.map);
+            line.spans.retain_mut(|sp| {
+                if sp.end <= len {
+                    return false;
+                }
+                sp.start = sp.start.saturating_sub(len);
+                sp.end -= len;
+                true
+            });
+            line.start = line.map.first().map_or(marker_start + len, |e| e.0);
+            line.marker = Some((glyph, indent.div_ceil(2), marker_start, line.start));
+        }
+        out.push(line);
+    }
+    out
+}
+
+/// Whether any line of a rendered block is a list item: only then is it worth splitting the
+/// block, since a single text run cannot hang the wrapped lines under the item's text.
+fn has_list_lines(display: &str) -> bool {
+    display.split('\n').any(|l| list_marker(l).is_some())
+}
+
+/// Markdown wraps its paragraphs where the writer's editor wrapped them. On screen a paragraph is
+/// one run of text, so those breaks are single spaces and the layout wraps at the width it really
+/// has — otherwise a hard-wrapped sentence shows as three short, ragged lines. A blank line, a
+/// list item, a heading, a quote or a fence starts a line for real, and so does a hard break (a
+/// trailing space or backslash). `keep_first` guards a callout's title, which is its own line.
+///
+/// The text gets shorter, so this also returns where each old byte went, and `remap` moves the
+/// spans and the source map after it.
+fn join_soft_breaks(display: &str, keep_first: bool) -> Option<(String, Vec<usize>)> {
+    if !display.contains('\n') {
+        return None;
+    }
+    let mut lines = Vec::new();
+    let mut at = 0;
+    for line in display.split('\n') {
+        lines.push((at, line));
+        at += line.len() + 1;
+    }
+    // Whether the break before each line survives, and how much indent a joined line loses.
+    let mut kept = vec![true; lines.len()];
+    for i in 1..lines.len() {
+        let line = lines[i].1;
+        let prev = lines[i - 1].1;
+        let t = line.trim_start_matches([' ', '\t']);
+        let starts = t.is_empty() || list_marker(line).is_some() || t.starts_with(['#', '>', '|', '`', '~']);
+        kept[i] = prev.ends_with(' ') || prev.ends_with('\\') || starts || (i == 1 && keep_first);
+    }
+    if kept.iter().all(|&k| k) {
+        return None;
+    }
+    let mut out = String::with_capacity(display.len());
+    let mut table = Vec::with_capacity(display.len() + 1);
+    for (i, &(_, line)) in lines.iter().enumerate() {
+        let text = if kept[i] { line } else { line.trim_start_matches([' ', '\t']) };
+        if i > 0 {
+            table.push(out.len());
+            if kept[i] {
+                out.push('\n');
+            } else if !out.ends_with(' ') {
+                // One space where the break was: the indent of the next line is gone.
+                out.push(' ');
+            }
+            for _ in 0..(line.len() - text.len()) {
+                table.push(out.len());
+            }
+        }
+        for ch in text.chars() {
+            for _ in 0..ch.len_utf8() {
+                table.push(out.len());
+            }
+            out.push(ch);
+        }
+    }
+    table.push(out.len());
+    Some((out, table))
+}
+
+/// Move spans and the source map of a block through a `join_soft_breaks` table.
+fn remap_lines(spans: &mut Vec<Span>, map: &mut Vec<(usize, usize, usize)>, table: &[usize]) {
+    let at = |i: usize| table.get(i).copied().unwrap_or_else(|| table.last().copied().unwrap_or(0));
+    spans.retain_mut(|sp| {
+        (sp.start, sp.end) = (at(sp.start), at(sp.end));
+        sp.start < sp.end
+    });
+    map.retain_mut(|e| {
+        let (d, end) = (at(e.1), at(e.1 + e.2));
+        e.1 = d;
+        e.2 = end.saturating_sub(d);
+        e.2 > 0
+    });
+}
+/// Length of the `#`s and spaces that open a heading, or 0 for any other line.
+fn heading_marker(src: &str) -> usize {
+    let ws = src.len() - src.trim_start_matches(' ').len();
+    let hashes = src[ws..].bytes().take_while(|&b| b == b'#').count();
+    if hashes == 0 || hashes > 6 {
+        return 0;
+    }
+    let mut n = ws + hashes;
+    n += src[n..].bytes().take_while(|&b| b == b' ').count();
+    n
+}
+
+/// Display offset of a source offset inside one line, for recolouring a range (the callout
+/// title) once the line's own spans have been shifted.
+fn display_of(map: &[(usize, usize, usize)], src: usize) -> usize {
+    map.iter()
+        .find(|&&(s, _, len)| src >= s && src <= s + len)
+        .map_or(0, |&(s, d, _)| d + src - s)
+}
+
+/// Draw a rendered block that holds list items one line at a time: the bullet or number in a
+/// gutter and the item's text beside it, so the wrapped lines of an item start under its text
+/// and not under the marker. A callout gets a box and one child per line, which also keeps the
+/// title, the paragraphs and the items of the same box aligned.
+fn list_block(
+    dom: &mut Dom,
+    view: NodeId,
+    block: usize,
+    lines: Vec<BlockLine>,
+    callout: Option<(Color, usize, usize)>,
+    info: &mut ViewInfo,
+) {
+    let parent = match callout {
+        Some((color, _, _)) => dom.add(
+            view,
+            El::div().class("cm-callout-block").style(&format!(
+                "border-left-color: rgb({0},{1},{2}); background-color: rgba({0},{1},{2},0.08)",
+                color.r, color.g, color.b
+            )),
+        ),
+        None => view,
+    };
+    for BlockLine { display, mut spans, map, start, end, marker } in lines {
+        if let Some((color, ts, te)) = callout {
+            let (d0, d1) = (display_of(&map, ts), display_of(&map, te));
+            for sp in spans.iter_mut().filter(|sp| sp.start >= d0 && sp.end <= d1) {
+                sp.color = Some(color);
+            }
+        }
+        let node = match marker {
+            Some((glyph, depth, first, last)) => {
+                let row = dom.add(
+                    parent,
+                    El::div()
+                        .class("cm-line cm-list-item")
+                        .style(&format!("padding-left: {:.2}em", depth as f32 * 1.4)),
+                );
+                let m = dom.add(row, El::div().class("list-item-marker").text(glyph.clone()));
+                info.blocks.push(BlockView {
+                    block,
+                    node: m,
+                    src_start: first,
+                    src_end: last,
+                    display: glyph.clone(),
+                    map: vec![(first, 0, (last - first).min(glyph.len()))],
+                });
+                dom.add(row, El::div().class("list-item-text").text(display.clone()).spans(spans))
+            }
+            None => dom.add(
+                parent,
+                El::div()
+                    .class("cm-line")
+                    .class_if(callout.is_some(), "cm-callout-line")
+                    .text(display.clone())
+                    .spans(spans),
+            ),
+        };
+        info.blocks.push(BlockView { block, node, src_start: start, src_end: end, display, map });
+    }
+}
+
+/// Mark the characters that carry meaning on their own: the stars that rate a note and the `·`
+/// some dashboards use as a bullet. Purely typographic, so it never adds or removes text.
+fn mark_symbols(display: &str, spans: &mut Vec<Span>, pal: &Palette) {
+    let mut extra: Vec<Span> = Vec::new();
+    let mut line_start = 0usize;
+    let mut prev = '\0';
+    for (i, c) in display.char_indices() {
+        if c == '\n' {
+            line_start = i + c.len_utf8();
+        }
+        if c == '★' || c == '☆' {
+            match extra.last_mut() {
+                Some(s) if s.end == i && (prev == '★' || prev == '☆') => s.end = i + c.len_utf8(),
+                _ => extra.push(Span {
+                    start: i,
+                    end: i + c.len_utf8(),
+                    color: Some(pal.star),
+                    ..Span::default()
+                }),
+            }
+        }
+        if c == '·' && display[line_start..i].trim().is_empty() {
+            extra.push(Span {
+                start: i,
+                end: i + c.len_utf8(),
+                color: Some(pal.muted),
+                ..Span::default()
+            });
+        }
+        prev = c;
+    }
+    // Only where nothing else already styles the character: a star inside a link keeps the
+    // link's colour.
+    extra.retain(|e| !spans.iter().any(|s| s.start < e.end && e.start < s.end));
+    if extra.is_empty() {
+        return;
+    }
+    spans.extend(extra);
+    spans.sort_by_key(|s| (s.start, s.end));
 }
 
 fn sidebar_files(app: &App, dom: &mut Dom, parent: NodeId, viewport_h: f32) {
@@ -969,11 +1284,40 @@ pub(crate) fn note_blocks(
                 callout = Some((callout_color(&buf.slice(ks, ke)), shown_s, shown_e));
             }
         }
-        let (mut display, mut spans, map) = if class.ends_with("cm-hr") {
+        // The `#`s of a heading are markup, not content: they stay out of the way unless the
+        // caret is inside the heading, which is also when its source is shown to edit it.
+        let marker = if matches!(root.kind, NodeKind::Heading { setext: false, .. }) {
+            heading_marker(&src)
+        } else {
+            0
+        };
+        if marker > 0 {
+            // The block shows its source exactly while the caret is in it, which is also when
+            // the `#`s have to come back: hiding them there would leave a heading with no way
+            // to see or edit its level.
+            let style = if rendered { Deco_::Hide } else { Deco_::Markup };
+            block_decos.push(Deco { start: s, end: s + marker, style });
+        }
+        let (mut display, mut spans, mut map) = if class.ends_with("cm-hr") {
             (String::new(), Vec::new(), Vec::new())
         } else {
             block_display(&src, s, &block_decos, pal)
         };
+        if marker > 0 && !rendered {
+            // Shown to edit it: at the size of the text, not of the heading.
+            for sp in spans.iter_mut().filter(|sp| sp.end <= marker) {
+                sp.scale = 1.0;
+            }
+        }
+        // The source's soft wraps are single spaces on screen: one paragraph, wrapped by the
+        // layout at the width it has.
+        if rendered {
+            if let Some((one_line, table)) = join_soft_breaks(&display, callout.is_some()) {
+                display = one_line;
+                remap_lines(&mut spans, &mut map, &table);
+            }
+        }
+        mark_symbols(&display, &mut spans, pal);
         if folded_here {
             let at = display.len();
             display.push_str("  ⋯");
@@ -985,6 +1329,11 @@ pub(crate) fn note_blocks(
                 ..Span::default()
             });
         }
+        // A rendered list is drawn item by item: a single text run cannot hang the wrapped
+        // lines under the item's text, and the bullet would be the source's own `-`.
+        if rendered && !folded_here && has_list_lines(&display) {
+            list_block(dom, view, first + i, cut_lines(&display, &spans, &map), callout, info);
+        } else {
         let mut el =
             El::div().class(class).attr("data-block", &(first + i).to_string()).text(display.clone());
         if let NodeKind::Heading { level: level @ 1.., .. } = root.kind {
@@ -1025,6 +1374,7 @@ pub(crate) fn note_blocks(
             );
         }
         info.blocks.push(bv);
+        }
         if mode != ViewMode::Source {
             embeds(app, dom, view, &tab.path, &b.tree, &buf.slice(b.start, b.end()));
         }
@@ -1123,19 +1473,30 @@ fn table(
         return;
     }
     // Column widths follow the longest cell, so short columns stay narrow. The text is not
-    // measured here; 10 px per character plus the cell padding is a deliberate over-estimate.
+    // measured here; 7.6 px per character plus the cell padding is a deliberate over-estimate,
+    // and the cap keeps one long cell from leaving the other columns with no room.
     let weights: Vec<f32> = (0..cols)
         .map(|c| {
             let chars =
                 rows.iter().filter_map(|(_, r)| r.get(c)).map(|cell| cell.display.chars().count()).max();
-            chars.unwrap_or(0).clamp(3, 60) as f32 * 10.0 + 22.0
+            chars.unwrap_or(0).clamp(3, 40) as f32 * 7.6 + 36.0
         })
         .collect();
     let total: f32 = weights.iter().sum();
-    let grid =
-        dom.add(view, El::div().class("markdown-table").style(&format!("max-width: {:.0}px", total + 2.0)));
+    let grid = dom.add(view, El::div().class("markdown-table"));
+    let mut band = false;
     for (header, cells) in rows {
-        let row = dom.add(grid, El::div().class("table-row").class_if(header, "is-header"));
+        // Zebra striping: the style engine has no `:nth-child`, so the band is named here.
+        if !header {
+            band = !band;
+        }
+        let row = dom.add(
+            grid,
+            El::div()
+                .class("table-row")
+                .class_if(header, "is-header")
+                .class_if(!header && band, "is-band"),
+        );
         for (c, cell) in cells.into_iter().enumerate() {
             let node = dom.add(
                 row,
@@ -1245,11 +1606,19 @@ fn embeds(app: &App, dom: &mut Dom, view: NodeId, source: &str, tree: &md_engine
                     .image(img),
             );
         } else {
+            // Video, audio and anything else this build does not decode: a card that names the
+            // file and hands it to the system player, instead of a line of raw English.
+            let card = dom.add(view, El::div().class("media-card"));
+            let icon = dom.add(card, El::div().class("media-card-icon"));
+            dom.add(icon, icons::el("play"));
+            let body = dom.add(card, El::div().class("media-card-body"));
+            dom.add(body, El::div().class("media-card-title").text(path::file_name(rel)));
             dom.add(
-                view,
+                body,
                 El::div()
-                    .class("embed-unsupported")
-                    .text(format!("{} (this file type cannot be shown yet)", path::file_name(rel))),
+                    .class("media-card-action")
+                    .text("Abrir con el reproductor del sistema")
+                    .action(format!("open-external:{rel}")),
             );
         }
     }
@@ -1823,11 +2192,17 @@ fn overlays(app: &App, dom: &mut Dom, viewport_h: f32) {
     }
     if let Some(n) = &app.notice {
         let t = app.anims.t("notice");
-        let mut el = El::div().class("notice").text(n.clone());
+        let mut el = El::div().class("notice").attr("role", "status");
         if t < 1.0 {
             el = el.style(&format!("opacity: {t:.3}; top: {:.1}px", 12.0 * t));
         }
-        dom.add(0, el);
+        let toast = dom.add(0, el);
+        dom.add(toast, icons::el("warning"));
+        dom.add(toast, El::div().class("notice-text").text(n.clone()));
+        dom.add(
+            toast,
+            El::div().class("notice-close").text("×").attr("aria-label", "Cerrar").action("notice:dismiss"),
+        );
     }
     if app.perf {
         dom.add(
@@ -2101,5 +2476,50 @@ fn hover_popover(app: &App, dom: &mut Dom, viewport_h: f32) {
         dom.add(pop, El::div().class("hover-popover-empty").text("No preview for this file"));
     } else {
         embedded_blocks(dom, pop, &h.text, &action, &palette(app));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn soft_wraps_join_into_one_paragraph() {
+        // A paragraph written with hard wraps is one run of text on screen.
+        let src = "one two\nthree four";
+        let (out, table) = join_soft_breaks(src, false).expect("the break is soft");
+        assert_eq!(out, "one two three four");
+        // One entry per old byte plus the end, so spans and the map can follow.
+        assert_eq!(table.len(), src.len() + 1);
+        assert_eq!(*table.last().unwrap(), out.len());
+        assert!(table.windows(2).all(|w| w[0] <= w[1]));
+    }
+
+    #[test]
+    fn list_items_headings_and_hard_breaks_keep_their_break() {
+        // The indent of a continuation line goes with the break it is part of.
+        let (out, _) = join_soft_breaks("a\n- b\n  more", false).expect("one soft break");
+        assert_eq!(out, "a\n- b more");
+        // A line that starts a heading, a quote, a fence or a table keeps its own break.
+        assert_eq!(join_soft_breaks("body\ntext\n# heading", false).map(|(s, _)| s), Some("body text\n# heading".into()));
+        assert_eq!(join_soft_breaks("line  \nnext", false), None);
+        // A callout's title is its own line even when the body starts on the next one.
+        assert_eq!(join_soft_breaks("Title\nbody", true).map(|(s, _)| s), None);
+        assert_eq!(join_soft_breaks("Title\nbody", false).map(|(s, _)| s), Some("Title body".into()));
+    }
+
+    #[test]
+    fn joining_moves_spans_and_the_source_map() {
+        // `two` is an emphasised span on the second source line.
+        let src = "one two\nthree four";
+        let span = Span { start: 8, end: 18, bold: true, ..Span::default() };
+        let mut spans = vec![span];
+        let mut map = vec![(0usize, 0usize, src.len())];
+        let (out, table) = join_soft_breaks(src, false).expect("joined");
+        remap_lines(&mut spans, &mut map, &table);
+        assert_eq!(&out[spans[0].start..spans[0].end], "three four");
+        assert!(spans[0].bold);
+        assert_eq!(map[0].1, 0);
+        assert_eq!(map[0].2, out.len());
     }
 }
