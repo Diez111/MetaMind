@@ -68,6 +68,7 @@ impl App {
                 RightPanel::Backlinks => "backlinks",
                 RightPanel::Outgoing => "outgoing",
                 RightPanel::Outline => "outline",
+                RightPanel::Ai => "ai",
             },
             "collapsed": collapsed,
         })
@@ -135,6 +136,7 @@ impl App {
         self.right_panel = match v.get("rightPanel").and_then(Value::as_str) {
             Some("outgoing") => RightPanel::Outgoing,
             Some("outline") => RightPanel::Outline,
+            Some("ai") => RightPanel::Ai,
             _ => RightPanel::Backlinks,
         };
         if let Some(c) = v.get("collapsed").and_then(Value::as_array) {

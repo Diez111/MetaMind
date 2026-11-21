@@ -825,35 +825,154 @@ fn search_options(dom: &mut Dom, parent: NodeId, action: &str) {
     }
 }
 
-fn right_sidebar(app: &App, dom: &mut Dom, parent: NodeId) {
+fn right_sidebar(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
     let head = dom.add(parent, El::div().class("sidebar-tab-header"));
     for (icon, cmd, panel) in [
         ("link", "backlinks:open", RightPanel::Backlinks),
         ("arrow-up-right", "outgoing-links:open", RightPanel::Outgoing),
         ("list", "outline:open", RightPanel::Outline),
+        ("ai", "ai:open", RightPanel::Ai),
     ] {
         if app.disabled_by(cmd).is_some() {
             continue;
         }
         icon_button(dom, head, icon, cmd, app.right_panel == panel);
     }
-    let Some(tab) = app.tab() else {
-        dom.add(parent, El::div().class("pane-empty").text("No hay ningún archivo abierto."));
+    // The copilot is useful with no note open: it answers without the note as context.
+    let tab = app.tab();
+    if app.right_panel != RightPanel::Ai {
+        let Some(tab) = tab else {
+            dom.add(parent, El::div().class("pane-empty").text("No hay ningún archivo abierto."));
+            return;
+        };
+        if let Some(name) = app.disabled_by(match app.right_panel {
+            RightPanel::Outgoing => "outgoing-links:open",
+            RightPanel::Outline => "outline:open",
+            _ => "backlinks:open",
+        }) {
+            dom.add(parent, El::div().class("pane-empty").text(format!("{name} está desactivado.")));
+            return;
+        }
+        match app.right_panel {
+            RightPanel::Outline => outline(tab, dom, parent),
+            RightPanel::Outgoing => outgoing(app, tab, dom, parent),
+            _ => backlinks(app, dom, parent),
+        }
         return;
-    };
-    let cmd = match app.right_panel {
-        RightPanel::Backlinks => "backlinks:open",
-        RightPanel::Outgoing => "outgoing-links:open",
-        RightPanel::Outline => "outline:open",
-    };
-    if let Some(name) = app.disabled_by(cmd) {
+    }
+    if let Some(name) = app.disabled_by("ai:open") {
         dom.add(parent, El::div().class("pane-empty").text(format!("{name} está desactivado.")));
         return;
     }
-    match app.right_panel {
-        RightPanel::Outline => outline(tab, dom, parent),
-        RightPanel::Outgoing => outgoing(app, tab, dom, parent),
-        RightPanel::Backlinks => backlinks(app, dom, parent),
+    ai_panel(app, dom, parent, info);
+}
+
+/// The AI copilot: the conversation, the waiting dots and the input.
+fn ai_panel(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
+    let panel = dom.add(parent, El::div().class("ai-panel"));
+    let bar = dom.add(panel, El::div().class("nav-buttons-container ai-toolbar"));
+    let model = app
+        .config
+        .app
+        .str(crate::ai::KEY_MODEL)
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .unwrap_or(crate::ai::DEFAULT_MODEL);
+    dom.add(bar, El::div().class("ai-model").text(model));
+    let b = icon_button(dom, bar, "trash", "ai:clear", false);
+    dom.nodes[b].el.attrs.push(("aria-label".into(), "Borrar la conversación".into()));
+    let b = icon_button(dom, bar, "settings", "ai:settings", false);
+    dom.nodes[b].el.attrs.push(("aria-label".into(), "Ajustes de la IA".into()));
+    let list = dom.add(panel, El::div().class("ai-messages").id("ai-messages"));
+    if app.ai.messages.is_empty() {
+        dom.add(
+            list,
+            El::div()
+                .class("pane-empty")
+                .text("Pregunta sobre la nota abierta. Las fórmulas se escriben con $...$."),
+        );
+    }
+    for m in &app.ai.messages {
+        ai_message(dom, list, m, info);
+    }
+    if app.ai.streaming {
+        let typing = dom.add(list, El::div().class("ai-typing"));
+        // The lit dot moves on, so the three dots read as waiting even without CSS animations.
+        let on = (vault_core::fsio::now_ms() / 250 % 3) as usize;
+        for i in 0..3 {
+            dom.add(typing, El::div().class("ai-typing-dot").class_if(i == on, "is-on"));
+        }
+    }
+    if let Some(e) = &app.ai.error {
+        dom.add(list, El::div().class("ai-error").text(e.clone()));
+    }
+    let input = dom.add(panel, El::div().class("ai-input-container"));
+    let empty = app.ai.input.is_empty();
+    let text = if empty && !app.ai.editing {
+        "Pregunta sobre la nota…".to_string()
+    } else if app.ai.editing {
+        format!("{}▏", app.ai.input)
+    } else {
+        app.ai.input.clone()
+    };
+    dom.add(
+        input,
+        El::div()
+            .class("ai-input")
+            .class_if(empty && !app.ai.editing, "is-placeholder")
+            .class_if(app.ai.editing, "is-editing")
+            .text(text)
+            .action("ai:focus-input"),
+    );
+    let send = dom.add(
+        input,
+        El::div()
+            .class("ai-send")
+            .class_if(app.ai.streaming, "is-busy")
+            .action("ai:send"),
+    );
+    dom.nodes[send].el.attrs.push(("aria-label".into(), "Enviar".into()));
+    dom.add(send, icons::el("send"));
+}
+
+fn ai_message(dom: &mut Dom, parent: NodeId, m: &crate::ai::Message, info: &mut ViewInfo) {
+    let role = format!("ai-msg-{}", m.role);
+    let row = dom.add(parent, El::div().class("ai-msg").class(&role));
+    let head = dom.add(row, El::div().class("ai-msg-role"));
+    dom.add(head, icons::el(if m.role == "user" { "edit" } else { "ai" }));
+    let name = if m.role == "user" { "Tú" } else { "IA" };
+    dom.add(head, El::div().class("ai-msg-role-name").text(name));
+    let body = dom.add(row, El::div().class("ai-msg-content"));
+    ai_markup(dom, body, &m.content, info);
+}
+
+/// A message body: prose in the flow, `$$...$$` formulas as display blocks and `$...$` ones
+/// typeset inside their line.
+fn ai_markup(dom: &mut Dom, parent: NodeId, text: &str, info: &mut ViewInfo) {
+    for chunk in crate::ai::split_display_math(text) {
+        match chunk {
+            crate::ai::Chunk::Text(t) => {
+                if t.trim().is_empty() {
+                    continue;
+                }
+                let (shown, slots) = crate::rich::inline_text(&t, 1.0);
+                let node = dom.add(parent, El::div().class("ai-msg-line").text(shown));
+                if !slots.is_empty() {
+                    info.inline.push(crate::rich::InlineItem { node, slots });
+                }
+            }
+            crate::ai::Chunk::Display(src) => {
+                if src.is_empty() {
+                    continue;
+                }
+                crate::rich::add(
+                    dom,
+                    parent,
+                    crate::rich::Kind::Math { src, display: true },
+                    &mut info.rich,
+                );
+            }
+        }
     }
 }
 
@@ -1228,6 +1347,15 @@ pub fn scroll_views(app: &mut App, dom: &mut Dom, info: &ViewInfo) {
         let k = pos.iter().rposition(|&p| p <= y).unwrap_or(0);
         t.top_block = s.marks[k].0;
         t.scroll_px = y - pos[k];
+    }
+    // The AI conversation follows the answer as it streams in.
+    if app.ai.scroll_to_end {
+        if let Some(n) = dom.by_id("ai-messages") {
+            let max = dom.max_scroll(n);
+            dom.set_scroll(n, max);
+            app.scrolls.insert("ai-messages".to_string(), max);
+        }
+        app.ai.scroll_to_end = false;
     }
 }
 
@@ -2192,7 +2320,7 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
             el = el.style(&format!("width: {:.1}px", 250.0 * right_w));
         }
         let right = dom.add(ws, el);
-        right_sidebar(app, dom, right);
+        right_sidebar(app, dom, right, info);
     }
     let status = dom.add(0, El::div().class("status-bar"));
     // What the element under the pointer does, with its hotkey.
