@@ -2465,7 +2465,7 @@ pub fn add_decorations(dom: &mut Dom, info: &ViewInfo, fonts: &mut Fonts) {
 /// Misspelled words in an editor block as source ranges. Code, front matter, links, tags and
 /// markup are not checked: anything mono or colored is left out.
 pub fn misspellings(app: &App, dom: &Dom, bv: &BlockView) -> Vec<(usize, usize)> {
-    if !app.config.app.bool("spellcheck", true) {
+    if !app.config.app.bool("spellcheck", false) {
         return Vec::new();
     }
     let el = &dom.nodes[bv.node].el;
