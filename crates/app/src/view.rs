@@ -678,7 +678,6 @@ fn list_block(
         attach_math(&shown, math, &mut next, node, info);
     }
     parent
-
 }
 
 /// Record the formulas whose blanks a text node holds, in the order they appear in it.
@@ -2467,7 +2466,16 @@ fn diagram_zoom(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate:
             .action("mermaid:zoom-close")
             .style(&format!("width: {w:.0}px; height: {h:.0}px")),
     );
-    crate::rich::add_zoom(dom, modal, src, rich, w - 36.0, h - 64.0, app.diagram_zoom_pan, app.diagram_zoom_scale);
+    crate::rich::add_zoom(
+        dom,
+        modal,
+        src,
+        rich,
+        w - 36.0,
+        h - 64.0,
+        app.diagram_zoom_pan,
+        app.diagram_zoom_scale,
+    );
     dom.add(modal, El::div().class("diagram-zoom-hint").text("Clic o Esc para cerrar"));
 }
 
