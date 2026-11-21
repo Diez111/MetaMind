@@ -438,3 +438,18 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .bases-list-item .internal-link { color: var(--link-color) }
 .bases-list-extra { color: var(--text-muted) }
 .bases-more, .bases-error { margin: 8px 24px; color: var(--text-muted) }
+
+/* Video player widget */
+.video-player { margin: 0 0 16px 0; max-width: 640px; overflow: hidden; background-color: var(--rs-card); border: 1px solid var(--rs-rule); border-radius: var(--radius-m) }
+.video-player-frame { display: flex; align-items: center; justify-content: center; background-color: #000 }
+.video-player-loading { margin-left: 8px; color: var(--text-muted); font-size: var(--font-ui-smaller) }
+.video-player-controls { display: flex; align-items: center; gap: 6px; padding: 6px 10px }
+.video-player-btn { width: 26px; height: 24px }
+.video-player-pill { width: auto; justify-content: center; padding: 0 8px; border: 1px solid var(--rs-rule); border-radius: var(--radius-s); background-color: var(--rs-pill); color: var(--text-normal); font-size: 0.78em; white-space: nowrap }
+.video-player-pill:hover { background-color: var(--rs-rule-strong); color: var(--text-accent) }
+.video-player-time { margin: 0 2px; color: var(--text-muted); font-size: var(--font-ui-smaller); white-space: nowrap }
+.video-player-track { display: flex; align-items: center; flex-grow: 1; height: 18px; margin: 0 4px }
+.video-player-fill { height: 4px; border-radius: 2px; background-color: var(--interactive-accent) }
+.video-player-rest { height: 4px; border-radius: 2px; background-color: var(--background-modifier-border) }
+.video-player-thumb { width: 12px; height: 12px; flex-shrink: 0; border-radius: 6px; border: 1px solid var(--background-modifier-border); background-color: #ffffff }
+.video-player.is-loading .video-player-frame { background-color: var(--rs-card) }

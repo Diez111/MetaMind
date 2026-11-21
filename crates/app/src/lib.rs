@@ -38,6 +38,7 @@ pub mod uri;
 pub mod view;
 pub mod welcome;
 pub mod workspaces;
+pub mod video;
 
 pub use shell::{App, Key};
 
@@ -69,6 +70,8 @@ pub fn render_window(
     app.pump_plugins();
     app.refresh_derived();
     app.animate_changes();
+    app.video_tick(std::time::Instant::now());
+    app.scale = scale;
     app.step_scrolls();
     app.window_w = pixmap.width() as f32 / scale;
     let (mut dom, info) = view::build(app, pixmap.height() as f32 / scale, solo);

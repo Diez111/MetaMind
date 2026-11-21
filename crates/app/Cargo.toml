@@ -47,5 +47,8 @@ softbuffer = { version = "0.4", optional = true, default-features = false, featu
 accesskit = { version = "0.25", optional = true }
 accesskit_winit = { version = "0.34", optional = true, default-features = false, features = ["async-io", "rwh_06"] }
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tempfile = "3"

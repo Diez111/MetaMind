@@ -2578,6 +2578,7 @@ dependencies = [
  "graph-core",
  "highlight-core",
  "krilla",
+ "libc",
  "math-core",
  "md-engine",
  "mermaid-core",

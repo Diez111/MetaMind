@@ -1701,6 +1701,8 @@ fn embeds(
             if rendered {
                 board_embed(app, dom, view, rel, info);
             }
+        } else if crate::video::is_video(rel) && app.video.is_open() && app.video.path() == rel {
+            crate::video::widget(app, dom, view, rel);
         } else {
             // Video, audio and anything else this build does not decode: a card that names the
             // file and hands it to the system player, instead of a line of raw English.
@@ -1713,8 +1715,16 @@ fn embeds(
                 body,
                 El::div()
                     .class("media-card-action")
-                    .text("Abrir con el reproductor del sistema")
-                    .action(format!("open-external:{rel}")),
+                    .text(if crate::video::is_video(rel) {
+                        "Reproducir en RustSidian"
+                    } else {
+                        "Abrir con el reproductor del sistema"
+                    })
+                    .action(if crate::video::is_video(rel) {
+                        format!("video:open:{source}|{rel}")
+                    } else {
+                        format!("open-external:{rel}")
+                    }),
             );
         }
     }

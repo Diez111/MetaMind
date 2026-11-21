@@ -491,6 +491,11 @@ pub struct App {
     /// Where the suggestion closed with Escape stays closed until the cursor leaves it.
     pub(crate) suggest_dismissed: Option<usize>,
     pub anims: crate::anim::Anims,
+    /// The in-app video player, while a note's video card is playing.
+    pub video: crate::video::VideoPlayer,
+    /// UI scale factor (window scale).
+    pub scale: f32,
+    pub video_waker: Option<Box<dyn Fn() + Send>>,
     pub(crate) seen: Option<crate::anim::Seen>,
     pub(crate) notice_since: Option<std::time::Instant>,
     pub update: crate::update::State,
@@ -640,6 +645,9 @@ impl App {
             base_view: None,
             show_base: false,
             dataview: Default::default(),
+            video: Default::default(),
+            scale: 1.0,
+            video_waker: None,
             recovery: Recovery::new(root),
             store,
             theme,
@@ -969,7 +977,35 @@ impl App {
     }
 
     /// Close one tab, saving it first. The tab stays open when the save fails.
-    pub fn close_tab(&mut self, i: usize) {
+    
+    // ---- in-app video player ----
+
+    /// Called from `render_window` before building the view: reads frames, updates the clock.
+    pub fn video_tick(&mut self, now: std::time::Instant) {
+        self.video.tick(now);
+        let _ = self.video.run_action("");
+        if let crate::video::State::Failed(message) = self.video.state() {
+            self.notice = Some(message.to_string());
+        }
+        if !self.video.note().is_empty() {
+            let open = self.all_tabs().any(|t| t.path.eq_ignore_ascii_case(self.video.note()));
+            if !open && self.video.is_open() {
+                self.video.close();
+            }
+        }
+    }
+
+    /// Milliseconds until the player needs another tick (for the wait deadline), if playing.
+    pub fn video_due_in(&self) -> Option<u64> {
+        if self.video.is_open() && !matches!(self.video.state(), crate::video::State::Paused) { Some(250) } else { None }
+    }
+
+    /// Close the video player, called when the media file is deleted or renamed.
+    pub fn close_player(&mut self) {
+        self.video.close();
+    }
+
+pub fn close_tab(&mut self, i: usize) {
         if self.tabs.get(i).is_none_or(|t| t.pinned) {
             return;
         }
@@ -1260,7 +1296,21 @@ impl App {
             // These can add or remove files; the explorer rows are rebuilt on the next frame.
             self.tree = None;
         }
-        if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
+                // ---- in-app video player ----
+        if let Some(rest) = command.strip_prefix("video:") {
+            if let Some((note, rel)) = rest.strip_prefix("open:").and_then(|r| r.split_once('|')) {
+                let path = self.store.abs(rel);
+                match self.video.open(rel, &path, note, ((640.0 * self.scale) as u32, (360.0 * self.scale) as u32)) {
+                    Ok(()) => {
+                        if let Some(waker) = self.video_waker.take() { waker(); }
+                    }
+                    Err(e) => self.notice = Some(e),
+                }
+                return;
+            }
+            if self.video.run_action(command) { return; }
+        }
+if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
             return self.accept_suggest(i);
         }
         if let Some(rest) = command.strip_prefix("spell:replace:") {
