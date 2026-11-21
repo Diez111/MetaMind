@@ -934,13 +934,8 @@ fn ai_panel(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
             .text(text)
             .action("ai:focus-input"),
     );
-    let send = dom.add(
-        input,
-        El::div()
-            .class("ai-send")
-            .class_if(app.ai.streaming, "is-busy")
-            .action("ai:send"),
-    );
+    let send =
+        dom.add(input, El::div().class("ai-send").class_if(app.ai.streaming, "is-busy").action("ai:send"));
     dom.nodes[send].el.attrs.push(("aria-label".into(), "Enviar".into()));
     dom.add(send, icons::el("send"));
 }
@@ -975,12 +970,7 @@ fn ai_markup(dom: &mut Dom, parent: NodeId, text: &str, info: &mut ViewInfo) {
                 if src.is_empty() {
                     continue;
                 }
-                crate::rich::add(
-                    dom,
-                    parent,
-                    crate::rich::Kind::Math { src, display: true },
-                    &mut info.rich,
-                );
+                crate::rich::add(dom, parent, crate::rich::Kind::Math { src, display: true }, &mut info.rich);
             }
         }
     }
@@ -1496,7 +1486,6 @@ pub(crate) fn note_blocks(
                     block_decos.push(hide(first_end, e));
                 }
                 callout = Some((callout_color(&buf.slice(ks, ke)), shown_s, shown_e));
-
             }
         }
         // The `#`s of a heading are markup, not content: they stay out of the way unless the
@@ -1517,7 +1506,9 @@ pub(crate) fn note_blocks(
         // `$..$` gets blanks the width of the formula in the text, and the painter fills them in
         // once the line has real metrics. While the caret is in the block its source shows, as
         // tables and fences do.
-        let mut math = if rendered && !class.ends_with("cm-hr") {
+        // A closed callout shows only its title: the inline math of the hidden content
+        // would still be collected and painted below the truncated text, so skip it.
+        let mut math = if rendered && !class.ends_with("cm-hr") && !callout_folded {
             crate::rich::inline(&b.tree, &buf.slice(b.start, b.end()), block_scale(&block_decos, pal))
         } else {
             Vec::new()
