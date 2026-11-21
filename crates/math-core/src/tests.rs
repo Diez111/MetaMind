@@ -300,6 +300,22 @@ fn supported_commands_report_nothing() {
         r"a_n\not\to 0",
         r"\not\equiv",
         r"\not{x}",
+        r"x\preccurlyeq y",
+        r"a\nmid b",
+        r"\blacksquare",
+        r"p\veebar q",
+        r"\Gamma\vdash\Delta",
+        r"a\equiv b\pmod n",
+        r"a\bmod b",
+        r"\check v",
+        r"\texttt{x y}",
+        r"\left\{a\middle|b\right\}",
+        r"\phantom{abc}",
+        r"a\Bigm|b",
+        r"a\bigm|b\biggm|c\Biggm|d",
+        r"\begin{aligned}a&=1\\\hline b&=2\end{aligned}",
+        r"\llbracket x\rrbracket",
+        r"\checkmark\longmapsto\rightsquigarrow",
     ] {
         assert!(parse_full(src).diagnostics.is_empty(), "{src}: {:?}", parse_full(src).diagnostics);
     }
@@ -512,4 +528,163 @@ fn tag_star_drops_the_parentheses_and_nested_tags_stay_in_place() {
     assert!(r.layout.tag.is_none());
     assert_eq!(r.tag.unwrap().text, "3", "the parse still reports it");
     assert!(r.layout.glyphs.iter().any(|g| g.text == "(3)"));
+}
+
+/// The symbol table sweep that took the whole test vault (all subjects, not just Analisis I) from
+/// 508 unknown-command hits to zero. Every pair here is a command the vault writes and the table
+/// did not carry; the expected glyph follows the Unicode shape of the analogous entry already in
+/// the table (`\preccurlyeq` is `\prec` plus a curvy underline, `\blacksquare` the filled square).
+#[test]
+fn vault_symbol_sweep_has_a_glyph_for_every_missing_name() {
+    let cases: &[(&str, &str)] = &[
+        (r"\preccurlyeq", "≼"),
+        (r"\preceq", "≼"),
+        (r"\prec", "≺"),
+        (r"\succ", "≻"),
+        (r"\succeq", "≽"),
+        (r"\succcurlyeq", "≽"),
+        (r"\nmid", "∤"),
+        (r"\nparallel", "∦"),
+        (r"\blacksquare", "■"),
+        (r"\square", "□"),
+        (r"\checkmark", "✓"),
+        (r"\veebar", "⊻"),
+        (r"\vdash", "⊢"),
+        (r"\dashv", "⊣"),
+        (r"\models", "⊨"),
+        (r"\longmapsto", "⟼"),
+        (r"\longleftrightarrow", "⟷"),
+        (r"\rightleftarrows", "⇄"),
+        (r"\rightsquigarrow", "⇝"),
+        (r"\sqcap", "⊓"),
+        (r"\sqcup", "⊔"),
+        (r"\leqslant", "⩽"),
+        (r"\geqslant", "⩾"),
+        (r"\subsetneq", "⊊"),
+        (r"\nsubseteq", "⊈"),
+        (r"\llbracket", "⟦"),
+        (r"\rrbracket", "⟧"),
+        (r"\backslash", "∖"),
+    ];
+    for (src, glyph) in cases {
+        let p = parse_full(src);
+        assert!(p.diagnostics.is_empty(), "{src}: {:?}", p.diagnostics);
+        let l = lay(src, false);
+        assert!(texts(&l).contains(glyph), "{src} -> {glyph}: {:?}", texts(&l));
+    }
+}
+
+#[test]
+fn pmod_wraps_its_argument_and_spaces_like_a_relation() {
+    let l = lay(r"a\equiv b\pmod n", false);
+    let t = texts(&l);
+    for s in ["(", "mod", "n", ")"] {
+        assert!(t.contains(&s), "{t:?}");
+    }
+    let word = l.glyphs.iter().find(|g| g.text == "mod").unwrap();
+    assert_eq!(word.face, Face::Mono, "the mod word is the monospace run");
+    let b = l.glyphs.iter().find(|g| g.text == "b").unwrap();
+    let open = l.glyphs.iter().find(|g| g.text == "(").unwrap();
+    let mut m = Approx;
+    let expected = b.x + m.width("b", b.size, b.face) + 0.278 * 16.0;
+    assert!((open.x - expected).abs() < 0.01, "relation gap before (mod: {} vs {expected}", open.x);
+    assert!(parse_full(r"a\equiv b\pmod n").diagnostics.is_empty());
+}
+
+#[test]
+fn bmod_is_a_binary_operator_in_the_monospace_face() {
+    let l = lay(r"a\bmod n", false);
+    let word = l.glyphs.iter().find(|g| g.text == "mod").unwrap();
+    assert_eq!(word.face, Face::Mono);
+    let a = l.glyphs.iter().find(|g| g.text == "a").unwrap();
+    let mut m = Approx;
+    let expected = a.x + m.width("a", a.size, a.face) + 0.222 * 16.0;
+    assert!((word.x - expected).abs() < 0.01, "binary gap before mod: {} vs {expected}", word.x);
+}
+
+#[test]
+fn check_is_a_caron_over_the_base() {
+    let plain = lay("v", false);
+    let checked = lay(r"\check v", false);
+    assert_eq!(texts(&checked), vec!["v"], "the accent adds no glyph");
+    assert_eq!(checked.segs.len(), 2, "two strokes make the caron");
+    let v = &checked.glyphs[0];
+    assert!(checked.segs.iter().all(|s| s.y0 < v.y && s.y1 < v.y), "the caron sits above the baseline");
+    assert!(checked.ascent > plain.ascent, "the box grows for the accent");
+    assert!(checked.glyphs.iter().all(|g| g.text != "ˇ"), "the caron is drawn, not typed");
+}
+
+#[test]
+fn texttt_is_a_monospace_run_with_its_spaces() {
+    let l = lay(r"\texttt{if x}", false);
+    assert_eq!(texts(&l), vec!["if x"], "spaces survive the raw group");
+    assert_eq!(l.glyphs[0].face, Face::Mono);
+    assert!(parse_full(r"\texttt{a_b}").diagnostics.is_empty());
+}
+
+#[test]
+fn hline_draws_a_rule_over_the_row_and_takes_no_width() {
+    let plain = lay(r"\begin{aligned}a&=1\\b&=2\end{aligned}", true);
+    let ruled = lay(r"\begin{aligned}a&=1\\\hline b&=2\end{aligned}", true);
+    assert_eq!(ruled.width, plain.width, "the rule does not advance the row");
+    let rule = ruled
+        .segs
+        .iter()
+        .find(|s| (s.y0 - s.y1).abs() < 0.001 && (s.x1 - s.x0) > 0.9 * (ruled.width - 12.0))
+        .expect("a full-width horizontal rule");
+    let one = ruled.glyphs.iter().find(|g| g.text == "1").unwrap();
+    let two = ruled.glyphs.iter().find(|g| g.text == "2").unwrap();
+    assert!(rule.y0 > one.y && rule.y0 < two.y, "the rule sits between the two rows");
+    assert!(ruled.segs.len() > plain.segs.len(), "and is drawn");
+}
+
+#[test]
+fn middle_stretches_with_the_fence() {
+    let l = lay(r"\left\{\frac{a}{b}\middle|c\right\}", true);
+    assert!(l.glyphs.iter().all(|g| g.text != "|"), "the middle is stretched, not a natural glyph");
+    let top = l.segs.iter().map(|s| s.y0.min(s.y1)).fold(f32::MAX, f32::min);
+    let bot = l.segs.iter().map(|s| s.y0.max(s.y1)).fold(f32::MIN, f32::max);
+    let bar =
+        l.segs.iter().find(|s| s.x0 == s.x1 && s.x0 > 20.0 && s.x0 < 35.0).expect("a vertical middle bar");
+    assert!((bar.y0.min(bar.y1) - top).abs() < 0.01 && (bar.y0.max(bar.y1) - bot).abs() < 0.01, "{bar:?}");
+    // The left brace strokes end at x <= 11.22 and the right ones start at x >= 39.65; the bar
+    // is between the `a/b` chunk and `c`, so it has to fall in that gap.
+    let a_chunk_right = l.glyphs.iter().find(|g| g.text == "a").unwrap().x + 8.8;
+    let c_chunk_left = l.glyphs.iter().find(|g| g.text == "c").unwrap().x;
+    assert!(bar.x0 > a_chunk_right && bar.x0 < c_chunk_left, "bar between chunks: {bar:?}");
+}
+
+#[test]
+fn phantom_keeps_the_box_and_drops_the_ink() {
+    let full = lay("abcd", false);
+    let phantom = lay(r"a\phantom{bc}d", false);
+    assert_eq!(texts(&phantom), vec!["a", "d"]);
+    assert!((phantom.width - full.width).abs() < 0.001, "same advance as the measured body");
+    assert!(phantom.segs.is_empty());
+}
+
+#[test]
+fn bigm_variants_are_fixed_size_delimiters_with_relation_spacing() {
+    for big in [r"\bigm", r"\Bigm", r"\biggm", r"\Biggm"] {
+        let plain = lay("a|b", false).width;
+        let spaced = lay(&format!("a{big}|b"), false).width;
+        assert!((spaced - plain - 2.0 * 0.278 * 16.0).abs() < 0.01, "{big}: {spaced} vs {plain}");
+        assert!(parse_full(&format!("a{big}|b")).diagnostics.is_empty());
+    }
+}
+
+#[test]
+fn the_other_subjects_have_no_unknown_commands_left() {
+    // One real line per subject that used to fall back to source text.
+    for src in [
+        r"x\cdot y=0_A\iff x\preccurlyeq\bar y",
+        r"28-5k\equiv0\pmod 3",
+        r"\check v\in\mathbb{R}^{2}",
+        r"\begin{aligned}001110&=\ \ 14\\ 110010&=-14\\ \hline 000000&=\ \ \ 0\end{aligned}",
+        r"(\text{IDENTIFICADOR},\ \texttt{contador})",
+        r"\left\{\operatorname{cl}(x)\ \middle|\ x\in\left[\dfrac{5}{2},+\infty\right)\right\}",
+        r"\mathbb{R}^{2}/R=\Bigl\{\operatorname{cl}(u;0),\ \operatorname{cl}(u;1)\ \Bigm|\ u\in[0,+\infty)\Bigr\}",
+    ] {
+        assert!(parse_full(src).diagnostics.is_empty(), "{src}: {:?}", parse_full(src).diagnostics);
+    }
 }
