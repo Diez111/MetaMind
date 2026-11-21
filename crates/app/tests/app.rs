@@ -1,6 +1,6 @@
 use rustsidian_app::shell::{Focus, ViewMode};
-use rustsidian_app::{render, App, Key};
-use rustsidian_ui::{Fonts, Pixmap};
+use rustsidian_app::{render, App, Frame, Key};
+use rustsidian_ui::{Cmd, Fonts, Pixmap};
 use std::fs;
 
 fn vault() -> tempfile::TempDir {
@@ -334,6 +334,126 @@ fn math_blocks_are_typeset_and_editable() {
     assert!(frame.info.blocks.iter().any(|b| b.display.contains("\\frac{a}{b}")));
     assert!(frame.info.rich.is_empty());
     assert_eq!(frame.info.inline.len(), 1);
+}
+
+/// The box a command covers, with the glyph size as the ink height of a run.
+fn cmd_box(c: &Cmd) -> Option<(f32, f32, f32, f32)> {
+    match c {
+        Cmd::Text { x, y, style, .. } => Some((*x, *y, style.size * 0.9, style.size)),
+        Cmd::Lines { segs, .. } => {
+            let (mut x0, mut x1, mut y0, mut y1) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+            for s in segs {
+                x0 = x0.min(s[0]);
+                x1 = x1.max(s[2]);
+                y0 = y0.min(s[1]);
+                y1 = y1.max(s[3]);
+            }
+            (x1 > x0).then_some((x0, y0 - 1.0, x1 - x0, (y1 - y0) + 2.0))
+        }
+        _ => None,
+    }
+}
+
+fn leaf_rect(frame: &Frame) -> rustsidian_ui::Rect {
+    frame
+        .dom
+        .nodes
+        .iter()
+        .find(|n| n.el.classes.iter().any(|c| c == "workspace-leaf"))
+        .map(|n| n.rect)
+        .expect("a pane is open")
+}
+
+#[test]
+fn inline_math_is_drawn_inside_its_line() {
+    let (_d, mut app) = note(
+        "intro\n\nTexto con $\\frac{1}{2}\\ln 2$ y $\\dfrac{du}{2}$ y $\\sum_{n=1}^{\\infty}\\frac{1}{n^2}$.\n",
+        "{}",
+    );
+    cursor_at(&mut app, "intro");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(900, 700).unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    assert_eq!(frame.info.inline.len(), 1);
+    let it = &frame.info.inline[0];
+    let node = &frame.dom.nodes[it.node];
+    let r = node.rect;
+    assert!(!node.draw.is_empty(), "the formulas of the line are not drawn");
+    // The line grew to hold the tallest formula instead of drawing it over the line below.
+    assert!(r.h >= 30.0, "line is {:.1} px tall, too short for its formula", r.h);
+    let leaf = leaf_rect(&frame);
+    for c in &node.draw {
+        let Some((x, y, w, h)) = cmd_box(c) else { continue };
+        // The formula sits in the blanks of its own line, not at the top left of the window where
+        // the pane's clip would take it out (the commands are in scene coordinates).
+        assert!(x >= r.x, "{c:?} starts left of its line ({:.1})", r.x);
+        assert!(x + w <= r.x + r.w, "{c:?} runs past its line ({:.1})", r.x + r.w);
+        assert!(y >= r.y - 1.0 && y + h <= r.y + r.h + 1.0, "{c:?} does not fit the line {r:?}");
+        assert!(x >= leaf.x && x + w <= leaf.x + leaf.w, "{c:?} is drawn outside the pane");
+        assert!(y >= leaf.y && y + h <= leaf.y + leaf.h, "{c:?} is drawn outside the pane");
+    }
+}
+
+#[test]
+fn display_math_block_is_as_tall_as_its_formula() {
+    let src =
+        "intro\n\n$$\n\\frac{a}{b}\n$$\n\n$$\n\\sum_{n=1}^{\\infty}\\frac{1}{n^2}+\\int_0^1 x^2\\,dx\n$$\n\n";
+    let (_d, mut app) = note(src, "{}");
+    cursor_at(&mut app, "intro");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(900, 900).unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    assert_eq!(frame.info.rich.len(), 2);
+    for it in &frame.info.rich {
+        let node = &frame.dom.nodes[it.node];
+        let (mut y0, mut y1) = (f32::MAX, f32::MIN);
+        for c in &node.draw {
+            if let Some((_, y, _, h)) = cmd_box(c) {
+                y0 = y0.min(y);
+                y1 = y1.max(y + h);
+            }
+        }
+        assert!(y1 > y0, "the block has no command below it");
+        // The block reserves the typeset box: a formula with a fraction (or a sum with limits) is
+        // never crushed into a band of a handful of pixels.
+        assert!(node.rect.h >= 30.0, "block is {:.1} px tall", node.rect.h);
+        assert!(
+            node.rect.h >= y1 - y0 - 1.0,
+            "block is {:.1} px tall, its formula {:.1}",
+            node.rect.h,
+            y1 - y0
+        );
+        assert!(y0 >= node.rect.y - 1.0 && y1 <= node.rect.y + node.rect.h + 1.0, "{node:?}");
+    }
+}
+
+#[test]
+fn a_display_formula_too_wide_for_the_pane_is_not_crushed() {
+    // A formula about four panes wide: it is drawn as large as the pane allows and the rest runs
+    // under the right edge, instead of the whole block collapsing into an unreadable strip.
+    let mut f = String::from("$$");
+    for _ in 0..60 {
+        f.push_str("\\frac{1}{2}x+");
+    }
+    f.push_str("0$$");
+    let (_d, mut app) = note(&format!("intro\n\n{f}\n\n"), "{}");
+    cursor_at(&mut app, "intro");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(900, 700).unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    assert_eq!(frame.info.rich.len(), 1);
+    let node = &frame.dom.nodes[frame.info.rich[0].node];
+    let size = node
+        .draw
+        .iter()
+        .filter_map(|c| match c {
+            Cmd::Text { style, .. } => Some(style.size),
+            _ => None,
+        })
+        .fold(0.0f32, f32::max);
+    assert!(size >= 10.5, "the formula is set at {size:.1} px");
+    let h = node.rect.h;
+    assert!(h >= 30.0, "block is {h:.1} px tall");
 }
 
 #[test]
