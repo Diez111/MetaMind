@@ -734,6 +734,8 @@ pub fn widget(app: &crate::App, dom: &mut Dom, view: NodeId, rel: &str) -> NodeI
     let v = &app.video;
     let scale = if app.scale > 0.0 { app.scale } else { 1.0 };
     let (w, h) = v.size();
+    // The player lives in the note's render; when the video card is visible
+    // the player is already open (it was opened by `video:open`).
     let (fw, fh) = if w > 0 && h > 0 { (w as f32 / scale, h as f32 / scale) } else { (640.0, 360.0) };
     let loading = *v.state() == State::Loading;
     let card = dom.add(view, El::div().class("video-player").class_if(loading, "is-loading"));
