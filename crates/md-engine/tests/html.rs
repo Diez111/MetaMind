@@ -41,6 +41,8 @@ cases! {
     tags: "#tag #nested/tag #123 #a1 x#no (#paren) #日本語" => "<p><a class=\"tag\" href=\"#tag\">#tag</a> <a class=\"tag\" href=\"#nested/tag\">#nested/tag</a> #123 <a class=\"tag\" href=\"#a1\">#a1</a> x#no (<a class=\"tag\" href=\"#paren\">#paren</a>) <a class=\"tag\" href=\"#日本語\">#日本語</a></p>\n";
     comments: "a %%hidden%% b\n\n%%\nblock\n%%\n\nc" => "<p>a  b</p>\n<p>c</p>\n";
     math: "$x^2$ costs $5 and $10 $$y$$\n\n$$\n\\int x\n$$\n" => "<p><span class=\"math math-inline\">x^2</span> costs $5 and $10 <span class=\"math math-block\">y</span></p>\n<div class=\"math math-block\">\\int x</div>\n";
+    math_trailing_text: "$$ A=\\frac53. $$ (corregido)\n\nControl por resta de áreas: $2$ y $\\frac13$.\n" => "<p><span class=\"math math-block\"> A=\\frac53. </span> (corregido)</p>\n<p>Control por resta de áreas: <span class=\"math math-inline\">2</span> y <span class=\"math math-inline\">\\frac13</span>.</p>\n";
+    math_unterminated_still_swallows: "$$\n\\int x\ndx\n\npara\n" => "<div class=\"math math-block\">\\int x\ndx\n\npara</div>\n";
     footnotes: "a[^1] b^[inline *n*]\n\n[^1]: The note\n    more\n" => "<p>a<sup class=\"footnote-ref\"><a href=\"#fn-1\">[1]</a></sup> b<sup class=\"footnote-ref\"><a href=\"#fn-inline-2\">[inline-2]</a></sup></p>\n<section class=\"footnotes\">\n<hr>\n<ol>\n<li id=\"fn-1\"><p>The note\nmore</p></li>\n<li id=\"fn-inline-2\">inline <em>n</em></li>\n</ol>\n</section>\n";
     block_id: "para text ^abc-1\n\n- item ^i1\n" => "<p>para text</p>\n<ul>\n<li>item</li>\n</ul>\n";
     html_passthrough: "<div class=\"x\">\n*raw*\n</div>\n\na <b>bold</b> <!-- c -->" => "<div class=\"x\">\n*raw*\n</div>\n<p>a <b>bold</b> <!-- c --></p>\n";
@@ -52,6 +54,18 @@ cases! {
     code_in_list: "- a\n  ```js\n  x\n  ```\n" => "<ul>\n<li>a\n<pre><code class=\"language-js\">x\n</code></pre></li>\n</ul>\n";
     empty: "" => "";
     only_blank: "\n\n  \n" => "";
+}
+
+#[test]
+fn a_display_close_with_text_after_it_leaves_the_text_as_prose() {
+    // The note in the vault that started this: `$$ .. $$ (corregido)` on one line. The formula is
+    // inline math of a paragraph, so the `$$` does not take the parser into the lines below it and
+    // the prose of the next paragraph keeps its spaces.
+    let md = "$$ A=\\left(2-\\frac12\\right)=\\frac53. $$ (corregido)\n\nControl por resta de áreas.\n";
+    assert_eq!(
+        parse(md).dump(md),
+        "Paragraph\n  InlineMath display=true \" A=\\\\left(2-\\\\frac12\\\\right)=\\\\frac53. \"\n  Text \" (corregido)\"\nParagraph\n  Text \"Control por resta de áreas.\"\n"
+    );
 }
 
 #[test]

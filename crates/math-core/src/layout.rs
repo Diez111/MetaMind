@@ -514,9 +514,9 @@ impl Ctx<'_> {
         let integral = matches!(sym, "∫" | "∬" | "∭" | "∮");
         let f = if st.display {
             if integral {
-                1.7
+                1.2
             } else {
-                1.45
+                1.1
             }
         } else {
             1.0

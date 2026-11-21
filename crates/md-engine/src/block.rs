@@ -421,7 +421,7 @@ impl<'a> Parser<'a> {
                 return true;
             }
         }
-        (self.opts.math && b.starts_with(b"$$"))
+        (self.opts.math && math_block_start(b))
             || html_block_start(b)
             || (self.opts.footnotes && footnote_def(b).is_some())
     }
@@ -479,7 +479,7 @@ impl<'a> Parser<'a> {
             return end_line + 1;
         }
 
-        if self.opts.math && b.starts_with(b"$$") {
+        if self.opts.math && math_block_start(b) {
             let t = trim_end(b);
             if t.len() >= 4 && t.ends_with(b"$$") {
                 let content = self.sp(cs + 2, cs + t.len() - 2);
@@ -815,6 +815,21 @@ impl<'a> Parser<'a> {
         }
         j
     }
+}
+
+/// True when the line opens a display math block: `$$..$$` with the closing pair at the end of the
+/// line, or an unterminated opener, which runs to the end of its container like a code fence. A
+/// `$$` pair that shares its line with prose closes the formula where it ends and leaves the rest
+/// of the line as text, so such a line is a paragraph and never swallows the lines below it.
+pub(crate) fn math_block_start(b: &[u8]) -> bool {
+    let t = trim_end(b);
+    if !t.starts_with(b"$$") {
+        return false;
+    }
+    if t.len() >= 4 && t.ends_with(b"$$") {
+        return true;
+    }
+    !contains(&t[2..], b"$$")
 }
 
 fn contains(hay: &[u8], needle: &[u8]) -> bool {
