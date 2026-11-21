@@ -4,6 +4,18 @@ use crate::syms::Kind;
 
 pub trait Measure {
     fn width(&mut self, text: &str, size: f32, face: Face) -> f32;
+
+    /// The ink of `text` above and below the baseline, in pixels: `(ascent, descent)`.
+    ///
+    /// The default is the built-in table [`Approx`] uses, which is all a caller without fonts can
+    /// know. A caller with real fonts should override it, so the box the layout sizes is the box
+    /// the painter fills: a font whose `f` reaches half a pixel higher than the table says would
+    /// otherwise push a stacked script into the line above.
+    fn extents(&mut self, text: &str, size: f32, face: Face) -> (f32, f32) {
+        let (a, d) = extents(text);
+        let _ = face;
+        (a * size, d * size)
+    }
 }
 
 /// Font-independent widths, good enough to size boxes before real fonts are available.
@@ -181,6 +193,10 @@ pub struct Ctx<'a> {
     tag: Option<Tag>,
 }
 
+/// Heights and depths per character, in ems, for callers that have no fonts to ask.
+///
+/// This is the table behind [`Measure::extents`]: it is an estimate, not a measurement, and a
+/// caller with a real font should say so instead.
 fn extents(text: &str) -> (f32, f32) {
     let (mut a, mut d) = (0.0f32, 0.0f32);
     for c in text.chars() {
@@ -225,6 +241,11 @@ fn kind_of(n: &Node) -> Kind {
         Node::ExtArrow { .. } => Kind::Rel,
         // `\pmod` closes a congruence: it spaces like a relation.
         Node::Pmod(_) => Kind::Rel,
+        // TeX's `Inner` atoms: the things that are drawn as one unit of ink in the middle of the
+        // formula and that no other atom may split.
+        Node::Frac { .. } | Node::Delim { .. } | Node::Matrix { .. } => Kind::Inner,
+        // A sized delimiter keeps the class its suffix asked for.
+        Node::Big { kind, .. } => *kind,
         _ => Kind::Ord,
     }
 }
@@ -237,16 +258,46 @@ fn brace_of(n: &Node) -> Option<(bool, &[Node])> {
     }
 }
 
-fn gap(l: Kind, r: Kind) -> f32 {
-    use Kind::*;
-    match (l, r) {
-        (Ord | Close, Op) | (Op, Ord | Op) => 0.167,
-        (Ord | Close, Bin) | (Bin, Ord | Op | Open) => 0.222,
-        (Ord | Close | Op, Rel) | (Rel, Ord | Op | Open) => 0.278,
-        (Punct, Close | Punct) => 0.0,
-        (Punct, _) => 0.167,
-        _ => 0.0,
+/// A thin space, 3mu of 18mu to the em, as the TeXbook states the inter-atom spaces.
+const THIN: f32 = 3.0 / 18.0;
+/// A medium space, 4mu.
+const MEDIUM: f32 = 4.0 / 18.0;
+/// A thick space, 5mu.
+const THICK: f32 = 5.0 / 18.0;
+
+/// TeXbook Table 18.4, in ems: the space between a left and a right atom of each class.
+///
+/// Row and column order is [`Kind`]'s: `Ord Op Bin Rel Open Close Punct Inner`. `-1` is the
+/// table's `*`, an impossible pair; `list_inner` normalises Bin the way TeX does before the table
+/// is consulted, so a `*` that still comes up gets no space rather than an invented one.
+const SPACING: [[f32; 8]; 8] = [
+    // Ord     Op      Bin     Rel     Open    Close   Punct   Inner
+    [0.0, THIN, MEDIUM, THICK, 0.0, 0.0, 0.0, THIN],      // Ord
+    [THIN, THIN, -1.0, THICK, 0.0, 0.0, 0.0, THIN],       // Op
+    [MEDIUM, -1.0, -1.0, -1.0, MEDIUM, -1.0, -1.0, -1.0], // Bin
+    [THICK, THICK, -1.0, 0.0, THICK, 0.0, 0.0, THICK],    // Rel
+    [0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0],            // Open
+    [0.0, THIN, MEDIUM, THICK, 0.0, 0.0, 0.0, THIN],      // Close
+    [THIN, THIN, -1.0, THIN, THIN, THIN, THIN, THIN],     // Punct
+    [THIN, THIN, MEDIUM, THICK, THIN, 0.0, THIN, THIN],   // Inner
+];
+
+fn class_index(k: Kind) -> usize {
+    match k {
+        Kind::Ord => 0,
+        Kind::Op => 1,
+        Kind::Bin => 2,
+        Kind::Rel => 3,
+        Kind::Open => 4,
+        Kind::Close => 5,
+        Kind::Punct => 6,
+        Kind::Inner => 7,
     }
+}
+
+/// The space between two atoms, in ems, following the TeXbook's Chapter 18 table.
+fn gap(l: Kind, r: Kind) -> f32 {
+    SPACING[class_index(l)][class_index(r)].max(0.0)
 }
 
 const BIG: &[&str] = &["∑", "∏", "∐", "⋃", "⋂", "⨁", "⋀", "⋁", "∫", "∬", "∭", "∮"];
@@ -254,9 +305,9 @@ const LIMIT_FUNCS: &[&str] = &["lim", "max", "min", "sup", "inf", "liminf", "lim
 
 impl Ctx<'_> {
     fn text(&mut self, t: &str, size: f32, face: Face) -> B {
-        let (a, d) = extents(t);
+        let (a, d) = self.m.extents(t, size, face);
         let w = self.m.width(t, size, face);
-        let mut b = B { w, a: a * size, d: d * size, ..B::default() };
+        let mut b = B { w, a, d, ..B::default() };
         b.g.push(Glyph { x: 0.0, y: 0.0, text: t.to_string(), size, face, color: None });
         b
     }
@@ -349,6 +400,7 @@ impl Ctx<'_> {
             }
             Node::Sqrt { body, index } => self.sqrt(body, index.as_deref(), st),
             Node::Delim { open, close, body } => self.delimited(open, close, body, st),
+            Node::Big { delim, scale, .. } => self.sized_delim(delim, *scale, st),
             Node::Middle(d) => self.text(d, s, Face::Roman),
             Node::Pmod(body) => self.pmod(body, st),
             Node::Phantom(body) => {
@@ -528,6 +580,24 @@ impl Ctx<'_> {
         let mut b = B { w, a: center + half, d: half - center, ..B::default() };
         let base = if integral { 0.25 * gs } else { 0.32 * gs } - center;
         b.g.push(Glyph { x: 0.0, y: base, text: sym.to_string(), size: gs, face: Face::Roman, color: None });
+        b
+    }
+
+    /// A delimiter of a fixed larger size (`\bigl\{`, `\Bigm|`, `\Biggr\rangle`): the glyph at
+    /// `scale` times the text size, centred on the math axis the way LaTeX centres every
+    /// delimiter, so a `\Big|` divides a formula on the same line as a plain `|` would.
+    fn sized_delim(&mut self, d: &str, scale: f32, st: St) -> B {
+        if d.is_empty() {
+            return B::default();
+        }
+        let s = st.size;
+        let mut b = self.text(d, s * scale, Face::Roman);
+        let dy = -AXIS * s - (b.d - b.a) / 2.0;
+        for g in &mut b.g {
+            g.y += dy;
+        }
+        b.a -= dy;
+        b.d += dy;
         b
     }
 
@@ -730,33 +800,42 @@ impl Ctx<'_> {
         out
     }
 
+    /// `\sqrt{body}` and `\sqrt[index]{body}`: a radical tall enough for the body, with the index
+    /// above the start of the sign.
+    ///
+    /// The index in LaTeX is a scriptscript-size digit whose baseline sits on the vinculum and
+    /// whose right edge tucks over the radical's first stroke: it is not inside the sign, and the
+    /// box has to grow upwards to hold it or it lands on the line above.
     fn sqrt(&mut self, body: &[Node], index: Option<&[Node]>, st: St) -> B {
         let s = st.size;
         let bb = self.list(body, st);
         let bar_y = -(bb.a.max(0.6 * s) + 0.12 * s);
         let bottom = bb.d.max(0.05 * s) + 0.04 * s;
         let h = bottom - bar_y;
-        let rw = 0.55 * s + 0.06 * h.min(3.0 * s);
-        let t = 0.05 * s;
+        let rw = 0.5 * s + 0.05 * h.min(3.0 * s);
+        let t = 0.055 * s;
+        let idx = index.map(|i| {
+            let sst = St { size: (s * 0.5).max(5.0), display: false, script: true };
+            self.list(i, sst)
+        });
+        // Where the sign starts: far enough right that the index only overlaps its first third.
+        let iw = idx.as_ref().map_or(0.0, |b| b.w);
+        let x0 = (iw - 0.35 * rw).max(0.0);
+        let mid = bar_y + h * 0.55;
+        let foot = x0 + 0.42 * rw;
         let mut out = B::default();
-        let mut x0 = 0.0;
-        if let Some(i) = index {
-            let sst = St { size: (s * 0.55).max(5.0), display: false, script: true };
-            let ib = self.list(i, sst);
-            x0 = (ib.w - 0.25 * rw).max(0.0);
-            let iw = ib.w;
-            out.put(ib, (x0 + 0.1 * rw - iw * 0.0).max(0.0) - x0 + 0.0, bar_y + h * 0.42);
-        }
-        let mid = bar_y + h * 0.62;
-        out.seg(x0, mid, x0 + rw * 0.18, mid - 0.04 * s, t * 0.8);
-        out.seg(x0 + rw * 0.18, mid - 0.04 * s, x0 + rw * 0.42, bottom, t * 1.3);
-        out.seg(x0 + rw * 0.42, bottom, x0 + rw, bar_y, t);
+        out.seg(x0, mid, x0 + 0.2 * rw, mid - 0.05 * s, t * 0.8);
+        out.seg(x0 + 0.2 * rw, mid - 0.05 * s, foot, bottom, t * 1.4);
+        out.seg(foot, bottom, x0 + rw, bar_y, t);
         out.seg(x0 + rw, bar_y, x0 + rw + bb.w + 0.08 * s, bar_y, t);
         out.w = x0 + rw + bb.w + 0.08 * s;
         out.a = -bar_y + t;
         out.d = bb.d.max(bottom);
-        let bw = bb.w;
-        let _ = bw;
+        if let Some(i) = idx {
+            // Baseline on the vinculum: the digit stands on the bar, its ink above it.
+            out.a = out.a.max(-bar_y + i.a);
+            out.put(i, 0.0, bar_y);
+        }
         out.put(bb, x0 + rw + 0.02 * s, 0.0);
         out
     }
