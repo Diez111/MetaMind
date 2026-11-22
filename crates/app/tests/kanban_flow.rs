@@ -87,6 +87,11 @@ fn centre(r: Rect) -> (f32, f32) {
     (r.x + r.w / 2.0, r.y + r.h / 2.0)
 }
 
+/// The texts of the board's own bar, which are DOM nodes rather than paint commands.
+fn bar_texts(f: &Frame) -> Vec<String> {
+    f.dom.nodes.iter().filter_map(|n| n.el.text.clone()).collect()
+}
+
 /// The board as the last frame painted it: the texts of every command, in order.
 fn painted(f: &Frame) -> Vec<String> {
     let node = f.info.kanban.expect("the board paints into the pane");
@@ -117,10 +122,7 @@ fn the_tree_opens_the_board_of_a_note_and_the_paint_shows_its_columns() {
     assert!(app.tab().is_none(), "the board is not a text tab of the note it came from");
     let texts = painted(&f);
     for expected in ["Pendiente", "Haciendo", "Hecho", "Primera tarea", "+ Añadir tarjeta"] {
-        assert!(
-            texts.iter().any(|t| t.contains(expected)),
-            "the board paints {expected:?}: {texts:?}"
-        );
+        assert!(texts.iter().any(|t| t.contains(expected)), "the board paints {expected:?}: {texts:?}");
     }
     // The three columns are side by side, a fixed width apart, and the cards inside them.
     let c0 = app_kanban(&app).column_rect(0).unwrap();
@@ -405,4 +407,121 @@ fn the_chevron_folds_a_column_without_touching_the_file() {
     let f = frame(&mut app, &mut fonts);
     assert!(app_kanban(&app).card_rect(0, 0).is_some(), "unfolding brings the cards back");
     let _ = f;
+}
+
+/// The card lines of `col` on disk, as text, for the tests that care about the order only.
+fn card_texts(text: &str, col: &str) -> Vec<String> {
+    column_of(text, col).into_iter().map(|(_, t)| t).collect()
+}
+
+#[test]
+fn a_wip_limit_is_written_in_the_board_settings_and_a_drop_past_it_warns() {
+    let (d, mut app, mut fonts, _f) = open_board();
+    // One is enough for Haciendo, which already holds one card.
+    app.run("kanban:wip-set:1:1");
+    let text = on_disk(&d);
+    assert!(text.contains("\"wip\":{\"Haciendo\":1}"), "the limit lives in the settings block: {text}");
+    assert_eq!(Board::parse(&text).wip_limit("Haciendo"), Some(1));
+    assert_eq!(Board::parse(&text).render(), text, "the block with the limit roundtrips");
+
+    // The counter of a column with a limit reads cards / limit.
+    let f = frame(&mut app, &mut fonts);
+    assert!(painted(&f).iter().any(|t| t == "1/1"), "the counter shows the limit: {:?}", painted(&f));
+
+    // A drag that leaves Haciendo over its limit still lands, and says so.
+    let from = card(&app, 0, 1);
+    let (gx, gy) = (from.x + from.w * 0.6, from.y + from.h / 2.0);
+    app.click(&f, &mut fonts, gx, gy, false);
+    let to = app_kanban(&app).column_rect(1).unwrap();
+    let (tx, ty) = (to.x + to.w / 2.0, to.y + to.h - 4.0);
+    app.drag(&f, &mut fonts, gx + 10.0, gy + 10.0);
+    app.drag(&f, &mut fonts, tx, ty);
+    app.release();
+
+    let text = on_disk(&d);
+    assert_eq!(column_of(&text, "Haciendo").len(), 2, "the move is not blocked: {text}");
+    let notice = app.notice.clone().unwrap_or_default();
+    assert!(notice.contains("límite WIP") && notice.contains("Haciendo"), "the drop warns: {notice}");
+
+    // And the next frame paints the column over its limit as 2/1.
+    let f = frame(&mut app, &mut fonts);
+    assert!(painted(&f).iter().any(|t| t == "2/1"), "over the limit: {:?}", painted(&f));
+}
+
+#[test]
+fn the_filter_hides_cards_by_text_and_by_tag_and_is_not_saved() {
+    let (d, mut app, mut fonts, _f) = open_board();
+    app.run("kanban:filter");
+    assert!(app_kanban(&app).filter_editing, "the field takes the keyboard");
+    for c in "fecha".chars() {
+        app.text_input(&c.to_string());
+    }
+    let f = frame(&mut app, &mut fonts);
+    // Only "Segunda … fecha" shows, so it is the first card of the column's geometry.
+    assert!(app_kanban(&app).card_rect(0, 0).is_some());
+    assert!(app_kanban(&app).card_rect(0, 1).is_none());
+    let texts = painted(&f);
+    assert!(!texts.iter().any(|t| t.contains("Primera tarea")), "a card with no match is hidden: {texts:?}");
+    assert!(texts.iter().any(|t| t.contains("Segunda")), "the matching card stays: {texts:?}");
+    let bar = bar_texts(&f);
+    assert!(bar.iter().any(|t| t.contains("1 de 4 tarjetas")), "the bar counts what shows: {bar:?}");
+
+    // A tag is a filter of its own, and words and tags combine with AND.
+    app.run("kanban:filter-clear");
+    for c in "#area".chars() {
+        app.text_input(&c.to_string());
+    }
+    let f = frame(&mut app, &mut fonts);
+    assert!(app_kanban(&app).card_rect(0, 0).is_some());
+    assert!(painted(&f).iter().any(|t| t.contains("Segunda")));
+    app.run("kanban:filter-clear");
+    for c in "#nada".chars() {
+        app.text_input(&c.to_string());
+    }
+    let f = frame(&mut app, &mut fonts);
+    assert!(app_kanban(&app).card_rect(0, 0).is_none(), "no card carries the tag");
+    assert!(bar_texts(&f).iter().any(|t| t.contains("0 de 4 tarjetas")), "{:?}", bar_texts(&f));
+
+    // Escape gives the keyboard back; a second Escape clears the query. Neither writes the file.
+    app.key(key("Escape"));
+    assert!(!app_kanban(&app).filter_editing);
+    app.key(key("Escape"));
+    assert!(app_kanban(&app).filter.is_empty());
+    let f = frame(&mut app, &mut fonts);
+    assert!(app_kanban(&app).card_rect(0, 0).is_some());
+    assert!(painted(&f).iter().any(|t| t.contains("Primera tarea")), "the board is whole again");
+    assert_eq!(on_disk(&d), BOARD, "a filter is a view state, not an edit");
+}
+
+#[test]
+fn a_drop_under_a_filter_lands_where_the_visible_card_is() {
+    let d = tempfile::tempdir().unwrap();
+    fs::write(
+        d.path().join("Filtro.md"),
+        "%% kanban: settings\n{\"kanban-plugin\": \"basic\"} %%\n# Filtro\n\n## Pendiente\n\
+- [ ] oculto\n- [ ] uno #keep\n- [ ] tres #keep\n\n## Hecho\n",
+    )
+    .unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    let mut fonts = Fonts::new();
+    app.open_note("Filtro.md");
+    assert!(app.kanban_active());
+    app.run("kanban:filter-set:#keep");
+    let f = frame(&mut app, &mut fonts);
+    // The filter leaves two cards: "uno" above "tres"; "oculto" sits between them on disk.
+    let uno = app_kanban(&app).card_rect(0, 0).expect("uno is visible");
+    let tres = app_kanban(&app).card_rect(0, 1).expect("tres is visible");
+    let (gx, gy) = (tres.x + tres.w * 0.6, tres.y + tres.h / 2.0);
+    app.click(&f, &mut fonts, gx, gy, false);
+    let (tx, ty) = (uno.x + uno.w * 0.6, uno.y + 2.0);
+    app.drag(&f, &mut fonts, gx + 8.0, gy + 8.0);
+    app.drag(&f, &mut fonts, tx, ty);
+    app.release();
+
+    let text = fs::read_to_string(d.path().join("Filtro.md")).unwrap();
+    assert_eq!(
+        card_texts(&text, "Pendiente"),
+        vec!["oculto".to_string(), "tres #keep".to_string(), "uno #keep".to_string()],
+        "the hidden card keeps its place: {text}"
+    );
 }

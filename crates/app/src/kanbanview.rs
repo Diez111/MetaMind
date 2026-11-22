@@ -45,9 +45,31 @@
 //! The same scheme as the rest of the boards: leaving the view, `Ctrl+S`, `save_all` and the end
 //! of a drag write the file. A drag writes it on the drop, so the order on disk is the order on
 //! screen as soon as the card lands.
+//!
+//! # Limits, filter and priorities
+//!
+//! A work-in-progress limit is a property of the board, so it lives in the settings block the
+//! plugin already reads, under `"wip"`: `{"kanban-plugin": "basic", "wip": {"Haciendo": 3}}`.
+//! Nothing else is kept in memory: the block is parsed when the board opens and written back
+//! (only when a limit changes) with every other key untouched. A column with more cards than
+//! its limit paints its counter and its border in the accent colour; the limit never blocks a
+//! drop, it only says so in a notice. Limits follow a column by its name, so renaming it carries
+//! the limit along and deleting it drops it.
+//!
+//! The filter is view state, not a setting: a field in the board's bar narrows the cards to those
+//! that contain every word typed and to those carrying every `#tag` typed. It is not persisted,
+//! the same way the folded columns are not: a board opens showing the whole board.
+//!
+//! A card is a list item, so it has no frontmatter of its own. Priority comes from the line:
+//! a leading stand-alone `!`, `!!` or `!!!`, a `#prio/alta|media|baja` tag, or an inline
+//! `[prio:: alta]` field. Dates (`@{2026-11-25}`) are coloured by the day: red when past, the
+//! accent today, faint in the future.
 
 use crate::shell::{App, Focus};
+use calendar_core::Day;
 use metamind_ui::{Cmd, Dom, El, Fonts, NodeId, Rect, Span, TextStyle};
+use serde_json::{json, Map, Value};
+use std::collections::BTreeMap;
 use theme_engine::Color;
 use vault_core::fsio::Stamp;
 use vault_core::{path, WriteError};
@@ -84,9 +106,14 @@ pub const DROP_MS: f32 = 120.0;
 /// Card text.
 const CARD_TEXT: f32 = 13.0;
 const CARD_LINE: f32 = 18.5;
+/// How many characters of the filter a field shows before it keeps the end, where the caret is.
+const FILTER_CHARS: usize = 40;
 
 /// The settings block a board written by the plugin opens with.
 pub const SETTINGS: &str = "%% kanban: settings\n{\"kanban-plugin\": \"basic\"} %%";
+
+/// The largest WIP limit the column menu offers. A board may still write a bigger one by hand.
+pub const MAX_WIP: usize = 10;
 
 /// A new board: the three columns of the plugin's own template, empty and ready to fill.
 pub const TEMPLATE: &str =
@@ -144,6 +171,9 @@ pub struct Board {
     pub columns: Vec<Column>,
     /// Lines after the last column.
     pub after: Vec<String>,
+    /// Work-in-progress limits, by column name, read from `"wip"` in the settings block. They are
+    /// part of the settings, not a parallel store: [`Board::set_wip_limit`] writes them there.
+    pub limits: BTreeMap<String, usize>,
     next_id: u64,
 }
 
@@ -155,6 +185,7 @@ impl Default for Board {
             before: Vec::new(),
             columns: Vec::new(),
             after: Vec::new(),
+            limits: BTreeMap::new(),
             next_id: 1,
         }
     }
@@ -199,6 +230,7 @@ impl Board {
     pub fn parse(text: &str) -> Board {
         let mut board = Board { next_id: 1, ..Board::default() };
         board.settings = None;
+        board.limits.clear();
         board.title = None;
         let mut in_settings = false;
         let mut seen_column = false;
@@ -258,6 +290,7 @@ impl Board {
                 None => board.columns[col].extra.push(line.to_string()),
             }
         }
+        board.limits = limits_of(board.settings.as_deref());
         board
     }
 
@@ -376,6 +409,98 @@ impl Board {
         self.columns.swap(i, j);
         true
     }
+
+    /// The work-in-progress limit of a column, by name.
+    pub fn wip_limit(&self, column: &str) -> Option<usize> {
+        self.limits.get(column).copied()
+    }
+
+    /// Set (`Some`) or clear (`None`) the limit of a column. True when the file changed: the
+    /// limit is written into the board's own settings block, never into a side file. A block that
+    /// is not JSON is left alone and the call answers `false`, so a broken board is not silently
+    /// rewritten.
+    pub fn set_wip_limit(&mut self, column: &str, limit: Option<usize>) -> bool {
+        let after = limit.filter(|n| *n > 0);
+        if self.wip_limit(column) == after {
+            return false;
+        }
+        let mut limits = self.limits.clone();
+        match after {
+            Some(n) => {
+                limits.insert(column.to_string(), n);
+            }
+            None => {
+                limits.remove(column);
+            }
+        }
+        if !self.write_limits(&limits) {
+            return false;
+        }
+        self.limits = limits;
+        true
+    }
+
+    /// Carry a limit along when its column is renamed, or drop it with the column.
+    pub fn rename_wip_limit(&mut self, old: &str, new: &str) -> bool {
+        let Some(n) = self.limits.get(old).copied() else { return false };
+        if old == new {
+            return false;
+        }
+        let mut limits = self.limits.clone();
+        limits.remove(old);
+        limits.insert(new.to_string(), n);
+        if !self.write_limits(&limits) {
+            return false;
+        }
+        self.limits = limits;
+        true
+    }
+
+    /// Forget the limit of a column that is gone.
+    pub fn remove_wip_limit(&mut self, column: &str) -> bool {
+        self.set_wip_limit(column, None)
+    }
+
+    /// Put `limits` into the settings block's `"wip"` object, keeping every other key as it was.
+    fn write_limits(&mut self, limits: &BTreeMap<String, usize>) -> bool {
+        let Some(mut v) = settings_value(self.settings.as_deref()) else { return false };
+        let Some(obj) = v.as_object_mut() else { return false };
+        if limits.is_empty() {
+            obj.remove("wip");
+        } else {
+            let mut wip = Map::new();
+            for (name, n) in limits {
+                wip.insert(name.clone(), json!(n));
+            }
+            obj.insert("wip".to_string(), Value::Object(wip));
+        }
+        let Ok(text) = serde_json::to_string(&v) else { return false };
+        self.settings = Some(format!("%% kanban: settings\n{text} %%"));
+        true
+    }
+}
+
+/// The JSON object of a settings block, or a fresh plugin block when the file has none. A block
+/// that does not parse is `None`: what is not understood is not overwritten.
+fn settings_value(settings: Option<&str>) -> Option<Value> {
+    let Some(s) = settings else { return Some(json!({ "kanban-plugin": "basic" })) };
+    let start = s.find('{')?;
+    let end = s.rfind('}')?;
+    let v: Value = serde_json::from_str(s.get(start..=end)?).ok()?;
+    v.is_object().then_some(v)
+}
+
+/// The `"wip"` object of a settings block, as column name to limit. A value that is not a
+/// positive whole number is ignored, and so is a column name the board no longer has.
+fn limits_of(settings: Option<&str>) -> BTreeMap<String, usize> {
+    let Some(v) = settings_value(settings) else { return BTreeMap::new() };
+    let Some(map) = v.get("wip").and_then(Value::as_object) else { return BTreeMap::new() };
+    map.iter()
+        .filter_map(|(name, n)| {
+            let n = n.as_u64().and_then(|n| usize::try_from(n).ok()).filter(|n| *n > 0)?;
+            Some((name.clone(), n))
+        })
+        .collect()
 }
 
 // ---- the view ----
@@ -483,6 +608,12 @@ pub struct KanbanView {
     /// What the pointer is over, so the board answers before it is pressed.
     hover: Hover,
     geom: Vec<ColGeom>,
+    /// What the filter field says: every word must be in the card, every `#tag` on it.
+    pub filter: String,
+    /// Whether the filter field has the keyboard.
+    pub filter_editing: bool,
+    /// Today as a day number, refreshed with every paint so the date chips know where they stand.
+    today: i32,
     /// The pane's text style, kept for the hit-test of a link.
     text_style: TextStyle,
     card_style: TextStyle,
@@ -518,6 +649,9 @@ impl KanbanView {
             drop_started: false,
             hover: Hover::default(),
             geom: Vec::new(),
+            filter: String::new(),
+            filter_editing: false,
+            today: crate::calendar::Calendar::today().index(),
             text_style: TextStyle {
                 size: 13.0,
                 line_height: 18.0,
@@ -574,12 +708,61 @@ impl KanbanView {
         self.geom.get(col).map(|g| g.fold)
     }
 
+    /// How many cards the filter lets through. The card being typed into always shows, so its
+    /// box does not vanish under the caret.
+    pub fn visible_count(&self) -> usize {
+        self.board.columns.iter().flat_map(|c| &c.cards).filter(|card| self.visible(card)).count()
+    }
+
+    fn visible(&self, card: &Card) -> bool {
+        self.filter.trim().is_empty() || self.editing_card(card.id).is_some() || self.matches_filter(card)
+    }
+
+    /// Whether every word of the filter is in the card and every `#tag` is on it. A word is a
+    /// case-insensitive substring of the whole line; a `#tag` must match the start of a tag chip,
+    /// so `#are` finds `#area` but not a `#` inside a word.
+    fn matches_filter(&self, card: &Card) -> bool {
+        let query = self.filter.trim();
+        if query.is_empty() {
+            return true;
+        }
+        let text = card.text.to_lowercase();
+        for word in query.split_whitespace() {
+            if let Some(tag) = word.strip_prefix('#') {
+                if tag.is_empty() {
+                    if !text.contains('#') {
+                        return false;
+                    }
+                    continue;
+                }
+                let tag = tag.to_lowercase();
+                let found = chip_ranges(&card.text).into_iter().any(|(start, end, chip)| {
+                    matches!(chip, Chip::Tag)
+                        && card.text.as_bytes().get(start) == Some(&b'#')
+                        && card.text[start + 1..end].to_lowercase().starts_with(&tag)
+                });
+                if !found {
+                    return false;
+                }
+            } else if !text.contains(&word.to_lowercase()) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Take the keyboard away from the filter field without clearing what it says.
+    pub fn blur_filter(&mut self) {
+        self.filter_editing = false;
+    }
+
     /// Where a `[[link]]` of a card sits, in window coordinates, from the last paint.
     pub fn link_rect(&mut self, fonts: &mut Fonts, col: usize, idx: usize, target: &str) -> Option<Rect> {
         let card = self.geom.get(col)?.cards.get(idx)?;
         let text = self.board.card(card.id)?.text.clone();
         let style = self.card_style.clone();
-        let spans = card_spans(&text, &chip_ranges(&text), &[Color::rgb(120, 120, 120); 12], false);
+        let spans =
+            card_spans(&text, &chip_ranges(&text), &[Color::rgb(120, 120, 120); 12], false, self.today);
         let (s, e) = chip_ranges(&text).into_iter().find_map(|(s, e, chip)| match chip {
             Chip::Link(t) if t == target => Some((s, e)),
             _ => None,
@@ -620,19 +803,29 @@ impl KanbanView {
                 }
             }
             Edit::Column(i) => {
+                let old = self.board.columns.get(i).map(|c| c.name.clone()).unwrap_or_default();
                 if let Some(col) = self.board.columns.get_mut(i) {
                     if !text.is_empty() && col.name != text {
-                        col.name = text;
+                        col.name.clone_from(&text);
                         changed = true;
                     }
                 }
+                if changed {
+                    // A limit follows its column by name: renaming it keeps the limit, and the
+                    // new name is what the settings block gets.
+                    self.board.rename_wip_limit(&old, &text);
+                }
             }
             Edit::NewColumn(i) => {
+                let old = self.board.columns.get(i).map(|c| c.name.clone()).unwrap_or_default();
                 if let Some(col) = self.board.columns.get_mut(i) {
                     if !text.is_empty() && col.name != text {
-                        col.name = text;
+                        col.name.clone_from(&text);
                         changed = true;
                     }
+                }
+                if changed {
+                    self.board.rename_wip_limit(&old, &text);
                 }
             }
         }
@@ -758,6 +951,9 @@ impl KanbanView {
     /// A press on the board. Returns what it landed on.
     pub fn press(&mut self, rect: Rect, x: f32, y: f32, fonts: &mut Fonts) -> Hit {
         self.rect = rect;
+        // A press on the board is not a press on the filter field: the field gives the keyboard
+        // back without losing what it says.
+        self.filter_editing = false;
         let hit = self.hit(x, y);
         let same = match (self.editing.as_ref().map(|e| e.target.clone()), &hit) {
             (Some(Edit::Card(a) | Edit::NewCard(a)), Hit::Card(b) | Hit::Check(b)) => a == *b,
@@ -892,7 +1088,30 @@ impl KanbanView {
                 break;
             }
         }
-        (col, idx)
+        // The geometry only holds the cards the filter lets through; the model holds them all.
+        // The slot the pointer asks for is mapped back to a position in the full list before the
+        // card moves, so a hidden card between two visible ones is not jumped over.
+        (col, self.drop_index(col, idx, id))
+    }
+
+    /// Turn a slot of the cards on screen into an index of the column's whole list, read as if
+    /// the dragged card were already out of it (which is the list [`Board::move_card`] inserts
+    /// into). With the filter off this is the index itself, the same as before.
+    fn drop_index(&self, col: usize, slot: usize, dragged: u64) -> usize {
+        let Some(column) = self.board.columns.get(col) else { return slot };
+        let without: Vec<&Card> = column.cards.iter().filter(|c| c.id != dragged).collect();
+        if self.filter.trim().is_empty() {
+            return slot.min(without.len());
+        }
+        let visible: Vec<u64> = without.iter().filter(|c| self.visible(c)).map(|c| c.id).collect();
+        if slot < visible.len() {
+            without.iter().position(|c| c.id == visible[slot]).unwrap_or(0)
+        } else if let Some(last) = visible.last() {
+            without.iter().position(|c| c.id == *last).map_or(without.len(), |at| at + 1)
+        } else {
+            // Nothing of the column passed the filter: the card goes to its end.
+            without.len()
+        }
     }
 
     /// Note what the pointer is over. True when the highlight changed, so the frame is redrawn.
@@ -924,18 +1143,23 @@ impl KanbanView {
         true
     }
 
-    /// The button came up. True when a card was dropped, so the app writes the file.
-    pub fn release(&mut self) -> bool {
+    /// The button came up. The card that was dragged, with the column it came from, so the app
+    /// writes the file and can say when the drop went over a WIP limit.
+    pub fn release(&mut self) -> Option<(u64, usize)> {
         let dragged = self.dragging.take();
+        let from = match self.press.as_ref() {
+            Some(Press::Card { origin, .. }) => Some(origin.0),
+            _ => None,
+        };
         self.press = None;
         self.press_geom.clear();
-        match dragged {
-            Some(id) => {
+        match (dragged, from) {
+            (Some(id), from) => {
                 self.drop = Some(id);
                 self.drop_started = false;
-                true
+                Some((id, from.unwrap_or(0)))
             }
-            None => false,
+            _ => None,
         }
     }
 
@@ -970,6 +1194,7 @@ impl KanbanView {
         fade: f32,
     ) -> Vec<Cmd> {
         self.rect = rect;
+        self.today = crate::calendar::Calendar::today().index();
         self.text_style = text.clone();
         self.card_style =
             TextStyle { size: CARD_TEXT, line_height: CARD_LINE, color: c[2], wrap: true, ..text.clone() };
@@ -1039,6 +1264,7 @@ impl KanbanView {
             TextStyle { size: 11.5, line_height: 15.0, color: c[3], wrap: false, ..self.text_style.clone() };
         let mut geom: Vec<ColGeom> = Vec::with_capacity(self.board.columns.len());
         let mut bottom = top;
+        let filtered = !self.filter.trim().is_empty();
         for i in 0..self.board.columns.len() {
             let col = self.board.columns[i].clone();
             let x = start_x + i as f32 * (COL_W + GAP);
@@ -1049,6 +1275,9 @@ impl KanbanView {
             let mut cards: Vec<CardGeom> = Vec::new();
             if !col.collapsed {
                 for card in &col.cards {
+                    if !self.visible(card) {
+                        continue;
+                    }
                     let cg = self.card_geom(card, x, y, c, fonts);
                     y = cg.rect.y + cg.rect.h + CARD_GAP;
                     cards.push(cg);
@@ -1062,7 +1291,18 @@ impl KanbanView {
             // A column the pointer is over answers: its chevron and its dots take the accent.
             let near = matches!(self.hover, Hover::Column(j) | Hover::Add(j) if j == i);
             let control = if near { c[2] } else { c[3] };
-            cmds.push(fill(rect_col, col_bg, 10.0));
+            // The limit is a property of the whole column, so it marks the whole column: the
+            // border and the counter take the accent when there are more cards than allowed.
+            let limit = self.board.wip_limit(&col.name);
+            let over = limit.is_some_and(|n| col.cards.len() > n);
+            cmds.push(fill(rect_col, if over { c[5] } else { col_bg }, 10.0));
+            if over {
+                cmds.push(fill(
+                    Rect::new(rect_col.x + 2.0, rect_col.y + 2.0, rect_col.w - 4.0, rect_col.h - 4.0),
+                    col_bg,
+                    8.0,
+                ));
+            }
             // The header: fold chevron, name, count, menu.
             let (cx, cy) = (fold.x + fold.w / 2.0, fold.y + fold.h / 2.0);
             let chev: Vec<[f32; 4]> = if col.collapsed {
@@ -1082,16 +1322,28 @@ impl KanbanView {
                 style: head_style.clone(),
             });
             let done = col.cards.iter().filter(|c| c.done).count();
-            let count =
-                if done > 0 { format!("{done}/{}", col.cards.len()) } else { col.cards.len().to_string() };
-            let (cw, _) = fonts.measure(&count, &[], &count_style, None);
+            let shown = if filtered { col.cards.iter().filter(|c| self.visible(c)).count() } else { 0 };
+            let count = if filtered {
+                format!("{shown}/{}", col.cards.len())
+            } else if let Some(n) = limit {
+                // With a limit the counter reads "cards / limit", which is what the accent is
+                // warning about; the done cards are still struck through in place.
+                format!("{}/{n}", col.cards.len())
+            } else if done > 0 {
+                format!("{done}/{}", col.cards.len())
+            } else {
+                col.cards.len().to_string()
+            };
+            let counter_style =
+                if over { TextStyle { color: c[5], ..count_style.clone() } } else { count_style.clone() };
+            let (cw, _) = fonts.measure(&count, &[], &counter_style, None);
             cmds.push(Cmd::Text {
                 x: menu.x - cw - 4.0,
                 y: top + 10.0,
                 width: Some(cw + 2.0),
                 text: count,
                 spans: Vec::new(),
-                style: count_style.clone(),
+                style: counter_style,
             });
             let dot = Rect::new(menu.x + 5.0, cy - 1.0, 2.6, 2.6);
             cmds.push(Cmd::Circles {
@@ -1168,7 +1420,7 @@ impl KanbanView {
             Some(buf) => (Vec::new(), buf.to_string()),
             None => {
                 let chips = chip_ranges(&card.text);
-                (card_spans(&card.text, &chips, c, card.done), card.text.clone())
+                (card_spans(&card.text, &chips, c, card.done, self.today), card.text.clone())
             }
         };
         let check = Rect::new(x + INSET + CARD_PAD, y + CARD_PAD + 1.0, CHECK, CHECK);
@@ -1250,20 +1502,21 @@ impl KanbanView {
             Some(buf) => (buf.to_string(), Vec::new()),
             None => {
                 let chips = chip_ranges(&card.text);
-                (card.text.clone(), card_spans(&card.text, &chips, c, card.done))
+                (card.text.clone(), card_spans(&card.text, &chips, c, card.done, self.today))
             }
         };
         if !editing {
             // Tags and dates wear a chip behind them, laid out where the text really put them.
             for (s, e, chip) in chip_ranges(&text) {
-                if !matches!(chip, Chip::Tag | Chip::Date) {
+                if !matches!(chip, Chip::Tag | Chip::Date(_) | Chip::Priority(_)) {
                     continue;
                 }
+                let color = chip_color(&chip, c, self.today);
                 for rect in fonts.range_rects(&text, &spans, &style, Some(g.text.w), s, e) {
                     let h = (rect.h - 3.0).max(8.0);
                     cmds.push(fill(
                         Rect::new(g.text.x + rect.x - 3.0, g.text.y + rect.y + 1.5, rect.w + 6.0, h),
-                        c[5].with_alpha(0.16),
+                        color.with_alpha(0.16),
                         h / 2.0,
                     ));
                 }
@@ -1306,12 +1559,58 @@ impl KanbanView {
 #[derive(Clone, Debug, PartialEq)]
 enum Chip {
     Tag,
-    /// A `@{2026-11-25}` date.
-    Date,
+    /// A `@{2026-11-25}` date and the day it names, when the date is a real one.
+    Date(Option<i32>),
+    /// A priority said on the line itself: `!!!`, `#prio/alta` or `[prio:: alta]`.
+    Priority(Priority),
     Link(String),
 }
 
-/// The tags, the dates and the links of a card, as byte ranges.
+/// How urgent a card says it is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Priority {
+    High,
+    Medium,
+    Low,
+}
+
+/// A priority by its name, in the spellings a tag or an inline field may carry.
+fn priority_of(name: &str) -> Option<Priority> {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "alta" | "high" | "1" => Some(Priority::High),
+        "media" | "medium" | "normal" | "2" => Some(Priority::Medium),
+        "baja" | "low" | "3" => Some(Priority::Low),
+        _ => None,
+    }
+}
+
+/// The priority of `#prio/…` and `#prioridad/…`; any other tag is a plain tag.
+fn priority_tag(name: &str) -> Option<Priority> {
+    let lower = name.to_ascii_lowercase();
+    let rest = lower
+        .strip_prefix("prio/")
+        .or_else(|| lower.strip_prefix("prioridad/"))
+        .or_else(|| lower.strip_prefix("priority/"))?;
+    priority_of(rest)
+}
+
+/// A `YYYY-MM-DD` date as a day number. Strict about the shape, so a note number or a range in
+/// braces is not read as a day.
+fn date_index(text: &str) -> Option<i32> {
+    let bytes = text.as_bytes();
+    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
+        return None;
+    }
+    if !bytes.iter().enumerate().all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit()) {
+        return None;
+    }
+    let y = text.get(0..4)?.parse().ok()?;
+    let m = text.get(5..7)?.parse().ok()?;
+    let d = text.get(8..10)?.parse().ok()?;
+    Day::from_ymd(y, m, d).map(Day::index)
+}
+
+/// The tags, the dates, the priorities and the links of a card, as byte ranges.
 fn chip_ranges(text: &str) -> Vec<(usize, usize, Chip)> {
     let mut out = Vec::new();
     let bytes = text.as_bytes();
@@ -1328,11 +1627,50 @@ fn chip_ranges(text: &str) -> Vec<(usize, usize, Chip)> {
                 continue;
             }
         }
+        // A card has no frontmatter of its own, but it can carry an inline field the way a note
+        // does: `[prio:: alta]` is where a priority coming from metadata is read from.
+        if b == b'[' && !text[i..].starts_with("[[") {
+            if let Some(rel) = text[i + 1..].find(']') {
+                let end = i + 1 + rel + 1;
+                let body = &text[i + 1..end - 1];
+                if let Some((key, value)) = body.split_once("::") {
+                    if matches!(key.trim().to_ascii_lowercase().as_str(), "prio" | "prioridad" | "priority") {
+                        if let Some(p) = priority_of(value) {
+                            out.push((i, end, Chip::Priority(p)));
+                            i = end;
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
         if b == b'@' && text[i..].starts_with("@{") {
             if let Some(rel) = text[i + 2..].find('}') {
                 let end = i + 2 + rel + 1;
-                out.push((i, end, Chip::Date));
+                let day = date_index(&text[i + 2..end - 1]);
+                out.push((i, end, Chip::Date(day)));
                 i = end;
+                continue;
+            }
+        }
+        // `!`, `!!` and `!!!` as a stand-alone word: the quick way to mark a card. A single `!`
+        // only counts at the start of the line, where it is not an exclamation mark.
+        if b == b'!' {
+            let mut j = i;
+            while j < bytes.len() && bytes[j] == b'!' {
+                j += 1;
+            }
+            let run = j - i;
+            let before = i == 0 || bytes[i - 1].is_ascii_whitespace();
+            let after = j == bytes.len() || bytes[j].is_ascii_whitespace();
+            if (1..=3).contains(&run) && before && after && (run >= 2 || i == 0) {
+                let level = match run {
+                    3 => Priority::High,
+                    2 => Priority::Medium,
+                    _ => Priority::Low,
+                };
+                out.push((i, j, Chip::Priority(level)));
+                i = j;
                 continue;
             }
         }
@@ -1344,7 +1682,8 @@ fn chip_ranges(text: &str) -> Vec<(usize, usize, Chip)> {
                 j += 1;
             }
             if j > i + 1 {
-                out.push((i, j, Chip::Tag));
+                let chip = priority_tag(&text[i + 1..j]).map_or(Chip::Tag, Chip::Priority);
+                out.push((i, j, chip));
                 i = j;
                 continue;
             }
@@ -1354,9 +1693,30 @@ fn chip_ranges(text: &str) -> Vec<(usize, usize, Chip)> {
     out
 }
 
-/// The spans a card paints with: a done card is faint and struck through, a tag or a date is
-/// accented, and a link is accented and underlined.
-fn card_spans(text: &str, chips: &[(usize, usize, Chip)], c: &[Color; 12], done: bool) -> Vec<Span> {
+/// The colour a chip wears: a past date is the theme's red, today is the accent, the future is
+/// faint; a high priority is red, a medium one orange and a low one faint. Tags and links are
+/// accented, as they were.
+fn chip_color(chip: &Chip, c: &[Color; 12], today: i32) -> Color {
+    match chip {
+        Chip::Tag | Chip::Link(_) => c[5],
+        Chip::Date(Some(day)) if *day < today => c[6],
+        Chip::Date(Some(day)) if *day == today => c[5],
+        Chip::Date(_) => c[3],
+        Chip::Priority(Priority::High) => c[6],
+        Chip::Priority(Priority::Medium) => c[7],
+        Chip::Priority(Priority::Low) => c[3],
+    }
+}
+
+/// The spans a card paints with: a done card is faint and struck through, a tag or a link is
+/// accented, a date is coloured by the day and a priority by its level.
+fn card_spans(
+    text: &str,
+    chips: &[(usize, usize, Chip)],
+    c: &[Color; 12],
+    done: bool,
+    today: i32,
+) -> Vec<Span> {
     let mut spans = Vec::new();
     if done {
         spans.push(Span {
@@ -1373,7 +1733,7 @@ fn card_spans(text: &str, chips: &[(usize, usize, Chip)], c: &[Color; 12], done:
         spans.push(Span {
             start: *start,
             end: *end,
-            color: Some(c[5]),
+            color: Some(chip_color(chip, c, today)),
             underline,
             strike: done,
             scale: 1.0,
@@ -1415,15 +1775,45 @@ fn fade_cmd(cmd: &mut Cmd, t: f32) {
 /// The header of the board and the node its paint pass draws into.
 pub fn pane(v: &KanbanView, dom: &mut Dom, parent: NodeId, info: &mut crate::view::ViewInfo) {
     let header = dom.add(parent, El::div().class("view-header graph-controls kanban-controls"));
+    let total = v.board.cards();
+    let cards = if v.filter.trim().is_empty() {
+        format!("{total} tarjetas")
+    } else {
+        format!("{} de {total} tarjetas", v.visible_count())
+    };
     dom.add(
         header,
         El::div().class("graph-count").text(format!(
-            "{}  ·  {} columnas  ·  {} tarjetas",
+            "{}  ·  {} columnas  ·  {cards}",
             v.path,
-            v.board.columns.len(),
-            v.board.cards()
+            v.board.columns.len()
         )),
     );
+    // The filter is a field of the board's own bar: it narrows what is painted, not the file.
+    let field = dom.add(
+        header,
+        El::div()
+            .class("graph-input kanban-filter")
+            .class_if(v.filter_editing, "is-editing")
+            .action("kanban:filter"),
+    );
+    dom.add(field, crate::icons::el("search"));
+    let (text, faint) = if v.filter.is_empty() {
+        if v.filter_editing {
+            (crate::view::with_caret("", FILTER_CHARS), false)
+        } else {
+            ("Filtrar tarjetas…".to_string(), true)
+        }
+    } else if v.filter_editing {
+        (crate::view::with_caret(&v.filter, FILTER_CHARS), false)
+    } else {
+        (v.filter.clone(), false)
+    };
+    dom.add(field, El::div().class("graph-input-text").class_if(faint, "is-placeholder").text(text));
+    if !v.filter.is_empty() {
+        let clear = dom.add(field, El::div().class("kanban-filter-clear").action("kanban:filter-clear"));
+        dom.add(clear, crate::icons::el("x"));
+    }
     let source = if v.show_source { "Ver tablero" } else { "Ver código" };
     for (label, cmd) in [
         ("Nueva columna", "kanban:add-column"),
@@ -1637,12 +2027,27 @@ impl App {
         true
     }
 
-    /// The button came up: a card that was dragged is written to disk right away.
+    /// The button came up: a card that was dragged is written to disk right away, and a drop
+    /// that leaves a column over its WIP limit says so. The limit never blocks the move.
     pub fn kanban_release(&mut self) {
-        let dropped = self.kanban_view.as_mut().is_some_and(|v| v.release());
-        if dropped {
-            self.anims.start("kanban-drop", DROP_MS);
-            self.kanban_save();
+        // `release` answers with the card that moved (and the column it came from), or nothing
+        // when the press was not a drag: only a real drop is worth writing and animating.
+        let dropped = self.kanban_view.as_mut().and_then(|v| v.release());
+        let Some((id, from)) = dropped else { return };
+        self.anims.start("kanban-drop", DROP_MS);
+        self.kanban_save();
+        let over = self.kanban_view.as_ref().and_then(|v| {
+            let (col, _) = v.board.locate(id)?;
+            let name = v.board.columns.get(col)?.name.clone();
+            let cards = v.board.columns[col].cards.len();
+            let limit = v.board.wip_limit(&name)?;
+            // Every drop into a column is worth warning about when it is still over the limit;
+            // reordering inside the same over-full column is not news.
+            (cards > limit && (from != col || cards == limit + 1))
+                .then(|| format!("«{name}» pasó su límite WIP: {cards} tarjetas para un límite de {limit}"))
+        });
+        if over.is_some() {
+            self.notice = over;
         }
     }
 
@@ -1665,6 +2070,20 @@ impl App {
 
     /// Keys the board takes while it is the open view.
     pub(crate) fn kanban_key(&mut self, key: &crate::Key) -> bool {
+        // The filter field, when it has the keyboard, takes the same keys a small field does.
+        if self.kanban_view.as_ref().is_some_and(|v| v.filter_editing) {
+            let Some(v) = &mut self.kanban_view else { return false };
+            match key.key.as_str() {
+                "Escape" | "Enter" | "Tab" => v.filter_editing = false,
+                "Backspace" if key.ctrl => v.filter.clear(),
+                "Backspace" => {
+                    v.filter.pop();
+                }
+                "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown" | "Home" | "End" => {}
+                _ => return false,
+            }
+            return true;
+        }
         let editing = self.kanban_view.as_ref().is_some_and(|v| v.editing.is_some());
         if editing {
             match key.key.as_str() {
@@ -1697,8 +2116,14 @@ impl App {
             }
             "Escape" => {
                 if let Some(v) = &mut self.kanban_view {
-                    v.selected = None;
-                    v.show_source = false;
+                    // The first Escape clears a filter that is narrowing the board; the second
+                    // gives back the selection, as before.
+                    if v.filter.is_empty() {
+                        v.selected = None;
+                        v.show_source = false;
+                    } else {
+                        v.filter.clear();
+                    }
                 }
             }
             _ => return false,
@@ -1707,8 +2132,11 @@ impl App {
     }
 
     pub(crate) fn kanban_text(&mut self, text: &str) {
-        if let Some(buf) = self.kanban_view.as_mut().and_then(|v| v.editing.as_mut().map(|e| &mut e.buf)) {
-            buf.push_str(text);
+        let Some(v) = &mut self.kanban_view else { return };
+        if v.filter_editing {
+            v.filter.push_str(text);
+        } else if let Some(e) = v.editing.as_mut() {
+            e.buf.push_str(text);
         }
     }
 
@@ -1721,6 +2149,53 @@ impl App {
         }
         if self.kanban_view.is_none() {
             // A board command with no board open has nothing to do.
+            return true;
+        }
+        // The filter and the WIP limit have arguments of their own, so they are read before the
+        // generic `word:number` split below.
+        if rest == "filter" {
+            if let Some(v) = &mut self.kanban_view {
+                v.stop_edit();
+                v.filter_editing = true;
+            }
+            self.kanban_save();
+            return true;
+        }
+        if rest == "filter-clear" {
+            if let Some(v) = &mut self.kanban_view {
+                v.filter.clear();
+                v.filter_editing = true;
+            }
+            return true;
+        }
+        if let Some(query) = rest.strip_prefix("filter-set:") {
+            if let Some(v) = &mut self.kanban_view {
+                v.stop_edit();
+                v.filter = query.to_string();
+                v.filter_editing = true;
+            }
+            self.kanban_save();
+            return true;
+        }
+        if let Some(spec) = rest.strip_prefix("wip-set:") {
+            if let Some((i, n)) = spec.split_once(':') {
+                if let (Ok(i), Ok(n)) = (i.parse::<usize>(), n.parse::<usize>()) {
+                    self.kanban_set_wip(i, Some(n));
+                }
+            }
+            return true;
+        }
+        if let Some(spec) = rest.strip_prefix("wip-clear:") {
+            if let Ok(i) = spec.parse::<usize>() {
+                self.kanban_set_wip(i, None);
+            }
+            return true;
+        }
+        if let Some(spec) = rest.strip_prefix("wip-menu:") {
+            if let Ok(i) = spec.parse::<usize>() {
+                let (x, y) = self.kanban_view.as_ref().map(|v| v.column_anchor(i)).unwrap_or((0.0, 0.0));
+                self.kanban_wip_menu(i, x, y);
+            }
             return true;
         }
         let (word, arg) = match rest.split_once(':') {
@@ -1855,6 +2330,8 @@ impl App {
                         return None;
                     }
                     let col = v.board.columns.remove(arg?);
+                    // The limit belonged to that column: it goes with it in the settings block.
+                    v.board.remove_wip_limit(&col.name);
                     v.dirty = true;
                     v.selected = None;
                     Some(col)
@@ -1878,9 +2355,14 @@ impl App {
         let Some(v) = self.kanban_view.as_ref() else { return };
         let Some(col) = v.board.columns.get(i) else { return };
         let fold = if col.collapsed { "Expandir columna" } else { "Colapsar columna" };
+        let wip = match v.board.wip_limit(&col.name) {
+            Some(n) => format!("Límite WIP: {n}"),
+            None => "Límite WIP: sin límite".to_string(),
+        };
         let items = vec![
             self.kanban_item("plus", "Añadir tarjeta", format!("kanban:add-card-at:{i}"), false),
             self.kanban_item("edit", "Renombrar columna", format!("kanban:column-rename:{i}"), false),
+            self.kanban_item("list", &wip, format!("kanban:wip-menu:{i}"), false),
             self.kanban_item("collapse", fold, format!("kanban:column-fold:{i}"), false),
             crate::menu::MenuItem {
                 label: String::new(),
@@ -1903,6 +2385,59 @@ impl App {
             self.kanban_item("trash", "Eliminar columna", format!("kanban:column-delete:{i}"), true),
         ];
         self.show_menu(x, y, items);
+    }
+
+    /// The values a WIP limit can take, as a menu of its own: the column menu is already long
+    /// and a limit is set once in a while.
+    pub(crate) fn kanban_wip_menu(&mut self, i: usize, x: f32, y: f32) {
+        let Some(v) = self.kanban_view.as_ref() else { return };
+        let Some(col) = v.board.columns.get(i) else { return };
+        let current = v.board.wip_limit(&col.name);
+        let mut items = vec![self.kanban_item(
+            "x",
+            &format!("Sin límite{}", if current.is_none() { " · actual" } else { "" }),
+            format!("kanban:wip-clear:{i}"),
+            false,
+        )];
+        for n in 1..=MAX_WIP {
+            let label = if current == Some(n) { format!("{n} · actual") } else { n.to_string() };
+            items.push(self.kanban_item("list", &label, format!("kanban:wip-set:{i}:{n}"), false));
+        }
+        self.show_menu(x, y, items);
+    }
+
+    /// Write a column's WIP limit into the board's settings block and say so. A board whose
+    /// settings block is not JSON is not rewritten: the menu answers with that instead.
+    pub(crate) fn kanban_set_wip(&mut self, i: usize, limit: Option<usize>) {
+        let attempt = self.kanban_view.as_mut().and_then(|v| {
+            let name = v.board.columns.get(i)?.name.clone();
+            let changed = v.board.set_wip_limit(&name, limit);
+            if changed {
+                v.dirty = true;
+            }
+            let now = v.board.wip_limit(&name);
+            let cards = v.board.columns[i].cards.len();
+            Some((name, changed, now, cards))
+        });
+        let Some((name, changed, now, cards)) = attempt else { return };
+        if !changed {
+            // The same value again is not an edit; a block that is not JSON is worth saying.
+            if now != limit.filter(|n| *n > 0) {
+                self.notice = Some(format!(
+                    "No se pudo escribir el ajuste de «{name}»: el bloque del tablero no es JSON válido"
+                ));
+            }
+            return;
+        }
+        self.kanban_save();
+        let notice = match now {
+            Some(n) if cards > n => {
+                format!("Límite WIP de «{name}»: {n} · la columna tiene {cards} tarjetas")
+            }
+            Some(n) => format!("Límite WIP de «{name}»: {n}"),
+            None => format!("«{name}» sin límite WIP"),
+        };
+        self.notice = Some(notice);
     }
 
     fn kanban_item(
@@ -1935,5 +2470,84 @@ impl App {
                 self.show_menu(x, y, items);
             }
         }
+    }
+}
+
+// ---- unit tests: the pieces the paint pass and the settings block rely on ----
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chips(text: &str) -> Vec<(String, Chip)> {
+        chip_ranges(text).into_iter().map(|(s, e, chip)| (text[s..e].to_string(), chip)).collect()
+    }
+
+    fn colors() -> [Color; 12] {
+        let mut c = [Color::rgb(20, 20, 20); 12];
+        c[3] = Color::rgb(120, 120, 120); // faint
+        c[5] = Color::rgb(90, 140, 240); // accent
+        c[6] = Color::rgb(233, 49, 71); // the theme's red
+        c[7] = Color::rgb(233, 151, 63); // the theme's orange
+        c
+    }
+
+    #[test]
+    fn a_line_carries_tags_dates_priorities_and_links() {
+        let text = "!!! pagar @{2026-11-25} #area [prio:: media] [[Otra|la otra]]";
+        let found = chips(text);
+        assert_eq!(found[0], ("!!!".to_string(), Chip::Priority(Priority::High)), "{found:?}");
+        assert_eq!(
+            found[1],
+            ("@{2026-11-25}".to_string(), Chip::Date(Some(Day::from_ymd(2026, 11, 25).unwrap().index())))
+        );
+        assert_eq!(found[2], ("#area".to_string(), Chip::Tag));
+        assert_eq!(found[3], ("[prio:: media]".to_string(), Chip::Priority(Priority::Medium)));
+        assert_eq!(found[4], ("[[Otra|la otra]]".to_string(), Chip::Link("Otra".to_string())));
+        // The tag spelling of the same priority is a priority, not a plain tag.
+        assert_eq!(chips("hola #prio/baja")[0], ("#prio/baja".to_string(), Chip::Priority(Priority::Low)));
+        // An exclamation mark mid-sentence is punctuation, and a date-shaped string that is not a
+        // day keeps its chip but without a day to compare.
+        assert!(chips("urgente! ya").is_empty(), "{:?}", chips("urgente! ya"));
+        assert_eq!(chips("@{2026-02-30}")[0], ("@{2026-02-30}".to_string(), Chip::Date(None)));
+    }
+
+    #[test]
+    fn a_date_chip_knows_where_it_stands_against_today() {
+        let c = colors();
+        let today = Day::from_ymd(2026, 11, 25).unwrap().index();
+        assert_eq!(chip_color(&Chip::Date(Some(today - 1)), &c, today), c[6], "ayer es rojo");
+        assert_eq!(chip_color(&Chip::Date(Some(today)), &c, today), c[5], "hoy es acento");
+        assert_eq!(chip_color(&Chip::Date(Some(today + 1)), &c, today), c[3], "mañana es neutro");
+        assert_eq!(chip_color(&Chip::Priority(Priority::High), &c, today), c[6]);
+        assert_eq!(chip_color(&Chip::Priority(Priority::Medium), &c, today), c[7]);
+        assert_eq!(chip_color(&Chip::Priority(Priority::Low), &c, today), c[3]);
+    }
+
+    #[test]
+    fn wip_limits_live_in_the_settings_block_and_keep_every_other_key() {
+        let text = "%% kanban: settings\n{\"kanban-plugin\": \"basic\"} %%\n# T\n\n## Haciendo\n- [ ] a\n";
+        let mut board = Board::parse(text);
+        assert_eq!(board.wip_limit("Haciendo"), None);
+        assert!(board.set_wip_limit("Haciendo", Some(2)));
+        assert_eq!(board.wip_limit("Haciendo"), Some(2));
+        let out = board.render();
+        assert!(out.contains("\"wip\":{\"Haciendo\":2}"), "{out}");
+        assert!(out.contains("\"kanban-plugin\":\"basic\""), "the plugin key stays: {out}");
+        assert_eq!(Board::parse(&out).render(), out, "the rewritten block roundtrips");
+        assert_eq!(Board::parse(&out).wip_limit("Haciendo"), Some(2), "a reopen reads it back");
+
+        // Renaming carries the limit; dropping it takes the key out and nothing else.
+        assert!(board.rename_wip_limit("Haciendo", "En curso"));
+        assert_eq!(board.wip_limit("En curso"), Some(2));
+        assert_eq!(board.wip_limit("Haciendo"), None);
+        assert!(board.set_wip_limit("En curso", None));
+        assert!(!board.render().contains("wip"), "{}", board.render());
+        assert!(board.render().contains("kanban-plugin"), "{}", board.render());
+
+        // A block that is not JSON is not rewritten: the board keeps what it does not understand.
+        let mut broken = Board::parse("%% kanban: settings\nesto no es json %%\n## C\n- [ ] a\n");
+        assert!(!broken.set_wip_limit("C", Some(1)));
+        assert!(!broken.render().contains("wip"));
     }
 }

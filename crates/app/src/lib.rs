@@ -298,6 +298,15 @@ impl App {
             if action != "backlinks:edit-filter" {
                 self.backlinks_editing = false;
             }
+            // The filter field of a board keeps the keyboard only for its own controls: clicking
+            // anywhere else (the clear button included) gives it back without clearing it.
+            if !matches!(action.as_str(), "kanban:filter" | "kanban:filter-clear")
+                && !action.starts_with("kanban:filter-set")
+            {
+                if let Some(v) = &mut self.kanban_view {
+                    v.blur_filter();
+                }
+            }
             if action != "ai:focus-input" {
                 self.ai.editing = false;
             }
@@ -348,6 +357,9 @@ impl App {
         }
         self.graph_end_edit();
         self.backlinks_editing = false;
+        if let Some(v) = &mut self.kanban_view {
+            v.blur_filter();
+        }
         self.ai.editing = false;
         if self.prompt.is_some() {
             return self.run("prompt:dismiss");

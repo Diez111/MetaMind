@@ -404,6 +404,13 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
    their boards. */
 .kanban-controls { flex-wrap: wrap; row-gap: 4px }
 .kanban-controls .graph-count { min-width: 0; overflow: hidden; text-overflow: ellipsis }
+/* The filter field of the board: a fixed share of the bar that wraps under the path when the pane
+   is narrow. `graph-input` grows in a pane; here it takes a width of its own and its text is the
+   only part that shrinks, so the search icon and the clear button stay put. */
+.kanban-controls .kanban-filter { flex-grow: 0; flex-shrink: 1; flex-basis: 190px; min-width: 116px }
+.kanban-filter .graph-input-text { min-width: 0; flex-grow: 1; flex-shrink: 1 }
+.kanban-filter-clear { display: flex; align-items: center; flex-shrink: 0; color: var(--text-faint) }
+.kanban-filter-clear:hover { color: var(--text-normal) }
 .exc-controls .exc-fullscreen-button { border-color: var(--interactive-accent); color: var(--text-normal) }.exc-toolbar { position: absolute; left: 12px; top: 12px; display: flex; flex-direction: column; gap: 2px; padding: 4px; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
 .exc-tool.exc-fold { color: var(--text-faint) }
 .exc-tools-handle { position: absolute; left: 12px; top: 12px; display: flex; align-items: center; gap: 4px; padding: 5px 8px 5px 5px; font-size: var(--font-ui-smaller); color: var(--text-muted); background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
