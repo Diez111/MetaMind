@@ -36,6 +36,10 @@ pub fn render(lines: &[&str], m: &mut dyn Measure) -> Result<Diagram, Error> {
     let mut counter = 0;
     let mut depth = 0usize;
     for line in lines {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
         let kw = line.split_whitespace().next().unwrap_or("");
         let rest = line[kw.len()..].trim();
         match kw {
@@ -314,7 +318,7 @@ pub fn render(lines: &[&str], m: &mut dyn Measure) -> Result<Diagram, Error> {
     let margin = 12.0;
     let dx = margin - lo;
     for it in &mut items {
-        crate::flow::shift(it, dx, margin);
+        crate::common::shift(it, dx, margin);
     }
     Ok(Diagram { width: hi - lo + 2.0 * margin, height: bottom + 32.0 + 2.0 * margin, items })
 }
