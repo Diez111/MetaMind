@@ -112,6 +112,9 @@ pub fn render_window(
     if app.posters.poll() || app.posters.busy() {
         app.anims.start("poster", 500.0);
     }
+    // What the notes are worth is measured before the tree is built: the room the view leaves for
+    // the blocks it is not drawing is part of the scroll, and the limit comes from the note.
+    view::measure_notes(app, fonts);
     let (mut dom, info) = view::build(app, pixmap.height() as f32 / scale, solo);
     // What the frame asked for is asked now, outside the immutable borrow the tree is built with.
     let wanted: Vec<_> = app.poster_queue.borrow_mut().drain(..).collect();
@@ -133,6 +136,24 @@ pub fn render_window(
         if w > 0.0 {
             app.editor_w = w;
         }
+    }
+    // The column each note got, so the measuring pass of the next frame measures the heights of
+    // that column and no other: a split gives each pane its own width.
+    app.note_widths.clear();
+    for &(pane, _, ed) in &info.panes {
+        if let Some(w) = ed.and_then(|n| dom.nodes.get(n)).map(|n| n.rect.w).filter(|w| *w > 0.0) {
+            let tab =
+                if pane == app.pane { app.active } else { app.panes.get(pane).map_or(0, |p| p.active) };
+            app.note_widths.insert((pane, tab), w);
+        }
+    }
+    for &(pane, tab, _, ed) in &info.stack {
+        if let Some(w) = ed.and_then(|n| dom.nodes.get(n)).map(|n| n.rect.w).filter(|w| *w > 0.0) {
+            app.note_widths.insert((pane, tab), w);
+        }
+    }
+    if let Some(w) = info.editor.and_then(|n| dom.nodes.get(n)).map(|n| n.rect.w).filter(|w| *w > 0.0) {
+        app.note_widths.insert((app.pane, app.active), w);
     }
     // A list opened in the settings panel is brought into view before anything is drawn over it:
     // a row below the edge of the scrollport cannot be clicked, and the click lands on the veil.

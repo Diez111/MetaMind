@@ -213,6 +213,256 @@ pub struct Scrolled {
     pub end: bool,
     /// How many blocks the note has: an anchor past that is stale.
     pub blocks: usize,
+    /// Room reserved below this frame's blocks, for the rest of the note: the part of the
+    /// scroller's content that has no node of its own this frame.
+    pub below: f32,
+}
+
+/// What a note's block heights depend on. A different column width, font, fold or number of
+/// blocks, and every height has to be measured again.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Shape {
+    /// Width of the note's column, in half pixels.
+    width: u32,
+    /// `--font-text-size`, in half pixels.
+    font: u32,
+    /// `--file-line-width`, in half pixels.
+    line_width: u32,
+    mode: u8,
+    /// The version of the folded ranges (`Tab::hidden`).
+    folds: u64,
+    blocks: usize,
+    readable: bool,
+}
+
+/// How tall a note is, block by block.
+///
+/// The view lays out the blocks around the scroll position and nothing else, so the height it
+/// computed for its children is the height of a window, not of the document: the limit of the
+/// scroll, the end of the note and the scrollbar thumb all came out short. This is the document's
+/// own height: the blocks the view lays out are measured by that layout for free, and the rest are
+/// measured a batch at a time in a tree of their own. Until a block has been measured it counts
+/// for the average of the ones that have, so the note is never shorter than the part of it known.
+///
+/// `start[block]` is how much of the note is above that block and `start[blocks]` is how tall the
+/// whole thing is; both the limit and the thumb are read from this one place.
+#[derive(Clone, Default)]
+pub struct Extent {
+    shape: Option<Shape>,
+    /// Height of each block, once a layout has measured it.
+    heights: Vec<Option<f32>>,
+    /// First block the measuring pass has still to visit.
+    pending: usize,
+    start: Vec<f32>,
+}
+
+impl Shape {
+    /// The same column, font, fold and mode: only the length of the note is different, which is
+    /// what an Enter or a deletion does.
+    fn same_layout(&self, other: Shape) -> bool {
+        let (a, b) = (self, &other);
+        a.width == b.width
+            && a.font == b.font
+            && a.line_width == b.line_width
+            && a.mode == b.mode
+            && a.folds == b.folds
+            && a.readable == b.readable
+    }
+}
+
+impl Extent {
+    /// Describe the note `shape` measures, dropping what was measured for another shape. A note
+    /// that only got or lost blocks keeps the heights it had — they are the heights of those
+    /// blocks — and is walked again, so an Enter does not make the scrollbar forget the note.
+    pub fn fit(&mut self, shape: Shape) {
+        if self.shape == Some(shape) {
+            return;
+        }
+        if self.shape.is_some_and(|s| s.same_layout(shape)) {
+            self.heights.resize(shape.blocks, None);
+        } else {
+            self.heights = vec![None; shape.blocks];
+        }
+        self.shape = Some(shape);
+        self.pending = 0;
+        self.recount();
+    }
+
+    /// The blocks the measuring pass takes this frame, if there are any left.
+    fn next_batch(&self) -> Option<std::ops::Range<usize>> {
+        let n = self.heights.len();
+        if self.pending >= n {
+            return None;
+        }
+        Some(self.pending..(self.pending + MEASURE_BATCH).min(n))
+    }
+
+    /// Take the heights of a batch: `starts` is where each block that added nodes begins, and
+    /// `total` is what the batch measured, bottom margin of its last block included.
+    fn fill(&mut self, batch: std::ops::Range<usize>, starts: &[(usize, f32)], total: f32) {
+        // A block that added nothing to the tree (a blank line nobody is on, a folded one) is
+        // flat, and its own block in the window is flat too: the view skips it the same way.
+        for b in batch.clone() {
+            if let Some(h) = self.heights.get_mut(b) {
+                *h = Some(0.0);
+            }
+        }
+        for (i, &(block, y)) in starts.iter().enumerate() {
+            let end = starts.get(i + 1).map_or(total, |s| s.1);
+            if let Some(h) = self.heights.get_mut(block) {
+                *h = Some((end - y).max(0.0));
+            }
+        }
+        self.pending = batch.end;
+        self.recount();
+    }
+
+    /// A block the view just laid out, at its exact height.
+    fn put(&mut self, block: usize, height: f32) {
+        if let Some(h) = self.heights.get_mut(block) {
+            *h = Some(height);
+        }
+    }
+
+    /// Where each block starts, from the heights measured so far and the estimate for the rest.
+    fn recount(&mut self) {
+        let known: f32 = self.heights.iter().flatten().sum();
+        let count = self.heights.iter().filter(|h| h.is_some()).count();
+        let average = if count > 0 { known / count as f32 } else { ESTIMATED_BLOCK };
+        self.start.clear();
+        self.start.reserve(self.heights.len() + 1);
+        let mut y = 0.0;
+        self.start.push(0.0);
+        for h in &self.heights {
+            y += h.unwrap_or(average);
+            self.start.push(y);
+        }
+    }
+
+    /// How much of the note is above `block`.
+    pub fn offset(&self, block: usize) -> f32 {
+        self.start.get(block).copied().unwrap_or_else(|| self.total())
+    }
+
+    /// How tall the note is.
+    pub fn total(&self) -> f32 {
+        self.start.last().copied().unwrap_or(0.0)
+    }
+}
+
+/// Blocks a frame measures of a note it has not measured yet: a long note is known in a few
+/// frames, and the batch is small enough not to show in the cost of a frame.
+const MEASURE_BATCH: usize = 32;
+/// What an unmeasured block counts for, before a single one has been measured.
+const ESTIMATED_BLOCK: f32 = 34.0;
+/// The height the measuring tree is laid out at: its blocks are read from the top, and nothing in
+/// a note is sized from the height of the column.
+const MEASURE_H: f32 = 100_000.0;
+
+/// What a note's block heights depend on, for the extent that holds them.
+fn shape_of(app: &App, tab: &crate::shell::Tab, width: f32) -> Shape {
+    let a = &app.config.appearance;
+    let half = |px: f64| (px * 2.0).round() as u32;
+    let px = |key: &str, default: f64| {
+        half(a.get(key).and_then(serde_json::Value::as_f64).unwrap_or(default))
+    };
+    Shape {
+        width: half(f64::from(width)),
+        font: px("baseFontSize", 16.0),
+        line_width: px("lineWidth", 700.0),
+        mode: match tab.mode {
+            ViewMode::Source => 0,
+            ViewMode::LivePreview => 1,
+            ViewMode::Reading => 2,
+        },
+        folds: tab.hidden.0,
+        blocks: tab.editor.buf.doc().blocks.len(),
+        readable: app.config.app.bool("readableLineLength", false),
+    }
+}
+
+/// The classes the note's column wears, so the measuring tree measures the same column.
+fn view_classes(app: &App, mode: ViewMode) -> String {
+    let class = if mode == ViewMode::Reading {
+        "view-content markdown-reading-view"
+    } else {
+        "view-content markdown-source-view cm-editor"
+    };
+    let readable =
+        if app.config.app.bool("readableLineLength", false) { " is-readable-line-width" } else { "" };
+    format!("{class}{readable}")
+}
+
+/// Measure the next batch of blocks of every note the window showed, at the width its column had.
+///
+/// The blocks are built in a tree of their own and laid out at that width: the heights are the
+/// ones the view would give them, without the view having to lay out the whole document each frame.
+/// The poster queue is emptied afterwards, because measuring is not painting: a video card off
+/// screen must not have its frame decoded for a measurement nobody sees.
+pub fn measure_notes(app: &mut App, fonts: &mut Fonts) {
+    let shown: Vec<((usize, usize), f32)> = app.note_widths.iter().map(|(&k, &w)| (k, w)).collect();
+    let mut wanted = false;
+    for ((pane, tab), width) in shown {
+        if width <= 0.0 {
+            continue;
+        }
+        let Some(t) = app.pane_tab(pane, tab) else { continue };
+        let shape = shape_of(app, t, width);
+        if t.extent.shape != Some(shape) {
+            if let Some(t) = app.pane_tab_mut(pane, tab) {
+                t.extent.fit(shape);
+            }
+            continue;
+        }
+        let Some(batch) = t.extent.next_batch() else { continue };
+        let (starts, total) = measure_range(app, fonts, width, t, batch.clone());
+        wanted = true;
+        if let Some(t) = app.pane_tab_mut(pane, tab) {
+            t.extent.fill(batch, &starts, total);
+        }
+    }
+    if wanted {
+        app.poster_queue.borrow_mut().clear();
+    }
+}
+
+/// Where each block of `range` starts in a column `width` wide, and how tall the batch is. The
+/// first of the two numbers is relative to the top of the content, the same space `Extent` keeps.
+fn measure_range(
+    app: &App,
+    fonts: &mut Fonts,
+    width: f32,
+    tab: &crate::shell::Tab,
+    range: std::ops::Range<usize>,
+) -> (Vec<(usize, f32)>, f32) {
+    let mut dom = Dom::new();
+    // The theme's variables hang off the root's classes: without them every height is the one of
+    // a window with no stylesheet.
+    dom.nodes[0].el.classes.push(if app.dark { "theme-dark" } else { "theme-light" }.to_string());
+    let mut info = ViewInfo::default();
+    let pal = palette(app);
+    let class = view_classes(app, tab.mode);
+    let view = dom.add(0, El::div().class(&class));
+    note_blocks(app, &mut dom, view, &pal, &mut info, tab, tab.mode, false, range, false);
+    dom.style(&app.theme, app.env());
+    dom.layout(fonts, width, MEASURE_H);
+    let top = dom.content_rect(view).y;
+    let added = dom.nodes.len();
+    let mut starts: Vec<(usize, f32)> = Vec::new();
+    let mut last: Option<NodeId> = None;
+    // A block that added nothing shares its node with the one after it: it is flat, and the mark
+    // belongs to the block that really begins there.
+    for (b, n) in info.marks.drain(..).filter(|&(_, n)| n < added) {
+        if last == Some(n) {
+            starts.pop();
+        }
+        last = Some(n);
+        let node = &dom.nodes[n];
+        // The margin above a block is part of the note's height and not of its box.
+        starts.push((b, node.rect.y - node.style.margin[0] - top));
+    }
+    let padding = dom.nodes[view].style.padding[2];
+    (starts, (dom.nodes[view].content_h - padding).max(0.0))
 }
 
 /// Syntax-highlight spans for a fenced code block, appended to `spans`. `map` is the
@@ -1510,14 +1760,7 @@ fn editor(
     icon_button(dom, header, source_icon, "editor:toggle-source", tab.mode == ViewMode::Source);
     icon_button(dom, header, mode_icon, "markdown:toggle-preview", false);
     icon_button(dom, header, "sidebar-right", "app:toggle-right-sidebar", app.right_open);
-    let class = if tab.mode == ViewMode::Reading {
-        "view-content markdown-reading-view"
-    } else {
-        "view-content markdown-source-view cm-editor"
-    };
-    let readable =
-        if app.config.app.bool("readableLineLength", false) { " is-readable-line-width" } else { "" };
-    let class = format!("{class}{readable}");
+    let class = view_classes(app, tab.mode);
     let mut view_el = El::div().class(&class);
     if focused {
         view_el = view_el.id("editor");
@@ -1530,8 +1773,20 @@ fn editor(
     let top = tab.top_block.min(doc.blocks.len().saturating_sub(1));
     let first = top.saturating_sub(8);
     let last = (top + 90).min(doc.blocks.len());
+    // The part of the note the view does not build keeps its room, and that room is what makes
+    // the scroll limit the note's and not the window's. The heights come from `Extent`, measured
+    // from the blocks themselves; a note not measured yet has no room and scrolls as it always did.
+    let room = |h: f32| if h > 0.5 { h } else { 0.0 };
+    let above = room(tab.extent.offset(first));
+    if above > 0.0 {
+        dom.add(view, El::div().class("cm-offscreen").style(&format!("height: {above:.1}px")));
+    }
     info.marks.clear();
     note_blocks(app, dom, view, pal, info, tab, tab.mode, focused, first..last, false);
+    let below = room(tab.extent.total() - tab.extent.offset(last));
+    if below > 0.0 {
+        dom.add(view, El::div().class("cm-offscreen").style(&format!("height: {below:.1}px")));
+    }
     let added = dom.nodes.len();
     let mut marks: Vec<(usize, NodeId)> = Vec::new();
     // A block that added nothing shares its mark with the next one.
@@ -1549,34 +1804,80 @@ fn editor(
         start: first == 0,
         end: last == doc.blocks.len(),
         blocks: doc.blocks.len(),
+        below,
     });
+}
+
+/// The block the caret of the focused note is in, if the note has one.
+fn caret_block(app: &App) -> Option<usize> {
+    let t = app.tabs.get(app.active)?;
+    let head = t.editor.buf.sels.last().map_or(0, |s| s.head);
+    t.editor.buf.doc().block_index_at(head)
+}
+
+/// The mark of the block a caret is in: the block itself, or the one after it when the caret is on
+/// a block that added no line of its own (a blank line nobody is drawing a caret on).
+fn caret_mark(marks: &[(usize, NodeId)], block: usize) -> Option<usize> {
+    marks.iter().position(|&(b, _)| b >= block).or_else(|| marks.len().checked_sub(1))
 }
 
 /// Scroll each note view to its tab's position, now that its blocks have their heights, and
 /// anchor the tab to the block at the top of the view.
 pub fn scroll_views(app: &mut App, dom: &mut Dom, info: &ViewInfo) {
+    // A stored scroll that no longer fits its content (a list that lost rows, a page that got
+    // shorter) would leave the box showing blank space past its end, with the thumb already at
+    // the bottom: the map keeps the same limit the bar is drawn from.
+    let stored: Vec<(String, f32)> = app
+        .scrolls
+        .iter()
+        .filter_map(|(id, &y)| {
+            let n = dom.by_id(id)?;
+            let max = dom.max_scroll(n);
+            (y > max + 0.5).then(|| (id.clone(), max))
+        })
+        .collect();
+    for (id, max) in stored {
+        if let Some(n) = dom.by_id(&id) {
+            dom.set_scroll(n, max);
+        }
+        app.scrolls.insert(id, max);
+    }
+    // The caret of the focused note, for the frame the keyboard moved it out of the view.
+    let caret = if info.scrolled.iter().any(|s| s.pane == app.pane && s.tab == app.active) {
+        caret_block(app)
+    } else {
+        None
+    };
     for s in &info.scrolled {
-        let Some(t) = app.pane_tab_mut(s.pane, s.tab) else { continue };
+        let (pane, tab) = (s.pane, s.tab);
+        let Some(t) = app.pane_tab(pane, tab) else { continue };
         if s.marks.is_empty() {
-            t.scroll_to_block(0);
+            if let Some(t) = app.pane_tab_mut(pane, tab) {
+                t.scroll_to_block(0);
+                t.caret_jump = false;
+            }
             continue;
         }
         // An anchor past the end of the note (an edit that shortened it, a saved session from a
         // longer version) would land on the last block laid out and open the note at its end,
         // with its first lines scrolled off the top. The last block is as far as it can go.
-        if t.top_block >= s.blocks {
-            t.scroll_to_block(s.blocks.saturating_sub(1));
-        }
+        let stale = t.top_block >= s.blocks;
+        let top_block = if stale { s.blocks.saturating_sub(1) } else { t.top_block };
+        let Some(t) = app.pane_tab(pane, tab) else { continue };
         let top = dom.content_rect(s.view).y;
-        // Offsets of the blocks in the view's content; the first starts at the top, margin
-        // included.
-        let pos: Vec<f32> = (0..s.marks.len())
-            .map(|k| if k == 0 { 0.0 } else { dom.nodes[s.marks[k].1].rect.y - top })
+        // Where each block of the note begins, in the note's own pixels: the room the view left
+        // for the blocks it did not build is part of the count, so this is the document's offset
+        // and not the window's. The margin above a block belongs to the note and not to its box.
+        let pos: Vec<f32> = s
+            .marks
+            .iter()
+            .map(|&(_, n)| dom.nodes[n].rect.y - dom.nodes[n].style.margin[0] - top)
             .collect();
-        let anchor = s.marks.iter().position(|&(b, _)| b >= t.top_block).unwrap_or(s.marks.len() - 1);
+        let anchor = s.marks.iter().position(|&(b, _)| b >= top_block).unwrap_or(s.marks.len() - 1);
         let max = dom.max_scroll(s.view);
         let want = pos[anchor] + t.scroll_px;
         let mut y = want;
+        let mut jumped = false;
         if s.start {
             // The first line of the note is never scrolled above the top of the view.
             y = y.max(0.0);
@@ -1584,14 +1885,55 @@ pub fn scroll_views(app: &mut App, dom: &mut Dom, info: &ViewInfo) {
         if s.end {
             y = y.min(max);
         }
+        // The keyboard moved the caret: the block it is in has to be on screen, and a count of
+        // blocks was never the way to know where that is. A block taller than the view shows from
+        // its top, which is where the first line of what the caret is on sits anyway.
+        if t.caret_jump && pane == app.pane && tab == app.active {
+            jumped = true;
+            if let Some(k) = caret.and_then(|c| caret_mark(&s.marks, c)) {
+                let (block_top, block_h) = (pos[k], dom.nodes[s.marks[k].1].rect.h);
+                let box_h = dom.content_rect(s.view).h;
+                if y > block_top || block_top + block_h > y + box_h {
+                    y = if block_h >= box_h {
+                        block_top
+                    } else {
+                        (block_top + block_h - box_h).max(0.0)
+                    };
+                }
+            }
+        }
         if y != want {
             // Ran into the start or end of the note.
-            t.scroll_pending = 0.0;
+            if let Some(t) = app.pane_tab_mut(pane, tab) {
+                t.scroll_pending = 0.0;
+            }
         }
-        dom.set_scroll(s.view, y.clamp(0.0, max));
+        let y = y.clamp(0.0, max);
+        dom.set_scroll(s.view, y);
+        // The blocks this frame laid out, at the height the layout gave them: an edit, a theme or
+        // an image that landed moves the note's own height with it without waiting for the pass.
+        let view = &dom.nodes[s.view];
+        let end_of_window = (view.content_h - view.style.padding[2] - s.below).max(0.0);
+        let mut laid_out: Vec<(usize, f32)> = Vec::with_capacity(s.marks.len());
+        for (k, &(b, _)) in s.marks.iter().enumerate() {
+            let end = pos.get(k + 1).copied().unwrap_or(end_of_window);
+            laid_out.push((b, (end - pos[k]).max(0.0)));
+        }
         let k = pos.iter().rposition(|&p| p <= y).unwrap_or(0);
-        t.top_block = s.marks[k].0;
-        t.scroll_px = y - pos[k];
+        if let Some(t) = app.pane_tab_mut(pane, tab) {
+            if stale {
+                t.scroll_to_block(top_block);
+            }
+            for (b, h) in laid_out {
+                t.extent.put(b, h);
+            }
+            t.extent.recount();
+            t.top_block = s.marks[k].0;
+            t.scroll_px = y - pos[k];
+            if jumped {
+                t.caret_jump = false;
+            }
+        }
     }
     // The AI conversation follows the answer as it streams in.
     if app.ai.scroll_to_end {

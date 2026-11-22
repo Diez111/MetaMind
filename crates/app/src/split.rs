@@ -517,6 +517,12 @@ impl App {
         }
     }
 
+    /// Tab `tab` of pane `i`, if both still exist: a frame can outlive the pane a note was in.
+    pub(crate) fn pane_tab(&self, i: usize, tab: usize) -> Option<&Tab> {
+        let tabs = if i == self.pane { &self.tabs } else { &self.panes.get(i)?.tabs };
+        tabs.get(tab)
+    }
+
     pub(crate) fn pane_tab_mut(&mut self, i: usize, tab: usize) -> Option<&mut Tab> {
         let tabs = if i == self.pane { &mut self.tabs } else { &mut self.panes.get_mut(i)?.tabs };
         tabs.get_mut(tab)

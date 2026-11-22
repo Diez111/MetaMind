@@ -387,6 +387,12 @@ pub struct Tab {
     pub vim: Option<editor_core::vim::Vim>,
     /// Pinned tabs survive "close" commands until unpinned.
     pub pinned: bool,
+    /// Where every block of the note starts, measured a batch at a time: the scroll limit and the
+    /// scrollbar describe the whole document, not the window of blocks the view lays out.
+    pub extent: crate::view::Extent,
+    /// The keyboard just moved the caret out of the view: the next layout puts the block it is in
+    /// on screen, at the exact line, instead of trusting a guess in blocks.
+    pub caret_jump: bool,
 }
 
 impl Tab {
@@ -439,6 +445,8 @@ impl Tab {
             hidden_dirty: false,
             vim: vim.then(Default::default),
             pinned: false,
+            extent: Default::default(),
+            caret_jump: false,
         }
     }
 }
@@ -567,6 +575,9 @@ pub struct App {
     pub quit: bool,
     /// Scroll offsets of scrollable panes, by element id.
     pub scrolls: HashMap<String, f32>,
+    /// Width the note column of each (pane, tab) had in the last frame that drew it. The heights
+    /// of the blocks depend on it, so the measuring pass needs the same number.
+    pub note_widths: HashMap<(usize, usize), f32>,
     pub(crate) fuzzy: Fuzzy,
     recovery: Recovery,
     pub plugins: crate::plugins::PluginState,
@@ -976,6 +987,7 @@ impl App {
             screenshot: false,
             quit: false,
             scrolls: HashMap::new(),
+            note_widths: HashMap::new(),
             fuzzy: Fuzzy::new(),
             plugins: Default::default(),
             hover_action: None,
@@ -2644,7 +2656,12 @@ impl App {
             t.scroll_to_block(block);
         } else if block > t.top_block + 18 {
             t.scroll_to_block(block - 18);
+        } else {
+            return;
         }
+        // The anchor is a coarse guess (a block is not a screen): the layout is what knows how
+        // tall the blocks above the caret are, so it is the one that brings the caret into view.
+        t.caret_jump = true;
     }
 
     /// Scroll the focused editor by `lines` wheel lines.
