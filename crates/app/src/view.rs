@@ -2252,7 +2252,54 @@ fn embeds(
             }
         } else {
             // Video, audio and anything else this build does not decode: a card that names the
-            // file and hands it to the system player, instead of a line of raw English.
+            // file. A video also shows its own first frame when that frame is already decoded (or
+            // can be): a black box told the reader nothing.
+            let stamp = app.store.index.get(rel).map(|f| (f.mtime, f.size));
+            let poster = stamp.and_then(|st| app.posters.image(rel, st));
+            if poster.is_none() {
+                if let (Some(st), true) = (stamp, crate::posters::wanted(app.compact)) {
+                    let path = app.store.index.get(rel).map(|f| app.store.abs(&f.path));
+                    if let Some(path) = path {
+                        // The tree is built with a shared borrow: the request waits its turn.
+                        app.poster_queue.borrow_mut().push((path, rel.to_string(), st));
+                    }
+                }
+            }
+            if let Some(img) = poster {
+                // The engine gives an image the box it is put in: the poster keeps its own shape,
+                // shrunk to what the window can show, so a video is never a stretched frame.
+                let (iw, ih) = (img.0.width() as f32, img.0.height() as f32);
+                let max_w = (app.window_w - 320.0).max(200.0);
+                let k = (max_w / iw).min(1.0);
+                // A column, not an overlay: the engine has no z-index and does not resolve
+                // `position: relative`, so a poster with controls floating over it ends up
+                // painted at the window's corner. The frame on top and its row under it.
+                // The frame is the note's own image node, the one the engine already paints for
+                // `![[foto.png]]`: no extra parent, no absolute positioning.
+                dom.add(
+                    view,
+                    El::div()
+                        .class("image-embed media-card-poster")
+                        .style(&format!("width: {:.0}px; height: {:.0}px", iw * k, ih * k))
+                        .image(img),
+                );
+                let card = dom.add(view, El::div().class("media-card has-poster"));
+                let row = dom.add(card, El::div().class("media-card-row"));
+                let play = dom.add(row, El::div().class("media-card-play").action(format!(
+                    "video:open:{source}|{rel}"
+                )));
+                dom.add(play, icons::el("play").class("media-card-play-icon"));
+                let body = dom.add(row, El::div().class("media-card-body"));
+                dom.add(body, El::div().class("media-card-title").text(path::file_name(rel)));
+                dom.add(
+                    body,
+                    El::div()
+                        .class("media-card-action")
+                        .text("Reproducir en MetMind")
+                        .action(format!("video:open:{source}|{rel}")),
+                );
+                continue;
+            }
             let card = dom.add(view, El::div().class("media-card"));
             let icon = dom.add(card, El::div().class("media-card-icon"));
             dom.add(icon, icons::el("play"));

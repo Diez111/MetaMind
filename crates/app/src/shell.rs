@@ -594,6 +594,11 @@ pub struct App {
     pub ai_models: crate::ai::ModelList,
     /// The dashboard: the last week of daily notes, read once per vault revision.
     pub dash: crate::dashboard::Cache,
+    /// First frames of the videos in the notes, decoded once each and kept within a budget.
+    pub posters: crate::posters::Posters,
+    /// Posters the frame asked for: the tree is built with a shared borrow, so the requests are
+    /// drained right after it, before the next frame.
+    pub poster_queue: std::cell::RefCell<Vec<crate::posters::PosterRequest>>,
     /// UI scale factor (window scale).
     pub scale: f32,
     pub video_waker: Option<Box<dyn Fn() + Send>>,
@@ -896,6 +901,8 @@ impl App {
             ai: Default::default(),
             ai_models: Default::default(),
             dash: Default::default(),
+            posters: Default::default(),
+            poster_queue: Default::default(),
             scale: 1.0,
             video_waker: None,
             recovery: Recovery::new(root),

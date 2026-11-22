@@ -353,6 +353,12 @@ fn read_frames(
 
 /// A pixmap from raw RGBA rows. `ffmpeg` writes opaque frames; alpha is premultiplied only when
 /// the frame actually has some, as the rasterizer expects.
+/// A decoded RGBA frame as an image. Shared with the poster cache, which decodes one frame of a
+/// video to show it behind the play button.
+pub fn poster_pixmap(src: &[u8], w: u32, h: u32) -> Option<Image> {
+    rgba_image(src, w, h)
+}
+
 fn rgba_image(src: &[u8], w: u32, h: u32) -> Option<Image> {
     let mut pm = metamind_ui::Pixmap::new(w, h)?;
     let dst = pm.data_mut();

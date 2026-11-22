@@ -27,6 +27,7 @@ pub mod ospref;
 pub mod panes;
 pub mod pdf;
 pub mod plugins;
+pub mod posters;
 pub mod popover;
 pub mod properties;
 pub mod recent;
@@ -106,7 +107,17 @@ pub fn render_window(
     // when the notes or the day actually changed.
     let rev = crate::dataview::revision(app);
     app.dash.refresh(&app.store, rev);
+    // Posters decode off the drawing thread; while one is in flight the loop keeps drawing so the
+    // card shows the frame as soon as it lands.
+    if app.posters.poll() || app.posters.busy() {
+        app.anims.start("poster", 500.0);
+    }
     let (mut dom, info) = view::build(app, pixmap.height() as f32 / scale, solo);
+    // What the frame asked for is asked now, outside the immutable borrow the tree is built with.
+    let wanted: Vec<_> = app.poster_queue.borrow_mut().drain(..).collect();
+    for (path, rel, stamp) in wanted {
+        app.posters.request(path, rel, stamp);
+    }
     let env = app.env();
     dom.style(&app.theme, env);
     dom.scrollbar_thumb = scrollbar_thumb(&dom);
