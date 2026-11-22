@@ -11,11 +11,20 @@ pub const SLOW_MS: f32 = 200.0;
 pub struct Anims {
     pub enabled: bool,
     clocks: HashMap<&'static str, (Instant, f32)>,
+    /// Set by [`Anims::settle`]: every animation reads as finished (see `t`).
+    settled: bool,
 }
 
 impl Anims {
     /// Start (or restart) an animation that runs for `ms` milliseconds.
+    /// Ends every animation where it is going. A test that measures the final layout asks for the
+    /// layout, not for a frame caught halfway through an animation (the clocks are wall time).
+    pub fn settle(&mut self) {
+        self.settled = true;
+    }
+
     pub fn start(&mut self, name: &'static str, ms: f32) {
+        self.settled = false;
         if self.enabled {
             self.clocks.insert(name, (Instant::now(), ms));
         }
@@ -23,6 +32,9 @@ impl Anims {
 
     /// Eased progress from 0 to 1. An animation that is not running reads as finished.
     pub fn t(&self, name: &str) -> f32 {
+        if self.settled {
+            return 1.0;
+        }
         let Some((start, ms)) = self.clocks.get(name) else { return 1.0 };
         let x = (start.elapsed().as_secs_f32() * 1000.0 / ms).clamp(0.0, 1.0);
         // Ease-out cubic.
@@ -157,6 +169,9 @@ impl crate::App {
         }
         if now.ai_sheet && !old.ai_sheet {
             // The sheet slides in from the right, on the same clock as the sidebars it replaces.
+            self.anims.start("ai-sheet", SLOW_MS);
+        } else if !now.ai_sheet && old.ai_sheet {
+            // And back out: the same clock runs with the sheet drawn until it leaves.
             self.anims.start("ai-sheet", SLOW_MS);
         }
         if now.hover && !old.hover {

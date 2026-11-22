@@ -176,6 +176,8 @@ pub struct SettingsUi {
     pub nav: Option<usize>,
     /// The profile whose form Ajustes → IA shows; `None` means the active one.
     pub ai_edit: Option<usize>,
+    /// In a phone-sized panel, whether the page is in front (the list of categories behind it).
+    pub page: bool,
     /// The open dropdown: which control it belongs to, its options and the highlighted one.
     pub menu: Option<SettingsMenu>,
 }
@@ -323,6 +325,7 @@ impl SettingsUi {
             plugin: None,
             nav: None,
             ai_edit: None,
+            page: false,
             menu: None,
         };
         s.scan(app);
@@ -815,6 +818,12 @@ impl App {
         }
         match op {
             "close" => self.settings = None,
+            "back" => {
+                if let Some(s) = &mut self.settings {
+                    s.page = false;
+                    s.search.clear();
+                }
+            }
             "section" | "badge" => {
                 // The count on the Plugins nav item opens that page too, so the badge is a
                 // shortcut with a hint rather than a number nobody can place.
@@ -829,6 +838,7 @@ impl App {
                         s.capture = None;
                         s.plugin = None;
                         s.nav = at;
+                        s.page = true;
                     }
                     self.scrolls.remove("settings-content");
                 }
@@ -1664,6 +1674,41 @@ fn theme_swatches(dom: &mut Dom, ctl: NodeId, current: &str) {
     }
 }
 
+/// The categories of the panel, as the column that lists them or as the only screen a
+/// phone-sized window shows at first.
+fn category_list(app: &App, dom: &mut Dom, tabs: NodeId, ui: &SettingsUi) {
+    dom.add(tabs, El::div().class("vertical-tab-header-group-title").text("Categorías"));
+    for (i, (sec, slug, name, desc, icon)) in SECTIONS.iter().enumerate() {
+        let item = dom.add(
+            tabs,
+            El::div()
+                .class("vertical-tab-nav-item")
+                .class_if(*sec == ui.section, "is-active")
+                .class_if(ui.nav == Some(i), "is-focused")
+                .action(format!("settings:section:{slug}")),
+        );
+        dom.add(item, icons::el(icon).class("vertical-tab-nav-icon"));
+        let text = dom.add(item, El::div().class("vertical-tab-nav-text"));
+        dom.add(text, El::div().class("vertical-tab-nav-label").text(*name));
+        // The line under the name is for the roomy single screen only; the column would cut it.
+        dom.add(text, El::div().class("vertical-tab-nav-desc").text(*desc));
+        if *sec == Section::Plugins {
+            let n = app.plugin_registry().enabled_count();
+            dom.add(
+                item,
+                El::div()
+                    .class("vertical-tab-nav-badge")
+                    .text(n.to_string())
+                    .action(format!("settings:badge:{n}")),
+            );
+        }
+        if ui.nav == Some(i) {
+            dom.nodes[item].focus = true;
+        }
+    }
+    dom.add(tabs, El::div().class("settings-nav-note").text("Los cambios se guardan al instante."));
+}
+
 /// The rows of a section. `previews` is what the panel shows and a row of search results does
 /// not: the scheme as three previews instead of a dropdown that names it.
 fn items_view(
@@ -2350,11 +2395,17 @@ pub fn modal(app: &App, dom: &mut Dom) {
     if t < 1.0 {
         style.push_str(&format!("margin-top: {:.1}px; ", 14.0 * (1.0 - t)));
     }
+    let single = app.window_w < crate::view::SETTINGS_SINGLE_W;
     let modal = El::div().class("modal mod-settings").style(&style).action("settings:noop");
     let backdrop = dom.add(0, backdrop);
     let modal = dom.add(backdrop, modal);
 
     let bar = dom.add(modal, El::div().class("settings-topbar"));
+    if single && ui.page {
+        let back = dom.add(bar, El::div().class("settings-back").action("settings:back"));
+        dom.nodes[back].el.attrs.push(("aria-label".into(), "Volver a las categorías".into()));
+        dom.add(back, icons::el("chevron-right").class("settings-back-icon"));
+    }
     dom.add(bar, El::div().class("settings-topbar-title").text("Ajustes"));
     let search_box = dom.add(bar, El::div().class("settings-search"));
     dom.add(search_box, icons::el("search").class("settings-search-icon"));
@@ -2374,36 +2425,19 @@ pub fn modal(app: &App, dom: &mut Dom) {
     dom.add(close, icons::el("x"));
 
     let body = dom.add(modal, El::div().class("settings-body"));
-    let tabs = dom.add(body, El::div().class("vertical-tab-header"));
-    dom.add(tabs, El::div().class("vertical-tab-header-group-title").text("Categorías"));
-    for (i, (sec, slug, name, _, icon)) in SECTIONS.iter().enumerate() {
-        let item = dom.add(
-            tabs,
-            El::div()
-                .class("vertical-tab-nav-item")
-                .class_if(*sec == ui.section, "is-active")
-                .class_if(ui.nav == Some(i), "is-focused")
-                .action(format!("settings:section:{slug}")),
-        );
-        dom.add(item, icons::el(icon).class("vertical-tab-nav-icon"));
-        dom.add(item, El::div().class("vertical-tab-nav-label").text(*name));
-        if *sec == Section::Plugins {
-            let n = app.plugin_registry().enabled_count();
-            // Its own action, so hovering the badge explains the number in the status bar
-            // instead of leaving it as a mark with no meaning; it opens the same page.
-            dom.add(
-                item,
-                El::div()
-                    .class("vertical-tab-nav-badge")
-                    .text(n.to_string())
-                    .action(format!("settings:badge:{n}")),
-            );
-        }
-        if ui.nav == Some(i) {
-            dom.nodes[item].focus = true;
-        }
+    // A phone-sized panel shows the list, or the page with the list behind it.
+    let page_open = ui.page || !ui.search.trim().is_empty();
+    if !single {
+        // Two columns: the list beside the page.
+        let tabs = dom.add(body, El::div().class("vertical-tab-header"));
+        category_list(app, dom, tabs, ui);
+    } else if !page_open {
+        // One screen: the list, alone.
+        let tabs = dom.add(body, El::div().class("vertical-tab-header is-single"));
+        category_list(app, dom, tabs, ui);
+        let _ = TrashMode::Vault;
+        return;
     }
-    dom.add(tabs, El::div().class("settings-nav-note").text("Los cambios se guardan al instante."));
 
     let container = dom.add(body, El::div().class("vertical-tab-content-container"));
     let needle = search.trim().to_lowercase();

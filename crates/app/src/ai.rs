@@ -1060,7 +1060,10 @@ impl App {
             }
         };
         let profile = self.ai_config().active_profile().clone();
-        self.right_open = true;
+        // The same way in as `ai:open`: in a compact window the sheet makes room by closing the
+        // other sidebar, and the navigation marks the destination the reader lands on.
+        self.nav_go(3.0);
+        self.show_side(false);
         self.right_panel = RightPanel::Ai;
         self.ai.send(&profile, &context, &question);
         if let Some(e) = &self.ai.error {

@@ -97,8 +97,11 @@ pub fn render_window(
     app.window_w = pixmap.width() as f32 / scale;
     app.window_h = pixmap.height() as f32 / scale;
     // The sidebars follow the window shape: they close when it turns compact and come back when
-    // it grows again.
-    app.sync_compact();
+    // it grows again. A pop-out is its own window, on a shape of its own: its width says nothing
+    // about the window that holds the sidebars, so it does not steer the shell.
+    if solo.is_none() {
+        app.sync_compact();
+    }
     // The dashboard reads the vault: refresh it once per frame, before the tree is built, and only
     // when the notes or the day actually changed.
     let rev = crate::dataview::revision(app);
@@ -296,17 +299,14 @@ impl App {
             }
             return self.run(&action);
         }
-        // The copilot covers the workspace in a compact window, so a press on its blank space is
-        // the panel's: it is not a caret in the note the sheet hides, nor a pan of a graph behind
-        // it, and it does not take the keyboard away from the question being written. The
-        // controls of the sheet answered through their actions above.
-        if self.ai_sheet()
-            && frame
-                .dom
-                .nodes
-                .iter()
-                .any(|n| n.el.classes.iter().any(|c| c == "ai-sheet") && n.rect.contains(x, y))
-        {
+        // The copilot sheet and the ⋮ menu cover the workspace in a compact window, so a press on
+        // their blank space is theirs: it is not a caret in the note they hide, nor a pan of a
+        // graph behind it, and it does not take the keyboard away from the field being written.
+        // The controls inside them answered through their actions above. A sheet still sliding out
+        // is drawn and still covers what it hides.
+        if frame.dom.nodes.iter().any(|n| {
+            n.el.classes.iter().any(|c| c == "ai-sheet" || c == "more-sheet") && n.rect.contains(x, y)
+        }) {
             return;
         }
         self.graph_end_edit();

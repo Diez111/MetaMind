@@ -698,6 +698,26 @@ pub(crate) fn load_theme(config: &VaultConfig) -> Theme {
     theme
 }
 
+/// Keys that edit text or move the caret in a field. A sheet in front of the note takes them for
+/// its own field instead of letting them reach the note underneath.
+fn edits_text(key: &str) -> bool {
+    matches!(
+        key,
+        "Enter"
+            | "Backspace"
+            | "Delete"
+            | "Tab"
+            | "Home"
+            | "End"
+            | "ArrowLeft"
+            | "ArrowRight"
+            | "ArrowUp"
+            | "ArrowDown"
+            | "PageUp"
+            | "PageDown"
+    )
+}
+
 /// Hue in degrees, saturation and lightness in percent.
 fn hsl(c: theme_engine::Color) -> (f32, f32, f32) {
     let [r, g, b] = [c.r, c.g, c.b].map(|v| f32::from(v) / 255.0);
@@ -779,9 +799,14 @@ impl App {
             self.compact_restore = Some((self.left_open, self.right_open));
             self.left_open = false;
             self.right_open = false;
-        } else if let Some((left, right)) = self.compact_restore.take() {
-            self.left_open = left;
-            self.right_open = right;
+        } else {
+            // The ⋮ menu hangs from the bottom navigation, which only a compact window has: left
+            // open, it would keep the keyboard and the clicks with nothing on screen to close.
+            self.more_open = false;
+            if let Some((left, right)) = self.compact_restore.take() {
+                self.left_open = left;
+                self.right_open = right;
+            }
         }
     }
 
@@ -815,6 +840,18 @@ impl App {
     /// column: only a compact window does that, and only while the right sidebar shows it.
     pub fn ai_sheet(&self) -> bool {
         self.compact && self.right_open && self.right_panel == RightPanel::Ai
+    }
+
+    /// The ⋮ menu is a sheet of the same kind, and only a compact window draws it: the flag alone
+    /// must not take the keyboard in a window that has no navigation to hang the list from.
+    pub fn more_sheet(&self) -> bool {
+        self.compact && self.more_open
+    }
+
+    /// Whether the copilot sheet is on screen: open, or still sliding back out after it was
+    /// closed. It comes in from the right, and it leaves the same way.
+    pub fn sheet_drawn(&self) -> bool {
+        self.ai_sheet() || (self.compact && self.anims.t("ai-sheet") < 1.0)
     }
 
     pub fn open(root: &Path) -> io::Result<App> {
@@ -1594,6 +1631,9 @@ impl App {
     }
 
     pub(crate) fn open_prompt(&mut self, kind: PromptKind) {
+        // The palette takes the keyboard: a field that was being written keeps its text and stops
+        // taking the keys, so what is typed next reaches the palette.
+        self.ai.editing = false;
         self.prompt = Some(Prompt {
             kind,
             target: String::new(),
@@ -1661,6 +1701,12 @@ impl App {
     /// Run a command by id. Some take an argument after a colon (`open:path`).
     pub fn run(&mut self, command: &str) {
         let now = fsio::now_ms();
+        // A command fired while the ⋮ menu is open belongs to the menu: the list goes first, so
+        // what the command opens is not painted under it. The menu's own commands are the ones
+        // that drive it.
+        if self.more_open && !command.starts_with("more:") {
+            self.more_open = false;
+        }
         if let Some(name) = self.disabled_by(command) {
             self.notice = Some(format!("{name} está desactivado en Ajustes → Plugins"));
             return;
@@ -2099,7 +2145,12 @@ impl App {
                     None => self.notice = Some(format!("No encontré la nota «{name}»")),
                 }
             }
-            "more:open" => self.more_open = true,
+            "more:open" => {
+                // The list covers the note and anything floating over it, so it takes the keyboard
+                // as well: a field behind it keeps its text and stops taking the keys.
+                self.more_open = true;
+                self.ai.editing = false;
+            }
             "more:close" => self.more_open = false,
             // A row of the menu names a command: running it closes the menu behind it.
             c if c.starts_with("more:run:") => {
@@ -2301,10 +2352,26 @@ impl App {
             self.set_video_fullscreen(false);
             return true;
         }
+        // The ⋮ menu is a sheet too: Escape closes it, and a plain key stays with the list instead
+        // of editing the note it hides. Ctrl and Alt go on to the shortcuts.
+        if self.more_sheet() && !key.ctrl && !key.alt {
+            if key.key == "Escape" {
+                self.run("more:close");
+            }
+            return true;
+        }
         // The copilot sheet covers the workspace: Escape gives the note back. The input takes the
         // first press to stop editing, so this one is the second, or one with no field in front.
-        if self.ai_sheet() && key.key == "Escape" {
+        // With the palette over the sheet, Escape is the palette's: it is the one on top.
+        if self.ai_sheet() && self.prompt.is_none() && key.key == "Escape" {
             self.run("ai:close");
+            return true;
+        }
+        // A key that would edit text belongs to the question, never to the note the sheet hides:
+        // it gives the field back its caret, which is what a typed letter does.
+        if self.ai_sheet() && !key.ctrl && !key.alt && edits_text(&key.key) {
+            self.ai.editing = true;
+            self.suggest = None;
             return true;
         }
         // Only set while the editor has focus; see `after_editor_input`.
@@ -2496,6 +2563,10 @@ impl App {
         }
         self.menu = None;
         if self.modal_text(text) {
+            return;
+        }
+        // The ⋮ menu covers the note: a letter is not an edit of a note nobody can see.
+        if self.more_sheet() {
             return;
         }
         let now = fsio::now_ms();

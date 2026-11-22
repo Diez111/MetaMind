@@ -297,6 +297,8 @@ fn no_text_is_cut_and_nothing_leaves_the_window() {
     let mut failures: Vec<String> = Vec::new();
     let check =
         |app: &mut App, fonts: &mut Fonts, label: &str, w: u32, h: u32, failures: &mut Vec<String>| {
+            // The final geometry, not a frame on the way to it: the animation clocks are wall time.
+            app.anims.settle();
             let f = frame(app, fonts, w, h);
             for line in cut_nodes(&f, fonts, w as f32, h as f32) {
                 failures.push(format!("{label} {w}x{h}: {line}"));
@@ -726,7 +728,10 @@ fn the_bottom_navigation_belongs_to_a_compact_window() {
     let d = f.dom.nodes[dot].rect;
     assert!(d.x >= -0.5 && d.x + d.w <= 360.5, "the indicator stays inside the bar: {d:?}");
     // It is under the second destination: the one in force.
-    assert!(d.x > slots[1].x && d.x + d.w < slots[1].x + slots[1].w, "the indicator marks what opened: {d:?}");
+    assert!(
+        d.x > slots[1].x && d.x + d.w < slots[1].x + slots[1].w,
+        "the indicator marks what opened: {d:?}"
+    );
 
     // Moving to another destination slides the indicator, and a reader who asked for reduced
     // motion gets it in place on the first frame.
@@ -791,4 +796,135 @@ fn the_bottom_navigation_belongs_to_a_compact_window() {
     // A window with room keeps the ribbon and has no bottom navigation.
     let f = frame(&mut app, &mut fonts, 1366, 768);
     assert!(all(&f, "bottom-nav").is_empty(), "the desktop is untouched");
+}
+
+/// A sheet in front of the note is a modal for the whole keyboard, not only for the letters: a
+/// key that would edit text or move the caret gives the field back its caret instead of
+/// reaching the note the reader cannot see.
+#[test]
+fn the_copilot_sheet_takes_the_editing_keys_from_the_note_behind_it() {
+    let d = vault();
+    let mut fonts = Fonts::new();
+    let mut app = open(&d);
+    let _ = frame(&mut app, &mut fonts, 360, 640);
+    // `ai:open` opens the sheet without putting the caret in the field: the keys that follow are
+    // exactly the case a reader hits when a shortcut opened the panel.
+    app.run("ai:open");
+    let _ = frame(&mut app, &mut fonts, 360, 640);
+    assert!(app.ai_sheet());
+    assert!(!app.ai.editing, "the shortcut leaves no caret in the field");
+    let text = app.tab().unwrap().editor.buf.text();
+    let caret = app.tab().unwrap().editor.buf.sels[0];
+    for name in [
+        "Enter",
+        "Backspace",
+        "Delete",
+        "Tab",
+        "Home",
+        "End",
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "PageDown",
+    ] {
+        app.ai.editing = false;
+        app.key(Key::parse(name).unwrap());
+        assert_eq!(app.tab().unwrap().editor.buf.text(), text, "{name} does not reach the note");
+        assert_eq!(app.tab().unwrap().editor.buf.sels[0], caret, "{name} does not move the caret");
+        assert!(app.ai.editing, "{name} gives the field the caret, like a typed letter");
+    }
+
+    // The palette opens over the sheet, so it is the palette the keyboard speaks to, and Escape
+    // closes the one on top.
+    app.run("command-palette:open");
+    app.text_input("a");
+    assert!(!app.ai.input.contains('a'), "typing reaches the palette, not the question: {:?}", app.ai.input);
+    app.key(Key::parse("Escape").unwrap());
+    assert!(app.ai_sheet(), "Escape closes the palette, not the sheet under it");
+    app.key(Key::parse("Escape").unwrap());
+    assert!(!app.ai_sheet(), "the next one closes the sheet");
+    assert_eq!(app.tab().unwrap().editor.buf.text(), text, "the note is as it was");
+}
+
+/// The ⋮ menu is a sheet of the same kind: a plain key stays with the list, a press on its blank
+/// space is not a caret in the note nor a pan of a graph behind it, Escape closes it, and a
+/// command fired while it is open closes it first.
+#[test]
+fn the_menu_sheet_owns_its_keys_and_its_blank_space() {
+    let d = vault();
+    let mut fonts = Fonts::new();
+    let mut app = open(&d);
+    let _ = frame(&mut app, &mut fonts, 360, 640);
+    app.run("more:open");
+    let _ = frame(&mut app, &mut fonts, 360, 640);
+    let text = app.tab().unwrap().editor.buf.text();
+    let caret = app.tab().unwrap().editor.buf.sels[0];
+    app.key(Key::parse("Backspace").unwrap());
+    app.key(Key::parse("Enter").unwrap());
+    app.text_input("z");
+    assert_eq!(app.tab().unwrap().editor.buf.text(), text, "the note behind the list keeps its text");
+    assert_eq!(app.tab().unwrap().editor.buf.sels[0], caret, "and its caret");
+    assert!(app.more_open, "the list is still open: it had nothing to delete");
+
+    app.key(Key::parse("Escape").unwrap());
+    assert!(!app.more_open, "Escape closes the menu");
+
+    // The blank space of the list is the list's: the field being written keeps the keyboard.
+    app.run("more:open");
+    let f = frame(&mut app, &mut fonts, 360, 640);
+    let menu = f.dom.nodes[classed(&f, "more-sheet").expect("the menu")].rect;
+    app.ai.editing = true;
+    app.click(&f, &mut fonts, menu.x + 3.0, menu.y + menu.h / 2.0, false);
+    assert!(app.ai.editing, "the press does not take the keyboard from the field");
+
+    // A destination of the bottom navigation, a command from the palette, or a row of the list:
+    // anything fired while the list is open closes it, so what it opens is not painted under it.
+    app.run("more:open");
+    app.run("app:open-settings");
+    assert!(!app.more_open, "a command closes the list it was fired under");
+    assert!(app.settings.is_some());
+    app.run("settings:close");
+    app.run("more:open");
+    app.run("file-explorer:open");
+    assert!(!app.more_open && app.left_open, "so does a destination of the bar");
+}
+
+/// One destination is in force and it is the one on top: the settings panel over the sheet marks
+/// Ajustes, and the sheet under it is not marked a second time.
+#[test]
+fn the_bar_marks_only_the_destination_the_reader_sees() {
+    let d = vault();
+    let mut fonts = Fonts::new();
+    let mut app = open(&d);
+    let _ = frame(&mut app, &mut fonts, 360, 640);
+    let marked = |f: &Frame| -> Vec<String> {
+        f.dom
+            .nodes
+            .iter()
+            .filter(|n| {
+                n.el.classes.iter().any(|c| c == "bottom-nav-item")
+                    && n.el.classes.iter().any(|c| c == "is-active")
+            })
+            .filter_map(|n| {
+                n.children.last().copied().and_then(|l| f.dom.nodes.get(l)).and_then(|l| l.el.text.clone())
+            })
+            .collect()
+    };
+    // The settings panel is painted over the sheet, so Ajustes is the one destination in force.
+    app.run("ai:open");
+    app.run("app:open-settings");
+    let f = frame(&mut app, &mut fonts, 360, 640);
+    assert_eq!(marked(&f), ["Ajustes"], "one destination, and it is the panel on top");
+
+    // The calendar is a panel of the left sidebar: asking for it closes the sheet it would open
+    // behind, so the reader sees the calendar and one destination in force.
+    app.run("settings:close");
+    app.run("ai:open");
+    assert!(app.ai_sheet());
+    app.run("calendar:open");
+    assert!(!app.ai_sheet(), "the calendar opens over the note, not behind the sheet");
+    assert!(app.left_open && app.panel == Panel::Calendar, "the calendar is the panel open");
+    let f = frame(&mut app, &mut fonts, 360, 640);
+    assert_eq!(marked(&f), ["Calendario"], "the destination the reader lands on is the one marked");
+    assert!(classed(&f, "ai-sheet").is_none(), "the sheet is not drawn over it");
 }

@@ -566,8 +566,7 @@ pub fn toggle_task_line(text: &str, day: Day, title: &str) -> Option<String> {
 
 /// Whether the task `title` on `day` is already checked in `text`.
 fn task_done(text: &str, day: Day, title: &str) -> bool {
-    text.lines()
-        .any(|line| task_line(line).is_some_and(|(d, t)| d == day && t == title) && line_done(line))
+    text.lines().any(|line| task_line(line).is_some_and(|(d, t)| d == day && t == title) && line_done(line))
 }
 
 /// Whether a task line is checked.
@@ -789,15 +788,16 @@ impl crate::shell::App {
             "calendar:open" => {
                 // The bottom navigation of a compact window follows the destination.
                 self.nav_go(2.0);
-                self.sidebar_asked = true;
-                self.left_open = true;
+                // Through `show_side`: a floating sidebar makes room for the one asked for, so the
+                // calendar is not opened behind a copilot sheet that covers it.
+                self.show_side(true);
                 self.panel = crate::shell::Panel::Calendar;
                 self.focus = crate::shell::Focus::Calendar;
                 self.calendar.mark_dirty();
                 self.calendar.maybe_fetch(&root, &url);
             }
             "calendar:refresh" | "cal:refresh" => {
-                self.left_open = true;
+                self.show_side(true);
                 self.panel = crate::shell::Panel::Calendar;
                 self.calendar.refresh(&root, &url);
             }
@@ -988,10 +988,11 @@ fn day_panel(app: &crate::shell::App, dom: &mut Dom, parent: NodeId, today: Day,
                 .is_some_and(|t| t.done);
             let check = dom.add(
                 line,
-                El::div()
-                    .class("calendar-task-check")
-                    .class_if(done, "is-done")
-                    .action(format!("cal:done:{}:{}", day.index(), at)),
+                El::div().class("calendar-task-check").class_if(done, "is-done").action(format!(
+                    "cal:done:{}:{}",
+                    day.index(),
+                    at
+                )),
             );
             dom.add(check, icons::el("check").class("calendar-task-check-mark"));
         }
@@ -1061,7 +1062,8 @@ mod task_tests {
 
     #[test]
     fn a_task_line_is_flipped_and_the_rest_of_the_note_is_untouched() {
-        let text = "---\ntipo: diario\n---\n\n- [ ] Comprar pan @{2026-11-22}\n- [ ] Otra cosa @{2026-11-23}\n";
+        let text =
+            "---\ntipo: diario\n---\n\n- [ ] Comprar pan @{2026-11-22}\n- [ ] Otra cosa @{2026-11-23}\n";
         let next = toggle_task_line(text, day(), "Comprar pan").expect("the task is there");
         assert!(next.contains("- [x] Comprar pan"), "{next}");
         assert!(next.contains("- [ ] Otra cosa"), "the other task keeps its box");

@@ -96,7 +96,7 @@ body {
 .side-dock-ribbon-spacer { flex-grow: 1 }
 .nav-buttons-container { display: flex; justify-content: center; gap: 4px; padding: 6px 8px }
 .tree-item-self.is-unresolved { color: var(--text-faint) }
-.workspace-ribbon.is-hidden, .view-header.is-hidden { display: none }
+.workspace-ribbon.is-hidden, .view-header.is-hidden, .status-bar.is-hidden { display: none }
 .graph-input.backlinks-filter { margin: 0 8px 6px 8px; flex-grow: 0 }
 .search-result-file-match.is-wrapped { white-space: normal }
 .sidebar-tab-header { display: flex; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--background-modifier-border) }
@@ -461,7 +461,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .vertical-tab-nav-icon { width: 15px; height: 15px; flex-shrink: 0; color: var(--text-faint) }
 .vertical-tab-nav-item.is-active .vertical-tab-nav-icon { color: var(--text-accent) }
 .vertical-tab-nav-label { flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-.vertical-tab-nav-badge { color: var(--text-faint); font-size: 11px; padding: 0 6px; border-radius: 999px; background-color: var(--rs-pill) }
+.vertical-tab-nav-badge { flex-shrink: 0; color: var(--text-faint); font-size: 11px; padding: 0 6px; border-radius: 999px; background-color: var(--rs-pill) }
 .vertical-tab-nav-item.is-active .vertical-tab-nav-badge { color: var(--text-accent); background-color: var(--background-primary) }
 .settings-nav-note { margin-top: auto; padding: 10px 10px 4px 10px; color: var(--text-faint); font-size: var(--font-ui-smaller); line-height: 1.45 }
 .vertical-tab-content-container { flex-grow: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background-color: var(--background-primary) }
@@ -932,8 +932,12 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
    layout is untouched. */
 .bottom-nav { display: flex; align-items: stretch; flex-shrink: 0; background-color: var(--background-secondary); border-top: 1px solid var(--background-modifier-border) }
 .bottom-nav-item { flex-grow: 1; flex-basis: 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding-bottom: 4px; color: var(--text-muted); cursor: pointer }
-.bottom-nav-item:hover { color: var(--text-normal) }
+.bottom-nav-item:hover { color: var(--text-normal); background-color: var(--background-modifier-hover) }
 .bottom-nav-item.is-active { color: var(--text-accent) }
+/* On a light background the accent as it is reads at about 1.5:1 when the theme is luminous (a
+   teal at 55% lightness on the bar is a whisper). The label and the name of the destination in
+   force darken with the accent instead: a tint of the same hue, not a fixed colour. */
+.theme-light .bottom-nav-item.is-active { color: hsl(var(--accent-h), var(--accent-s), calc(var(--accent-l) - 18%)) }
 .bottom-nav-icon { width: 20px; height: 20px; flex-shrink: 0 }
 /* The label takes the slot's width: a child of a centred column flex with only a max-width
    measured to zero and painted nothing. */
@@ -945,10 +949,10 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .more-sheet { position: absolute; display: flex; flex-direction: column; background-color: var(--background-primary) }
 .more-sheet-header { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background-color: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border) }
 .more-sheet-mark { width: 16px; height: 16px; flex-shrink: 0; color: var(--interactive-accent); display: flex; align-items: center; justify-content: center }
-.more-sheet-title { flex-grow: 1; min-width: 0; font-size: 14px; font-weight: 600; color: var(--text-normal); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.more-sheet-title { flex-grow: 1; min-width: 0; font-size: var(--font-ui-small); font-weight: 600; color: var(--text-normal); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .more-list { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; overflow-y: auto; padding: 6px 8px 10px 8px }
 .more-group { padding: 10px 8px 4px 8px; font-size: 11px; font-weight: 600; color: var(--text-faint) }
-.more-row { display: flex; align-items: center; gap: 12px; padding: 11px 10px; border-radius: var(--radius-s); color: var(--text-normal); cursor: pointer }
+.more-row { display: flex; align-items: center; gap: 12px; padding: 12px 10px; border-radius: var(--radius-s); color: var(--text-normal); cursor: pointer }
 .more-row:hover { background-color: var(--background-modifier-hover) }
 .more-row-icon { width: 18px; height: 18px; flex-shrink: 0; color: var(--text-muted) }
 .more-row-label { flex-grow: 1; min-width: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
@@ -960,3 +964,21 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .calendar-task-check-mark { width: 10px; height: 10px; opacity: 0 }
 .calendar-task-check.is-done { background-color: var(--interactive-accent); border-color: var(--interactive-accent) }
 .calendar-task-check.is-done .calendar-task-check-mark { opacity: 1 }
+
+/* A phone-sized panel is one screen at a time: the list of categories, or the page with a way
+   back. Two columns at this width leave neither of them readable. */
+.modal.mod-settings.is-single { width: 100%; max-width: none; border-radius: 0; border-left: none; border-right: none }
+.modal.mod-settings.is-single .vertical-tab-header.is-single { width: 100%; flex-grow: 1; min-height: 0; overflow-y: auto; border-right: none; padding: 8px 10px 14px 10px }
+.modal.mod-settings.is-single .vertical-tab-header { width: 100%; border-right: none }
+.modal.mod-settings.is-single .vertical-tab-nav-item { margin: 0; padding: 12px 12px; gap: 12px; border-radius: 10px }
+.modal.mod-settings.is-single .vertical-tab-nav-item:hover { background-color: var(--background-modifier-hover) }
+.modal.mod-settings.is-single .vertical-tab-nav-icon { width: 18px; height: 18px }
+.modal.mod-settings.is-single .vertical-tab-nav-text { display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0 }
+.modal.mod-settings.is-single .vertical-tab-nav-label { font-size: 15px }
+.modal.mod-settings.is-single .vertical-tab-nav-desc { font-size: 12px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.modal.mod-settings .vertical-tab-nav-desc { display: none }
+.modal.mod-settings.is-single .vertical-tab-nav-desc { display: flex }
+.modal.mod-settings.is-single .settings-nav-note { padding-bottom: 10px }
+.settings-back { width: 26px; height: 26px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-s); color: var(--text-muted); cursor: pointer }
+.settings-back:hover { background-color: var(--background-modifier-hover); color: var(--text-normal) }
+.settings-back-icon { width: 16px; height: 16px; transform: scaleX(-1) }

@@ -2874,9 +2874,11 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
     // The copilot takes no column and no 260 px band either: in a compact window it covers the
     // workspace. It goes last, so it is painted over the note and over a floating sidebar; the
     // status bar is a child of the window, out of the sheet's reach.
-    if compact && app.ai_sheet() {
+    if compact && app.sheet_drawn() {
         ai_sheet(app, dom, ws, info);
     }
+    // The status bar keeps its line under the bottom navigation: it is the window's footer, and
+    // the rows below the note are measured with it in the count.
     let status = dom.add(0, El::div().class("status-bar"));
     // What the element under the pointer does, with its hotkey. Rows whose label had to be
     // shortened (the explorer, the tabs) are named in full here: the status bar is this app's
@@ -3051,6 +3053,9 @@ const SETTINGS_W: f32 = 900.0;
 /// the category column, the 216 px control column and a label with room for a word do not fit in
 /// a phone side by side.
 const SETTINGS_ROW_W: f32 = 620.0;
+/// Under this width the panel shows one screen at a time: a list of categories, or a page with a
+/// way back. Two columns at 500 px leave neither of them readable.
+pub const SETTINGS_SINGLE_W: f32 = 700.0;
 
 /// The settings window is built by `settings::modal` at the fixed width of `base.css`; here it
 /// learns the width it really has. Under `SETTINGS_W + 24` the panel stops being 900 px wide
@@ -3066,6 +3071,10 @@ fn fold_settings(app: &App, dom: &mut Dom) {
     n.el.classes.push("is-compact".to_string());
     if app.window_w < SETTINGS_ROW_W {
         n.el.classes.push("is-narrow".to_string());
+    }
+    // Under a phone's width the panel is one screen at a time: the categories, or the page.
+    if app.window_w < SETTINGS_SINGLE_W {
+        n.el.classes.push("is-single".to_string());
     }
     // The style the panel already carries is where it lands on the window; the cap on its width
     // goes in front of it.
@@ -3297,8 +3306,10 @@ fn bottom_nav(app: &App, dom: &mut Dom) {
     // modal or the menu covers the note, so what it hides is not marked under it.
     let covered = app.ai_sheet() || app.settings.is_some() || app.more_open;
     let left = |panel: Panel| !covered && app.left_open && app.panel == panel;
-    let agent = app.ai_sheet();
-    let settings = app.settings.is_some();
+    // One destination in force, and it is the one on top: the settings panel is painted over the
+    // sheet, and the ⋮ menu over both. A destination the reader cannot see is not marked.
+    let settings = app.settings.is_some() && !app.more_open;
+    let agent = app.ai_sheet() && app.settings.is_none() && !app.more_open;
     let items: [(&str, &str, &str, bool); 5] = [
         ("folder", "Archivos", "file-explorer:open", left(Panel::Files)),
         ("search", "Buscar", "global-search:open", left(Panel::Search)),
