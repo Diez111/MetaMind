@@ -521,34 +521,40 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .multi-select-input { color: var(--text-faint); padding: 0 6px }
 .metadata-add-button { color: var(--text-faint); padding: 6px 0 2px 0; font-size: 0.8em }
 .metadata-add-button:hover { color: var(--text-normal) }
-.welcome { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: var(--background-secondary) }
-.welcome-card { width: 800px; height: 500px; display: flex; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 12px; overflow: hidden }
-.welcome-brand { width: 250px; background-color: var(--background-primary-alt); border-right: 1px solid var(--background-modifier-border); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; flex-shrink: 0 }
-.welcome-logo { width: 104px; height: 104px; margin-bottom: 16px }
-.welcome-name { font-size: 24px; font-weight: 600; color: var(--text-normal); text-align: center }
-.welcome-version { color: var(--text-faint); font-size: var(--font-ui-smaller); margin: 4px 0 14px 0; text-align: center }
-.welcome-tagline { color: var(--text-muted); text-align: center; line-height: 1.5 }
-.welcome-main { flex-grow: 1; display: flex; flex-direction: column; padding: 24px 28px; overflow: hidden }
-.welcome-action { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); margin-bottom: 8px; color: var(--text-muted) }
-.welcome-action:hover { background-color: var(--background-modifier-hover); border-color: var(--interactive-accent); color: var(--text-normal) }
-.welcome-action-icon { width: 22px; height: 22px; color: var(--text-accent) }
-.welcome-action-text { flex-grow: 1; overflow: hidden }
-.welcome-action-title { color: var(--text-normal); font-size: 15px; font-weight: 600; white-space: nowrap }
-.welcome-action-description { color: var(--text-muted); font-size: var(--font-ui-smaller); margin-top: 2px; white-space: nowrap; overflow: hidden }
-.welcome-section-title { color: var(--text-faint); font-size: var(--font-ui-smaller); font-weight: 600; margin: 12px 0 6px 2px }
-.welcome-list { flex-grow: 1; overflow-y: auto; padding-right: 8px }
-.welcome-folders { border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); padding: 4px 10px 4px 4px }
-.welcome-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: var(--radius-s); color: var(--text-muted) }
-.welcome-row:hover { background-color: var(--background-modifier-hover); color: var(--text-normal) }
+.welcome { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px; background-color: var(--background-secondary) }
+.welcome-card { width: 560px; display: flex; flex-direction: column; padding: 40px 40px 32px 40px; background-color: var(--background-primary); border: 1px solid var(--rs-rule-strong); border-radius: 14px; box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22) }
+.welcome-card.mod-browser { height: 500px; padding: 28px 32px 24px 32px }
+.welcome-brand { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; margin-bottom: 26px }
+.welcome-logo { width: 40px; height: 40px; margin-bottom: 12px; color: var(--text-accent) }
+.welcome-name { font-size: 21px; font-weight: 600; color: var(--text-normal); letter-spacing: -0.01em }
+.welcome-data { margin-top: 6px; font-size: var(--font-ui-small); color: var(--text-muted) }
+.welcome-version { margin-top: 2px; font-size: var(--font-ui-smaller); color: var(--text-faint) }
+.welcome-main { display: flex; flex-direction: column; flex-grow: 1; min-height: 0 }
+.welcome-actions { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0 }
+.welcome-action { display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 14px 0 14px; border: 1px solid transparent; border-radius: var(--radius-m); background-color: var(--rs-card); color: var(--text-normal) }
+.welcome-action:hover, .welcome-action.is-focused { background-color: var(--background-modifier-hover); border-color: var(--interactive-accent) }
+.welcome-action-icon { width: 18px; height: 18px; color: var(--text-muted) }
+.welcome-action:hover .welcome-action-icon, .welcome-action.is-focused .welcome-action-icon { color: var(--text-accent) }
+.welcome-action-title { flex-grow: 1; font-size: 14px; font-weight: 500; color: var(--text-normal); white-space: nowrap; overflow: hidden }
+.welcome-action-go { width: 15px; height: 15px; color: var(--text-faint) }
+.welcome-recents { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--rs-rule) }
+.welcome-section-title { flex-shrink: 0; margin-bottom: 8px; color: var(--text-faint); font-size: var(--font-ui-smaller); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase }
+.welcome-list { flex-grow: 1; min-height: 0; overflow-y: auto; padding-right: 6px }
+.welcome-folders { border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); padding: 4px 10px 4px 4px; flex-grow: 0 }
+.welcome-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 1px solid transparent; border-radius: var(--radius-m); color: var(--text-muted) }
+.welcome-row:hover, .welcome-row.is-focused { background-color: var(--background-modifier-hover); border-color: var(--background-modifier-border); color: var(--text-normal) }
+.welcome-row-icon { width: 15px; height: 15px; color: var(--text-accent) }
+.welcome-row-text { flex-grow: 1; overflow: hidden }
 .welcome-row-title { flex-grow: 1; color: var(--text-normal); font-size: 14px; white-space: nowrap; overflow: hidden }
+.welcome-row-path { margin-top: 1px; color: var(--text-faint); font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden }
 .welcome-row .svg-icon.is-vault { color: var(--text-accent) }
 .welcome-tag { color: var(--text-accent); font-size: 11px; border: 1px solid var(--background-modifier-border); border-radius: 9px; padding: 0 7px }
 .welcome-empty { color: var(--text-faint); padding: 16px; text-align: center }
-.welcome-browser-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px }
-.welcome-browser-title { font-size: 17px; font-weight: 600; color: var(--text-normal) }
-.welcome-path { display: flex; align-items: center; gap: 4px; margin-bottom: 8px }
+.welcome-browser-header { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-bottom: 12px }
+.welcome-browser-title { font-size: 16px; font-weight: 600; color: var(--text-normal) }
+.welcome-path { display: flex; align-items: center; gap: 4px; flex-shrink: 0; margin-bottom: 8px }
 .welcome-path-text { flex-grow: 1; color: var(--text-muted); font-family: monospace; font-size: 12px; white-space: nowrap; overflow: hidden; padding: 4px 8px; background-color: var(--background-primary-alt); border-radius: var(--radius-s) }
-.welcome-footer { display: flex; align-items: center; gap: 10px; margin-top: 12px }
+.welcome-footer { display: flex; align-items: center; gap: 10px; flex-shrink: 0; margin-top: 12px }
 .welcome-footer-hint { flex-grow: 1; color: var(--text-faint); font-size: var(--font-ui-smaller) }
 .welcome-input { flex-grow: 1; padding: 6px 10px; border: 1px solid var(--interactive-accent); border-radius: var(--radius-s); background-color: var(--background-primary-alt); color: var(--text-normal); font-size: 14px; white-space: nowrap; overflow: hidden }
 .welcome-input.is-empty { color: var(--text-faint) }

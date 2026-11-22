@@ -35,6 +35,10 @@ pub struct Welcome {
     pub name: String,
     pub error: Option<String>,
     pub hover_action: Option<String>,
+    /// Keyboard selection on the home screen: the three actions, then the recent vaults.
+    pub sel: Option<usize>,
+    /// The system theme; the window sets it.
+    pub dark: bool,
     pub scrolls: HashMap<String, f32>,
     pub anims: Anims,
     /// The OS asks for more contrast; the window sets it.
@@ -79,6 +83,18 @@ fn list(dir: &Path) -> Vec<Folder> {
     out
 }
 
+/// The recent vault's path with the home folder cut to `~`.
+fn short_path(path: &Path) -> String {
+    let full = path.to_string_lossy();
+    if let Some(home) = recent::home_dir() {
+        let home = home.to_string_lossy();
+        if let Some(rest) = full.strip_prefix(home.as_ref()) {
+            return if rest.is_empty() { "~".to_string() } else { format!("~{rest}") };
+        }
+    }
+    full.into_owned()
+}
+
 impl Default for Welcome {
     fn default() -> Self {
         Self::new()
@@ -98,6 +114,8 @@ impl Welcome {
             name: String::new(),
             error: None,
             hover_action: None,
+            sel: None,
+            dark: true,
             scrolls: HashMap::new(),
             anims: Anims::default(),
             high_contrast: false,
@@ -123,6 +141,7 @@ impl Welcome {
     fn show(&mut self, screen: Screen) {
         self.screen = screen;
         self.error = None;
+        self.sel = None;
         self.anims.start("screen", SLOW_MS);
     }
 
@@ -241,6 +260,13 @@ impl Welcome {
     /// A named key (not text). Returns the vault to open when one was chosen.
     pub fn key(&mut self, name: &str) -> Option<PathBuf> {
         match name {
+            "ArrowDown" | "Tab" if self.screen == Screen::Home => self.step(true),
+            "ArrowUp" if self.screen == Screen::Home => self.step(false),
+            "Enter" if self.screen == Screen::Home => {
+                if let Some(action) = self.selected() {
+                    return self.run(&action);
+                }
+            }
             "Escape" if self.screen != Screen::Home => self.show(Screen::Home),
             "Enter" if self.screen != Screen::Home => return self.run("welcome:choose"),
             "Backspace" if self.screen == Screen::Create => {
@@ -252,6 +278,33 @@ impl Welcome {
             _ => {}
         }
         None
+    }
+
+    /// The three home actions, in the order they are drawn.
+    const ACTIONS: [(&'static str, &'static str, &'static str); 3] = [
+        ("folder", "Abrir bóveda", "welcome:open"),
+        ("folder-plus", "Crear bóveda", "welcome:create"),
+        ("sparkles", "Bóveda de ejemplo", "welcome:sample"),
+    ];
+
+    /// Move the keyboard selection through the actions and the recent vaults.
+    fn step(&mut self, down: bool) {
+        let n = Self::ACTIONS.len() + self.recents.len();
+        self.sel = Some(match (self.sel, down) {
+            (None, true) => 0,
+            (None, false) => n - 1,
+            (Some(i), true) => (i + 1) % n,
+            (Some(i), false) => (i + n - 1) % n,
+        });
+    }
+
+    /// The action the keyboard selection points at.
+    fn selected(&self) -> Option<String> {
+        let i = self.sel?;
+        if i < Self::ACTIONS.len() {
+            return Some(Self::ACTIONS[i].2.to_string());
+        }
+        Some(format!("recent:{}", i - Self::ACTIONS.len()))
     }
 
     pub fn text_input(&mut self, text: &str) {
@@ -278,48 +331,38 @@ impl Welcome {
     }
 
     fn home(&self, dom: &mut Dom, main: NodeId) {
-        for (icon, title, text, action) in [
-            (
-                "folder",
-                "Abrir carpeta como bóveda",
-                "Usa una carpeta de notas Markdown o una bóveda existente.",
-                "welcome:open",
-            ),
-            (
-                "folder-plus",
-                "Crear bóveda nueva",
-                "Empieza con una carpeta vacía para tus notas.",
-                "welcome:create",
-            ),
-            (
-                "help",
-                "Probar la bóveda de ejemplo",
-                "Unas pocas notas que muestran cómo funciona todo.",
-                "welcome:sample",
-            ),
-        ] {
-            let row = dom.add(main, El::div().class("welcome-action").action(action));
+        let actions = dom.add(main, El::div().class("welcome-actions"));
+        for (i, (icon, title, action)) in Self::ACTIONS.iter().enumerate() {
+            let row = dom.add(
+                actions,
+                El::div()
+                    .class("welcome-action")
+                    .class_if(self.sel == Some(i), "is-focused")
+                    .action(*action),
+            );
             dom.add(row, icons::el(icon).class("welcome-action-icon"));
-            let texts = dom.add(row, El::div().class("welcome-action-text"));
-            dom.add(texts, El::div().class("welcome-action-title").text(title));
-            dom.add(texts, El::div().class("welcome-action-description").text(text));
-            dom.add(row, icons::el("chevron-right"));
+            dom.add(row, El::div().class("welcome-action-title").text(*title));
+            dom.add(row, icons::el("chevron-right").class("welcome-action-go"));
         }
         if self.recents.is_empty() {
             return;
         }
-        dom.add(main, El::div().class("welcome-section-title").text("Bóvedas recientes"));
-        let list = dom.add(main, El::div().class("welcome-list").id("recents"));
+        let recents = dom.add(main, El::div().class("welcome-recents"));
+        dom.add(recents, El::div().class("welcome-section-title").text("Recientes"));
+        let list = dom.add(recents, El::div().class("welcome-list").id("recents"));
         for (i, p) in self.recents.iter().enumerate() {
-            let row = dom.add(list, El::div().class("welcome-row").action(format!("recent:{i}")));
-            dom.add(row, icons::el("vault"));
-            let texts = dom.add(row, El::div().class("welcome-action-text"));
+            let row = dom.add(
+                list,
+                El::div()
+                    .class("welcome-row")
+                    .class_if(self.sel == Some(Self::ACTIONS.len() + i), "is-focused")
+                    .action(format!("recent:{i}")),
+            );
+            dom.add(row, icons::el("vault").class("welcome-row-icon"));
+            let texts = dom.add(row, El::div().class("welcome-row-text"));
             let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
             dom.add(texts, El::div().class("welcome-row-title").text(name));
-            dom.add(
-                texts,
-                El::div().class("welcome-action-description").text(p.to_string_lossy().into_owned()),
-            );
+            dom.add(texts, El::div().class("welcome-row-path").text(short_path(p)));
             let x = dom.add(row, El::div().class("clickable-icon").action(format!("forget:{i}")));
             dom.add(x, icons::el("x"));
         }
@@ -387,35 +430,28 @@ impl Welcome {
 
     pub fn build(&self) -> Dom {
         let mut dom = Dom::new();
-        dom.nodes[0].el.classes.push("theme-dark".to_string());
+        dom.nodes[0].el.classes.push(if self.dark { "theme-dark" } else { "theme-light" }.to_string());
         let t = self.anims.t("intro");
         let wrap = El::div().class("welcome");
 
         let wrap = dom.add(0, wrap);
         let mut card = El::div().class("welcome-card");
+        if self.screen != Screen::Home {
+            card = card.class("mod-browser");
+        }
         if t < 1.0 {
             card = card.style(&format!("margin-top: {:.1}px", 18.0 * (1.0 - t)));
         }
         let card = dom.add(wrap, card);
         let brand = dom.add(card, El::div().class("welcome-brand"));
-        dom.add(brand, El::div().class("welcome-logo").image(crate::view::logo()));
+        dom.add(brand, icons::el("vault").class("welcome-logo"));
         dom.add(brand, El::div().class("welcome-name").text("MetaMind"));
+        dom.add(brand, El::div().class("welcome-data").text("50 000 notas · abre en 0,2 s"));
         dom.add(
             brand,
             El::div().class("welcome-version").text(format!("Versión {}", env!("CARGO_PKG_VERSION"))),
         );
-        dom.add(
-            brand,
-            El::div()
-                .class("welcome-tagline")
-                .text("Tus notas son archivos Markdown sin formato en una carpeta que tú eliges."),
-        );
-        let s = self.anims.t("screen");
-        let mut main = El::div().class("welcome-main");
-        if s < 1.0 {
-            main = main.style(&format!("padding-left: {:.1}px", 28.0 + 10.0 * (1.0 - s)));
-        }
-        let main = dom.add(card, main);
+        let main = dom.add(card, El::div().class("welcome-main"));
         match self.screen {
             Screen::Home => self.home(&mut dom, main),
             Screen::Open | Screen::Create => self.browser(&mut dom, main),
@@ -439,7 +475,7 @@ impl Welcome {
     pub fn render(&mut self, fonts: &mut Fonts, pixmap: &mut Pixmap, scale: f32) -> Dom {
         self.anims.tick();
         let mut dom = self.build();
-        dom.style(&self.theme, Env { dark: true, high_contrast: self.high_contrast, ..Env::default() });
+        dom.style(&self.theme, Env { dark: self.dark, high_contrast: self.high_contrast, ..Env::default() });
         dom.scrollbar_thumb = crate::scrollbar_thumb(&dom);
         dom.layout(fonts, pixmap.width() as f32 / scale, pixmap.height() as f32 / scale);
         icons::paint(&mut dom);
