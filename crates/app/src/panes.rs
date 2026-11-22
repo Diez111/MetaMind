@@ -160,7 +160,7 @@ impl App {
         } else if let Some(dir) = command.strip_prefix("bookmarks:reveal:") {
             let mut p = dir;
             while !p.is_empty() {
-                self.collapsed.remove(p);
+                self.expanded.insert(p.to_string());
                 p = path::parent(p);
             }
             self.tree = None;

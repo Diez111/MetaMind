@@ -338,7 +338,7 @@ impl App {
     pub(crate) fn move_into(&mut self, from: &str, folder: &str) {
         let to = path::join(folder, path::file_name(from));
         if let Some(links) = self.move_path(from, &to, "mover") {
-            self.collapsed.remove(folder);
+            self.expanded.insert(folder.to_string());
             let place = if folder.is_empty() { "la raíz de la bóveda" } else { folder };
             self.notice = Some(format!("Se movió {} a {place}{links}", path::file_name(from)));
         }
@@ -404,7 +404,7 @@ impl App {
             self.notice = Some(format!("No se pudo crear {dir}: {e}"));
             return;
         }
-        self.collapsed.remove(&dir);
+        self.expanded.insert(dir.clone());
         self.tree = None;
         self.new_note_in(&dir);
     }
@@ -418,7 +418,7 @@ impl App {
         match self.store.create(&rel, "") {
             Ok(_) => {
                 self.plugins.push(ext_api::Event::Create { path: rel.clone() });
-                self.collapsed.remove(dir);
+                self.expanded.insert(dir.to_string());
                 self.tree = None;
                 self.files_changed(&[]);
                 self.open_note(&rel);
@@ -511,7 +511,7 @@ impl App {
         let Some(p) = self.tab().map(|t| t.path.clone()) else { return };
         let mut dir = path::parent(&p).to_string();
         while !dir.is_empty() {
-            self.collapsed.remove(&dir);
+            self.expanded.insert(dir.clone());
             dir = path::parent(&dir).to_string();
         }
         self.tree = None;

@@ -182,11 +182,11 @@ fn rendering_and_mouse() {
     // With the cursor inside, the markup is revealed.
     let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
     assert!(frame.info.blocks.iter().any(|b| b.display.contains("**bold**")));
-    // Collapsing a folder hides its files.
+    // The tree starts folded, so opening a folder is what shows its files.
     let before = app.tree_rows().len();
     app.run("toggle-folder:dir");
     render(&mut app, &mut fonts, &mut pm, 1.0);
-    assert_eq!(app.tree_rows().len(), before - 2);
+    assert_eq!(app.tree_rows().len(), before + 2);
 }
 
 #[test]

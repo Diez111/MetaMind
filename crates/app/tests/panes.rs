@@ -78,6 +78,9 @@ fn explorer_sort_orders() {
         app.refresh_derived();
         app.tree_rows().iter().map(|r| r.path.clone()).collect()
     };
+    // Every folder starts folded; opening it shows its files above the folder's own.
+    assert_eq!(files(&mut app), ["dir", "A.md", "B.md"]);
+    app.run("toggle-folder:dir");
     assert_eq!(files(&mut app), ["dir", "dir/C.md", "A.md", "B.md"]);
     app.run("file-explorer:sort:alphabeticalReverse");
     // Folders stay first and in name order.

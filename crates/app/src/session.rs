@@ -43,6 +43,12 @@ fn tabs_json(tabs: &[Tab]) -> Vec<Value> {
 }
 
 impl App {
+    /// Whether the tree remembers the folders opened in the last session
+    /// (`rememberExpandedFolders` in `app.json`, on unless it says otherwise).
+    pub fn remember_expanded(&self) -> bool {
+        self.config.app.bool("rememberExpandedFolders", true)
+    }
+
     /// The session as JSON. `tabs` and `active` repeat the focused pane for versions without
     /// split panes.
     pub fn session(&self) -> Value {
@@ -53,9 +59,9 @@ impl App {
                     "stacked": self.panes[i].stacked })
             })
             .collect();
-        let mut collapsed: Vec<&String> = self.collapsed.iter().collect();
-        collapsed.sort_unstable();
-        json!({
+        let mut expanded: Vec<&String> = self.expanded.iter().collect();
+        expanded.sort_unstable();
+        let mut session = json!({
             "tabs": tabs_json(&self.tabs),
             "active": self.active,
             "panes": panes,
@@ -63,6 +69,8 @@ impl App {
             "pane": self.pane,
             "left": self.left_open,
             "right": self.right_open,
+            "leftWidth": self.left_w,
+            "rightWidth": self.right_w,
             "panel": panel_name(self.panel),
             "rightPanel": match self.right_panel {
                 RightPanel::Backlinks => "backlinks",
@@ -70,8 +78,13 @@ impl App {
                 RightPanel::Outline => "outline",
                 RightPanel::Ai => "ai",
             },
-            "collapsed": collapsed,
-        })
+        });
+        // Folders the user opened are kept only when the setting says so; otherwise the tree
+        // starts folded every time, which is also what an empty list means.
+        if self.remember_expanded() {
+            session["expanded"] = json!(expanded);
+        }
+        session
     }
 
     pub fn save_session(&mut self) {
@@ -139,9 +152,19 @@ impl App {
             Some("ai") => RightPanel::Ai,
             _ => RightPanel::Backlinks,
         };
-        if let Some(c) = v.get("collapsed").and_then(Value::as_array) {
-            self.collapsed = c.iter().filter_map(Value::as_str).map(str::to_string).collect();
-            self.tree = None;
+        if let Some(c) = v.get("leftWidth").and_then(Value::as_f64) {
+            self.left_w = (c as f32).clamp(crate::shell::SIDE_W_MIN, crate::shell::SIDE_W_MAX);
+        }
+        if let Some(c) = v.get("rightWidth").and_then(Value::as_f64) {
+            self.right_w = (c as f32).clamp(crate::shell::SIDE_W_MIN, crate::shell::SIDE_W_MAX);
+        }
+        // The explorer starts folded; only a session that recorded the open folders brings them
+        // back, and only while "recordar carpetas expandidas" is on.
+        if self.remember_expanded() {
+            if let Some(c) = v.get("expanded").and_then(Value::as_array) {
+                self.expanded = c.iter().filter_map(Value::as_str).map(str::to_string).collect();
+                self.tree = None;
+            }
         }
     }
 

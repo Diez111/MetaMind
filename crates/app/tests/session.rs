@@ -18,7 +18,8 @@ fn reopening_a_vault_restores_tabs_and_sidebar() {
     app.open_note("dir/B.md");
     app.open_note("A.md");
     app.panel = Panel::Tags;
-    app.collapsed.insert("dir".into());
+    app.run("toggle-folder:dir");
+    app.run("toggle-folder:dir/sub");
     app.save_all();
     // A note deleted between sessions is skipped.
     fs::remove_file(d.path().join("C.md")).unwrap();
@@ -31,5 +32,5 @@ fn reopening_a_vault_restores_tabs_and_sidebar() {
     assert_eq!(app.tabs[0].mode, ViewMode::Source);
     assert!(app.tabs[0].folds.is_folded(0));
     assert_eq!(app.panel, Panel::Tags);
-    assert!(app.collapsed.contains("dir"));
+    assert!(app.expanded.contains("dir") && app.expanded.contains("dir/sub"), "folders stay open");
 }

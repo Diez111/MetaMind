@@ -101,6 +101,10 @@ body {
 .workspace-split.mod-left-split, .workspace-split.mod-right-split { width: 250px; background-color: var(--background-secondary); display: flex; flex-direction: column; overflow: hidden }
 .workspace-split.mod-left-split { border-right: 1px solid var(--background-modifier-border) }
 .workspace-split.mod-right-split { border-left: 1px solid var(--background-modifier-border) }
+.sidebar-resize-handle { position: absolute; top: 0; bottom: 0; width: 6px; background-color: transparent }
+.sidebar-resize-handle.mod-left { right: 0 }
+.sidebar-resize-handle.mod-right { left: 0 }
+.sidebar-resize-handle:hover, .sidebar-resize-handle.is-dragging { background-color: var(--interactive-accent); cursor: pointer }
 .workspace-split.mod-root { flex-grow: 1; display: flex; flex-direction: column; background-color: var(--background-primary); overflow: hidden }
 .nav-header { padding: 6px 8px 6px 12px; color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: 600; display: flex; align-items: center; gap: 6px; min-height: 34px }
 .nav-header-title { flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
