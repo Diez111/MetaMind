@@ -114,6 +114,10 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("file-explorer:reveal-active-file", "Mostrar archivo actual en la navegación", ""),
     ("file-explorer:collapse-all", "Archivos: Contraer o expandir todas las carpetas", ""),
     ("editor:save-file", "Guardar archivo actual", "Ctrl+S"),
+    ("kanban:new", "Crear tablero Kanban", ""),
+    ("kanban:add-column", "Kanban: Nueva columna", ""),
+    ("kanban:add-card", "Kanban: Nueva tarjeta", ""),
+    ("kanban:source", "Kanban: Ver código del tablero", ""),
     ("workspace:close", "Cerrar pestaña actual", "Ctrl+W"),
     ("workspace:close-others", "Cerrar las demás pestañas", ""),
     ("workspace:close-all", "Cerrar todas las pestañas", ""),
@@ -433,6 +437,9 @@ pub struct App {
     /// The `.excalidraw` board open in the main pane, and whether it has the pane.
     pub exc_view: Option<crate::excalidrawview::ExcView>,
     pub show_exc: bool,
+    /// The kanban board open in the main pane, and whether it has the pane.
+    pub kanban_view: Option<crate::kanbanview::KanbanView>,
+    pub show_kanban: bool,
     /// The board covers the window instead of sitting in its pane.
     pub exc_fullscreen: bool,
     /// Tables of the `dataview` blocks drawn so far, per query and vault revision.
@@ -724,6 +731,8 @@ impl App {
             show_base: false,
             exc_view: None,
             show_exc: false,
+            kanban_view: None,
+            show_kanban: false,
             exc_fullscreen: false,
             dataview: Default::default(),
             video: Default::default(),
@@ -988,7 +997,7 @@ impl App {
 
     /// Whether the panes show the active note instead of a graph, a canvas, a base or a board.
     pub fn editor_shown(&self) -> bool {
-        !self.show_graph && !self.canvas_active() && !self.base_active() && !self.exc_active()
+        !self.show_graph && !self.canvas_active() && !self.base_active() && !self.exc_active() && !self.kanban_active()
     }
 
     pub fn hotkey_for(&self, command: &str) -> String {
@@ -1022,6 +1031,10 @@ impl App {
         if path::extension(&rel).eq_ignore_ascii_case("excalidraw") {
             return self.open_exc(&rel);
         }
+        // A `.kanban` (or `.board`) file is a board without the Markdown name.
+        if crate::kanbanview::is_board_path(&rel) {
+            return self.open_kanban(&rel);
+        }
         if let Some(i) = self.tabs.iter().position(|t| t.path.eq_ignore_ascii_case(&rel)) {
             self.active = i;
         } else {
@@ -1031,6 +1044,21 @@ impl App {
             }
             match self.store.read(&rel) {
                 Ok((text, stamp)) => {
+                    // A note carrying the Kanban plugin's settings *is* a board: the tree opens
+                    // the board, and the view has its own way into the text.
+                    if crate::kanbanview::is_board_text(&text) {
+                        let rel = rel.clone();
+                        self.open_board(&rel, &text, stamp);
+                        self.plugins.push(ext_api::Event::FileOpen { path: rel.clone() });
+                        if record {
+                            self.history.truncate(self.history_pos + usize::from(!self.history.is_empty()));
+                            if self.history.last() != Some(&rel) {
+                                self.history.push(rel);
+                            }
+                            self.history_pos = self.history.len().saturating_sub(1);
+                        }
+                        return;
+                    }
                     self.tabs.push(Tab::new(rel.clone(), &text, stamp, self.vim));
                     self.active = self.tabs.len() - 1;
                     self.init_new_tab();
@@ -1054,6 +1082,13 @@ impl App {
         }
         self.show_exc = false;
         self.exc_fullscreen = false;
+        if self.show_kanban {
+            if let Some(v) = &mut self.kanban_view {
+                v.stop_edit();
+            }
+            self.kanban_save();
+        }
+        self.show_kanban = false;
         self.plugins.push(ext_api::Event::FileOpen { path: rel.clone() });
         if record {
             self.history.truncate(self.history_pos + usize::from(!self.history.is_empty()));
@@ -1180,6 +1215,7 @@ impl App {
     pub fn save_all(&mut self) {
         self.canvas_save();
         self.exc_save();
+        self.kanban_save();
         for p in 0..self.panes.len() {
             self.in_pane(p, |a| {
                 let active = a.active;
@@ -1211,6 +1247,7 @@ impl App {
         self.tree = None;
         self.canvas_files_changed(paths);
         self.exc_files_changed(paths);
+        self.kanban_files_changed(paths);
         self.base_files_changed(paths);
         if let Some(g) = &mut self.graph_view {
             g.dirty = true;
@@ -1695,6 +1732,9 @@ impl App {
                 } else if self.canvas_active() {
                     self.canvas_save();
                     self.notice = None;
+                } else if self.kanban_active() {
+                    self.kanban_save();
+                    self.notice = None;
                 } else if self.save() {
                     self.notice = None;
                 }
@@ -1706,6 +1746,9 @@ impl App {
             "workspace:close" if self.base_active() => self.run("base:close"),
             "workspace:close" | "exc:close" if self.exc_active() || command == "exc:close" => {
                 self.exc_close();
+            }
+            "workspace:close" | "kanban:close" if self.kanban_active() || command == "kanban:close" => {
+                self.kanban_close();
             }
             "workspace:close" | "canvas:close" if self.canvas_active() || command == "canvas:close" => {
                 self.canvas_save();
@@ -1782,6 +1825,14 @@ impl App {
                 self.exc_save();
                 self.show_exc = false;
                 self.exc_fullscreen = false;
+            }
+            "workspace:next-tab" | "workspace:previous-tab" if self.kanban_active() => {
+                // The same for a kanban board: its tab stays, the note comes back.
+                if let Some(v) = &mut self.kanban_view {
+                    v.stop_edit();
+                }
+                self.kanban_save();
+                self.show_kanban = false;
             }
             "workspace:next-tab" if !self.tabs.is_empty() => {
                 self.active = (self.active + 1) % self.tabs.len()
@@ -1922,6 +1973,7 @@ impl App {
                 if self.run_graph(command)
                     || self.run_canvas(command)
                     || self.run_base(command)
+                    || self.run_kanban(command)
                     || self.run_exc(command)
                 {
                     return;
@@ -1993,7 +2045,11 @@ impl App {
 
     /// Suggestions follow the text before the cursor, and only while the editor has focus.
     fn after_editor_input(&mut self) {
-        if self.focus == Focus::Editor && !self.canvas_active() && !self.exc_active() {
+        if self.focus == Focus::Editor
+            && !self.canvas_active()
+            && !self.exc_active()
+            && !self.kanban_active()
+        {
             self.update_suggest();
         } else {
             self.suggest = None;
@@ -2072,6 +2128,9 @@ impl App {
             Focus::Editor => {
                 if self.canvas_active() {
                     return self.canvas_key(&key);
+                }
+                if self.kanban_active() && self.kanban_key(&key) {
+                    return true;
                 }
                 if self.exc_active() && self.exc_key(&key) {
                     return true;
@@ -2193,6 +2252,7 @@ impl App {
             }
             Focus::Search => self.search_query.push_str(text),
             Focus::Editor if self.canvas_active() => self.canvas_text(text),
+            Focus::Editor if self.kanban_active() => self.kanban_text(text),
             Focus::Editor if self.exc_active() => {
                 self.exc_text(text);
             }

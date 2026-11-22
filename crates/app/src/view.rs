@@ -176,6 +176,9 @@ pub struct ViewInfo {
     pub graph_panel: Option<NodeId>,
     pub canvas: Option<NodeId>,
     pub canvas_colors: Vec<NodeId>,
+    /// The kanban board of the pane, and the hidden elements its colours are read from.
+    pub kanban: Option<NodeId>,
+    pub kanban_colors: Vec<NodeId>,
     /// Each node that paints an Excalidraw board: the pane's, and the full-screen box's.
     pub excview: Vec<NodeId>,
     pub exc_colors: Vec<NodeId>,
@@ -1307,7 +1310,12 @@ fn pane(
             dom.add(x, icons::el(close.1));
         };
     let (open, active) = app.pane_tabs(pane);
-    let covered = focused && (app.show_graph || app.canvas_active() || app.base_active() || app.exc_active());
+    let covered = focused
+        && (app.show_graph
+            || app.canvas_active()
+            || app.base_active()
+            || app.exc_active()
+            || app.kanban_active());
     for (i, t) in open.iter().enumerate() {
         tab_header(
             dom,
@@ -1335,6 +1343,10 @@ fn pane(
         let (focus, close) = ("exc:focus".to_string(), ("exc:close".to_string(), "x"));
         tab_header(dom, "edit", &e.title(), e.dirty, app.exc_active(), focus, close);
     }
+    if let Some(k) = app.kanban_view.as_ref().filter(|_| focused) {
+        let (focus, close) = ("kanban:focus".to_string(), ("kanban:close".to_string(), "x"));
+        tab_header(dom, "table", &k.title(), k.dirty, app.kanban_active(), focus, close);
+    }
     let new_tab =
         dom.add(tabs, El::div().class("workspace-tab-header-new-tab").action("file-explorer:new-file"));
     dom.add(new_tab, icons::el("plus"));
@@ -1359,6 +1371,7 @@ fn pane(
         }
         _ if app.base_active() => crate::baseview::pane(app.base_view.as_ref().unwrap(), dom, leaf),
         _ if app.exc_active() => crate::excalidrawview::pane(app.exc_view.as_ref().unwrap(), dom, leaf, info),
+        _ if app.kanban_active() => crate::kanbanview::pane(app.kanban_view.as_ref().unwrap(), dom, leaf, info),
         _ => editor(app, dom, leaf, pal, info, app.tab().map(|t| (pane, app.active, t)), true),
     }
     info.panes.push((pane, leaf, None));

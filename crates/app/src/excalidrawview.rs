@@ -1149,7 +1149,12 @@ pub fn add_exc(app: &mut App, dom: &mut Dom, info: &crate::view::ViewInfo, fonts
 
 impl App {
     pub fn exc_active(&self) -> bool {
-        self.show_exc && self.exc_view.is_some() && !self.show_graph && !self.show_canvas && !self.show_base
+        self.show_exc
+            && self.exc_view.is_some()
+            && !self.show_graph
+            && !self.show_canvas
+            && !self.show_base
+            && !self.show_kanban
     }
 
     pub(crate) fn open_exc(&mut self, rel: &str) {
