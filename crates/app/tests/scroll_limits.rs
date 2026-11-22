@@ -41,7 +41,10 @@ fn the_last_line_of_a_long_note_can_be_reached() {
         .dom
         .nodes
         .iter()
-        .filter(|n| n.el.classes.iter().any(|c| c == "cm-line") && n.el.text.as_deref() == Some("linea 399 del documento"))
+        .filter(|n| {
+            n.el.classes.iter().any(|c| c == "cm-line")
+                && n.el.text.as_deref() == Some("linea 399 del documento")
+        })
         .map(|n| n.rect)
         .next();
     let Some(last) = last else {
@@ -75,8 +78,12 @@ fn the_last_file_of_a_big_vault_can_be_reached_in_the_explorer() {
         frame(&mut app, &mut fonts, &mut pm);
     }
     let before = frame(&mut app, &mut fonts, &mut pm);
-    let n0 = before.dom.nodes.iter().filter(|n| n.el.classes.iter().any(|c| c == "nav-file-title-content")).count();
-    eprintln!("filas antes de scrollear: {n0}");
+    let n0 = before
+        .dom
+        .nodes
+        .iter()
+        .filter(|n| n.el.classes.iter().any(|c| c == "nav-file-title-content"))
+        .count();
     // The wheel over the explorer, all the way down: the same path a reader's wheel takes.
     for _ in 0..80 {
         let f = frame(&mut app, &mut fonts, &mut pm);
@@ -186,7 +193,10 @@ fn the_scroll_knows_how_tall_the_note_is() {
     let cb = view.dom.content_rect(view.info.editor.unwrap()).h;
     assert!((y + cb - content_h2).abs() <= 2.0, "the view's bottom is the note's bottom: {y} + {cb}");
     let (thumb, at) = thumb_geom(rail, cb, content_h2, y, max);
-    assert!((at + thumb - rail).abs() <= 2.0, "the thumb ends at the bottom of its rail: {at}+{thumb} of {rail}");
+    assert!(
+        (at + thumb - rail).abs() <= 2.0,
+        "the thumb ends at the bottom of its rail: {at}+{thumb} of {rail}"
+    );
     let last = line_at(&view, &format!("linea {} del documento", blocks - 1)).expect("the last line");
     assert!(
         last.y >= box_.y - 1.0 && last.y + last.h <= box_.y + box_.h + 1.0,
@@ -274,4 +284,48 @@ fn the_settings_panel_reaches_its_last_row_with_the_wheel() {
         let r = view.dom.nodes[row].rect;
         assert!(r.y + r.h <= box_.y + box_.h + 1.0, "the last row is inside the panel: {r:?} in {box_:?}");
     }
+}
+
+/// A block taller than the view (an image, here) is not a count of lines: the note still ends, and
+/// the keyboard reaches its last line with the picture laid out at its real height in between.
+#[test]
+fn a_tall_block_does_not_hide_the_last_line() {
+    let d = tempfile::tempdir().unwrap();
+    let image = d.path().join("alta.png");
+    Pixmap::new(300, 900).unwrap().save_png(&image).unwrap();
+    let mut text = String::from("# Con una imagen\n\n");
+    for i in 0..40 {
+        text.push_str(&format!("linea {i}\n\n"));
+    }
+    text.push_str("![[alta.png]]\n\nULTIMA LINEA\n");
+    fs::write(d.path().join("Img.md"), text).unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("Img.md");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(900, 700).unwrap();
+    for _ in 0..4 {
+        frame(&mut app, &mut fonts, &mut pm);
+    }
+    app.key(Key::parse("Ctrl+End").unwrap());
+    for _ in 0..6 {
+        frame(&mut app, &mut fonts, &mut pm);
+    }
+    let view = frame(&mut app, &mut fonts, &mut pm);
+    let (box_, content_h, _, _) = scroller(&view);
+    // The whole note, picture included: the image is 900 px of a note whose blocks are forty
+    // lines of prose.
+    assert!(content_h > 900.0, "the picture is part of the note's height: {content_h}");
+    let image_box = view
+        .dom
+        .nodes
+        .iter()
+        .find(|n| n.el.classes.iter().any(|c| c == "image-embed"))
+        .map(|n| n.rect)
+        .expect("the picture is drawn");
+    assert!((image_box.h - 900.0).abs() < 1.0, "at its own height: {image_box:?}");
+    let last = line_at(&view, "ULTIMA LINEA").expect("the last line");
+    assert!(
+        last.y >= box_.y - 1.0 && last.y + last.h <= box_.y + box_.h + 1.0,
+        "the last line is in the view after the keyboard jumps: {last:?} in {box_:?}"
+    );
 }
