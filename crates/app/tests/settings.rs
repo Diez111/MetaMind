@@ -797,7 +797,7 @@ fn appearance_is_one_measured_column_inside_a_scrolling_modal() {
     let active = f.dom.nodes[active_id].rect;
     let icon = f.dom.nodes[f.dom.nodes[active_id].children[0]].rect;
     let gap = icon.x - active.x;
-    assert!(gap >= 8.0 && gap <= 14.0, "the highlight leaves room around the icon: {active:?} {icon:?}");
+    assert!((8.0..=14.0).contains(&gap), "the highlight leaves room around the icon: {active:?} {icon:?}");
     assert!(icon.x + icon.w <= active.x + active.w, "the icon stays inside its row");
 }
 

@@ -1387,7 +1387,9 @@ impl App {
         if s.edit.is_some() {
             match key.key.as_str() {
                 "Escape" if !key.ctrl && !key.alt => {
-                    self.settings.as_mut().map(|s| s.edit = None);
+                    if let Some(s) = self.settings.as_mut() {
+                        s.edit = None;
+                    }
                     return Some(true);
                 }
                 "Enter" | "Tab" if !key.ctrl && !key.alt => {

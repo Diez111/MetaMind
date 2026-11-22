@@ -244,7 +244,7 @@ pub fn pane(app: &App, dom: &mut Dom, parent: NodeId) {
     recent_card(app, dom, grid);
 }
 
-fn card<'a>(dom: &mut Dom, parent: NodeId, title: &str) -> NodeId {
+fn card(dom: &mut Dom, parent: NodeId, title: &str) -> NodeId {
     let c = dom.add(parent, El::div().class("dash-card"));
     dom.add(c, El::div().class("dash-card-title").text(title.to_string()));
     c
