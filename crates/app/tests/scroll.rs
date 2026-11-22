@@ -57,3 +57,26 @@ fn editor_scrolls_by_pixels_across_blocks() {
     assert!(!app.scrolling());
     assert_eq!(y_of(&frame, "Paragraph 5").unwrap(), start);
 }
+
+/// The scrollbar is drawn in the theme's colour, the same one for every scroller: it used to be
+/// a fixed grey in the painter, which is why the bar of a note and the bar of a modal could read
+/// so differently on the light scheme.
+#[test]
+fn scrollbar_thumb_comes_from_the_theme() {
+    let d = tempfile::tempdir().unwrap();
+    fs::write(d.path().join("N.md"), "text\n".repeat(400)).unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("N.md");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(900, 700).unwrap();
+    app.dark = true;
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let dark = frame.dom.scrollbar_thumb.expect("the dark scheme sets --scrollbar-thumb");
+    assert_eq!((dark.r, dark.g, dark.b), (255, 255, 255));
+    assert!((i32::from(dark.a) - 56).abs() <= 2, "22% white, got alpha {}", dark.a);
+    app.dark = false;
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let light = frame.dom.scrollbar_thumb.expect("the light scheme sets --scrollbar-thumb");
+    assert_eq!((light.r, light.g, light.b), (0, 0, 0));
+    assert!((i32::from(light.a) - 56).abs() <= 2, "22% black, got alpha {}", light.a);
+}
