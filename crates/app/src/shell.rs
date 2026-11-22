@@ -1040,7 +1040,11 @@ impl App {
 
     /// Whether the panes show the active note instead of a graph, a canvas, a base or a board.
     pub fn editor_shown(&self) -> bool {
-        !self.show_graph && !self.canvas_active() && !self.base_active() && !self.exc_active() && !self.kanban_active()
+        !self.show_graph
+            && !self.canvas_active()
+            && !self.base_active()
+            && !self.exc_active()
+            && !self.kanban_active()
     }
 
     pub fn hotkey_for(&self, command: &str) -> String {
@@ -2089,10 +2093,7 @@ impl App {
 
     /// Suggestions follow the text before the cursor, and only while the editor has focus.
     fn after_editor_input(&mut self) {
-        if self.focus == Focus::Editor
-            && !self.canvas_active()
-            && !self.exc_active()
-            && !self.kanban_active()
+        if self.focus == Focus::Editor && !self.canvas_active() && !self.exc_active() && !self.kanban_active()
         {
             self.update_suggest();
         } else {

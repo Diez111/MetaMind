@@ -82,10 +82,9 @@ impl App {
             return;
         }
         // Over a kanban board the menu is the column's: rename it, fold it, move it, empty it.
-        if self.kanban_active()
-            && frame.info.kanban.is_some_and(|n| frame.dom.nodes[n].rect.contains(x, y)) {
-                return self.kanban_context_menu(x, y);
-            }
+        if self.kanban_active() && frame.info.kanban.is_some_and(|n| frame.dom.nodes[n].rect.contains(x, y)) {
+            return self.kanban_context_menu(x, y);
+        }
         let action = frame.dom.action_at(x, y).map(|(_, a)| a.to_string());
         let mut b = Builder { app: self, items: Vec::new() };
         match action.as_deref() {

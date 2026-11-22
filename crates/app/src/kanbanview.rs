@@ -455,7 +455,6 @@ enum Press {
     Pan { last: (f32, f32) },
 }
 
-
 /// A board opened as a tab.
 pub struct KanbanView {
     pub path: String,
@@ -533,7 +532,6 @@ impl KanbanView {
         }
     }
 
-
     pub fn title(&self) -> String {
         path::stem(&self.path).to_string()
     }
@@ -577,13 +575,7 @@ impl KanbanView {
     }
 
     /// Where a `[[link]]` of a card sits, in window coordinates, from the last paint.
-    pub fn link_rect(
-        &mut self,
-        fonts: &mut Fonts,
-        col: usize,
-        idx: usize,
-        target: &str,
-    ) -> Option<Rect> {
+    pub fn link_rect(&mut self, fonts: &mut Fonts, col: usize, idx: usize, target: &str) -> Option<Rect> {
         let card = self.geom.get(col)?.cards.get(idx)?;
         let text = self.board.card(card.id)?.text.clone();
         let style = self.card_style.clone();
@@ -680,11 +672,7 @@ impl KanbanView {
         let name = self.board.columns.get(i).map(|c| c.name.clone()).unwrap_or_default();
         // A column that was just made starts with its placeholder name in the header, not in the
         // box: the first key typed is the first letter of its name.
-        let (target, buf) = if fresh {
-            (Edit::NewColumn(i), String::new())
-        } else {
-            (Edit::Column(i), name)
-        };
+        let (target, buf) = if fresh { (Edit::NewColumn(i), String::new()) } else { (Edit::Column(i), name) };
         self.editing = Some(Editing { target, buf });
         self.selected = None;
     }
@@ -720,7 +708,7 @@ impl KanbanView {
 
     // ---- input ----
 
-   /// What the pointer is over, from the last paint.
+    /// What the pointer is over, from the last paint.
     fn hit(&self, x: f32, y: f32) -> Hit {
         for (i, g) in self.geom.iter().enumerate() {
             if !g.rect.contains(x, y) {
@@ -896,8 +884,7 @@ impl KanbanView {
                     .map(|(i, _)| i)
                     .unwrap_or(origin.0)
             });
-        let others: Vec<&CardGeom> =
-            self.press_geom[col].cards.iter().filter(|c| c.id != id).collect();
+        let others: Vec<&CardGeom> = self.press_geom[col].cards.iter().filter(|c| c.id != id).collect();
         let mut idx = others.len();
         for (i, card) in others.iter().enumerate() {
             if y < card.rect.y + card.rect.h / 2.0 {
@@ -984,13 +971,8 @@ impl KanbanView {
     ) -> Vec<Cmd> {
         self.rect = rect;
         self.text_style = text.clone();
-        self.card_style = TextStyle {
-            size: CARD_TEXT,
-            line_height: CARD_LINE,
-            color: c[2],
-            wrap: true,
-            ..text.clone()
-        };
+        self.card_style =
+            TextStyle { size: CARD_TEXT, line_height: CARD_LINE, color: c[2], wrap: true, ..text.clone() };
         let mut cmds = vec![Cmd::PushClip(rect)];
         cmds.push(Cmd::Fill { rect, color: c[0], radius: 0.0 });
         if self.show_source {
@@ -1005,13 +987,8 @@ impl KanbanView {
 
     fn paint_source(&mut self, cmds: &mut Vec<Cmd>, rect: Rect, c: &[Color; 12], fonts: &mut Fonts) {
         self.clamp_scroll();
-        let hint_style = TextStyle {
-            size: 11.5,
-            line_height: 16.0,
-            color: c[3],
-            wrap: false,
-            ..self.text_style.clone()
-        };
+        let hint_style =
+            TextStyle { size: 11.5, line_height: 16.0, color: c[3], wrap: false, ..self.text_style.clone() };
         cmds.push(Cmd::Text {
             x: rect.x + 18.0,
             y: rect.y + 12.0,
@@ -1058,13 +1035,8 @@ impl KanbanView {
             wrap: false,
             ..self.text_style.clone()
         };
-        let count_style = TextStyle {
-            size: 11.5,
-            line_height: 15.0,
-            color: c[3],
-            wrap: false,
-            ..self.text_style.clone()
-        };
+        let count_style =
+            TextStyle { size: 11.5, line_height: 15.0, color: c[3], wrap: false, ..self.text_style.clone() };
         let mut geom: Vec<ColGeom> = Vec::with_capacity(self.board.columns.len());
         let mut bottom = top;
         for i in 0..self.board.columns.len() {
@@ -1110,11 +1082,8 @@ impl KanbanView {
                 style: head_style.clone(),
             });
             let done = col.cards.iter().filter(|c| c.done).count();
-            let count = if done > 0 {
-                format!("{done}/{}", col.cards.len())
-            } else {
-                col.cards.len().to_string()
-            };
+            let count =
+                if done > 0 { format!("{done}/{}", col.cards.len()) } else { col.cards.len().to_string() };
             let (cw, _) = fonts.measure(&count, &[], &count_style, None);
             cmds.push(Cmd::Text {
                 x: menu.x - cw - 4.0,
@@ -1126,11 +1095,7 @@ impl KanbanView {
             });
             let dot = Rect::new(menu.x + 5.0, cy - 1.0, 2.6, 2.6);
             cmds.push(Cmd::Circles {
-                items: vec![
-                    [dot.x, dot.y, dot.w],
-                    [dot.x + 6.0, dot.y, dot.w],
-                    [dot.x + 12.0, dot.y, dot.w],
-                ],
+                items: vec![[dot.x, dot.y, dot.w], [dot.x + 6.0, dot.y, dot.w], [dot.x + 12.0, dot.y, dot.w]],
                 color: control,
             });
             if let Some(buf) = self.editing_column(i).map(str::to_string) {
@@ -1170,10 +1135,7 @@ impl KanbanView {
                     width: Some(add.w - 20.0),
                     text: "+ Añadir tarjeta".to_string(),
                     spans: Vec::new(),
-                    style: TextStyle {
-                        color: if over { c[2] } else { c[3] },
-                        ..count_style.clone()
-                    },
+                    style: TextStyle { color: if over { c[2] } else { c[3] }, ..count_style.clone() },
                 });
             }
             geom.push(ColGeom { rect: rect_col, head, fold, menu, add, cards });
@@ -1256,7 +1218,11 @@ impl KanbanView {
         let r = g.rect;
         cmds.push(fill(r, border, 7.0));
         let bw = if selected || dragging { 2.0 } else { 1.0 };
-        cmds.push(fill(Rect::new(r.x + bw, r.y + bw, r.w - 2.0 * bw, r.h - 2.0 * bw), bg, (7.0 - bw).max(0.0)));
+        cmds.push(fill(
+            Rect::new(r.x + bw, r.y + bw, r.w - 2.0 * bw, r.h - 2.0 * bw),
+            bg,
+            (7.0 - bw).max(0.0),
+        ));
         // The checkbox: a ring to fill, or an accent disc with a tick.
         let ck = g.check;
         let mid = (ck.x + ck.w / 2.0, ck.y + ck.h / 2.0);
@@ -1296,12 +1262,7 @@ impl KanbanView {
                 for rect in fonts.range_rects(&text, &spans, &style, Some(g.text.w), s, e) {
                     let h = (rect.h - 3.0).max(8.0);
                     cmds.push(fill(
-                        Rect::new(
-                            g.text.x + rect.x - 3.0,
-                            g.text.y + rect.y + 1.5,
-                            rect.w + 6.0,
-                            h,
-                        ),
+                        Rect::new(g.text.x + rect.x - 3.0, g.text.y + rect.y + 1.5, rect.w + 6.0, h),
                         c[5].with_alpha(0.16),
                         h / 2.0,
                     ));
@@ -1336,11 +1297,7 @@ impl KanbanView {
     ) {
         let at = fonts.range_rects(buf, &[], style, Some(box_.w), buf.len(), buf.len());
         let Some(r) = at.last() else { return };
-        cmds.push(fill(
-            Rect::new(box_.x + r.x, box_.y + r.y, 1.5, r.h.max(style.line_height)),
-            accent,
-            0.0,
-        ));
+        cmds.push(fill(Rect::new(box_.x + r.x, box_.y + r.y, 1.5, r.h.max(style.line_height)), accent, 0.0));
     }
 }
 
@@ -1468,9 +1425,11 @@ pub fn pane(v: &KanbanView, dom: &mut Dom, parent: NodeId, info: &mut crate::vie
         )),
     );
     let source = if v.show_source { "Ver tablero" } else { "Ver código" };
-    for (label, cmd) in
-        [("Nueva columna", "kanban:add-column"), ("Nueva tarjeta", "kanban:add-card"), (source, "kanban:source")]
-    {
+    for (label, cmd) in [
+        ("Nueva columna", "kanban:add-column"),
+        ("Nueva tarjeta", "kanban:add-card"),
+        (source, "kanban:source"),
+    ] {
         dom.add(header, El::div().class("graph-control").text(label).action(cmd));
     }
     let leaf = dom.add(parent, El::div().class("view-content kanban-wrapper"));
@@ -1857,11 +1816,7 @@ impl App {
             }
             "column-menu" => {
                 if let Some(i) = arg {
-                    let (x, y) = self
-                        .kanban_view
-                        .as_ref()
-                        .map(|v| v.column_anchor(i))
-                        .unwrap_or((0.0, 0.0));
+                    let (x, y) = self.kanban_view.as_ref().map(|v| v.column_anchor(i)).unwrap_or((0.0, 0.0));
                     self.kanban_column_menu(i, x, y);
                 }
             }
@@ -1955,7 +1910,13 @@ impl App {
         action: String,
         warning: bool,
     ) -> crate::menu::MenuItem {
-        crate::menu::MenuItem { label: label.to_string(), icon, hotkey: self.hotkey_for(&action), action, warning }
+        crate::menu::MenuItem {
+            label: label.to_string(),
+            icon,
+            hotkey: self.hotkey_for(&action),
+            action,
+            warning,
+        }
     }
 
     /// The right-click menu over the board: the column under the pointer, or the board's own.

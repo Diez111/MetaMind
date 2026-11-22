@@ -137,9 +137,8 @@ pub fn install(r: &Release, exe: &Path) -> Result<(), String> {
 fn safe_members(list: &str) -> Result<(), String> {
     use std::path::Component;
     for name in list.lines().map(str::trim).filter(|l| !l.is_empty()) {
-        let escapes = Path::new(name)
-            .components()
-            .any(|c| !matches!(c, Component::Normal(_) | Component::CurDir));
+        let escapes =
+            Path::new(name).components().any(|c| !matches!(c, Component::Normal(_) | Component::CurDir));
         if escapes {
             return Err(format!("la descarga trae {name:?}, que sale de la carpeta de trabajo"));
         }
@@ -161,11 +160,8 @@ fn install_in(r: &Release, exe: &Path, work: &Path) -> Result<(), String> {
             r.asset
         ));
     }
-    let listing = tool("tar")
-        .arg("-tf")
-        .arg(&archive)
-        .output()
-        .map_err(|e| format!("no se pudo ejecutar tar: {e}"))?;
+    let listing =
+        tool("tar").arg("-tf").arg(&archive).output().map_err(|e| format!("no se pudo ejecutar tar: {e}"))?;
     if !listing.status.success() {
         return Err(format!(
             "no se pudo leer el contenido de {}: {}",
@@ -451,7 +447,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sha256_vectors() {        assert_eq!(hex(&sha256(b"")), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    fn sha256_vectors() {
+        assert_eq!(hex(&sha256(b"")), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
         assert_eq!(hex(&sha256(b"abc")), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
         let long = b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
         assert_eq!(hex(&sha256(long)), "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
@@ -467,7 +464,8 @@ mod tests {
     }
 
     #[test]
-    fn parses_release_and_sums() {        let json = r#"{"tag_name":"v0.3.0","html_url":"https://example.invalid/r","assets":[
+    fn parses_release_and_sums() {
+        let json = r#"{"tag_name":"v0.3.0","html_url":"https://example.invalid/r","assets":[
             {"name":"metamind-v0.3.0-linux-x86_64.tar.gz","browser_download_url":"u1"},
             {"name":"metamind-v0.3.0-windows-x86_64.zip","browser_download_url":"u2"},
             {"name":"SHA256SUMS.txt","browser_download_url":"u3"}]}"#;
@@ -487,8 +485,9 @@ mod tests {
     #[test]
     fn an_archive_that_climbs_out_of_the_work_folder_is_refused() {
         assert!(safe_members("").is_ok());
-        assert!(safe_members("metamind-v9.0.0-linux-x86_64/\nmetamind-v9.0.0-linux-x86_64/metamind\n")
-            .is_ok());
+        assert!(
+            safe_members("metamind-v9.0.0-linux-x86_64/\nmetamind-v9.0.0-linux-x86_64/metamind\n").is_ok()
+        );
         for bad in ["../evil", "../../.bashrc", "/etc/cron.d/job", "pkg/../../evil", "pkg/.."] {
             assert!(safe_members(bad).is_err(), "{bad}");
         }
