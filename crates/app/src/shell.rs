@@ -558,6 +558,8 @@ pub struct App {
     pub video_area: (f32, f32),
     /// The AI copilot of the right sidebar.
     pub ai: crate::ai::AiPanel,
+    /// The models the AI panel's provider listed, fetched in the background from Ajustes → IA.
+    pub ai_models: crate::ai::ModelList,
     /// UI scale factor (window scale).
     pub scale: f32,
     pub video_waker: Option<Box<dyn Fn() + Send>>,
@@ -759,6 +761,7 @@ impl App {
             ),
             video_area: (0.0, 0.0),
             ai: Default::default(),
+            ai_models: Default::default(),
             scale: 1.0,
             video_waker: None,
             recovery: Recovery::new(root),
@@ -909,6 +912,14 @@ impl App {
             }
         }
         self.calendar.tick(&root, &self.store);
+        // A models query answers on its own thread: wake the window so the answer is drawn now
+        // instead of at the next input or deadline. The waker is the same one the video player
+        // uses: it only asks for a frame.
+        if self.ai_models.poll() {
+            if let Some(waker) = &self.video_waker {
+                waker();
+            }
+        }
         if let Some(report) = self.calendar.take_report() {
             self.notice = Some(match report {
                 Ok(0) => "La dirección respondió, pero no hay ningún evento".to_string(),

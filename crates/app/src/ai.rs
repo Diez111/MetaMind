@@ -22,6 +22,61 @@ pub const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
 /// The model used by the default profile and the DeepSeek preset: a cheap one, as the panel is
 /// for quick questions.
 pub const DEFAULT_MODEL: &str = "deepseek-v4.1-flash";
+/// The instructions the panel sends when a profile has none, and the starting points the settings
+/// form offers. Each preset writes a different voice, not a different model.
+pub const PROMPT_PRESETS: [(&str, &str); 5] = [
+    (
+        "Estudio (predeterminado)",
+        "Un tutor que explica el porqué antes del resultado, con un ejemplo mínimo y una pregunta \
+         de comprobación al final.",
+    ),
+    (
+        "Matemática paso a paso",
+        "Desarrolla cada paso, nombra la regla que aplica y cierra con el resultado destacado.",
+    ),
+    (
+        "Diagramas y tablas",
+        "Prefiere mostrar antes que contar: tabla para comparar, Mermaid para el flujo.",
+    ),
+    (
+        "Economía y trading",
+        "Distingue hecho de interpretación, da el supuesto y el riesgo antes de la conclusión.",
+    ),
+    (
+        "Fuentes verificadas",
+        "Separa lo que está en la nota de lo que viene de fuera, y nombra la fuente de cada dato.",
+    ),
+];
+
+/// The instructions behind each entry of [`PROMPT_PRESETS`].
+pub fn preset_prompt(index: usize) -> Option<&'static str> {
+    Some(match index {
+        0 => DEFAULT_SYSTEM_PROMPT,
+        1 => "\
+Eres un tutor de matemática dentro de Obsidian. Responde en español y desarrolla el cálculo \
+completo: cada igualdad es un paso y antes de cada una nombrás la regla que aplicás (derivada del \
+producto, regla de la cadena, sustitución). Usa $...$ en línea y $$...$$ para lo destacado. \
+Cierra con el resultado en una línea aparte. Si el dato no alcanza para resolver, decilo y pedí \
+lo que falta en vez de inventar un número.",
+        2 => "\
+Eres un asistente técnico dentro de Obsidian. Respondé en español y preferí mostrar antes que \
+contar: una tabla markdown cuando compares dos o más cosas y un bloque ```mermaid cuando haya un \
+flujo, estados o una secuencia. Explicá el diagrama en una línea, no repitas en prosa lo que el \
+dibujo ya dice. Usa LaTeX para las fórmulas.",
+        3 => "\
+Eres analista de mercados dentro de Obsidian. Respondé en español y separá siempre tres cosas: lo \
+que es un hecho observable, lo que es tu interpretación y lo que es un supuesto que el lector \
+debe aceptar. Da el riesgo y el escenario en contra antes de la conclusión. Nada de \
+recomendaciones de compra o venta: describí el mecanismo. Si falta un dato, pedilo.",
+        4 => "\
+Eres un asistente de investigación dentro de Obsidian. Respondé en español y marcá el origen de \
+cada afirmación: «en tu nota…» cuando sale de la nota abierta, «según la fuente que citás…» \
+cuando viene de fuera, y una línea aparte al final con lo que no pudiste verificar. Nunca \
+presentes una estimación como un dato.",
+        _ => return None,
+    })
+}
+
 /// The instructions the panel sends unless `ai.system_prompt` says otherwise: short, LaTeX for
 /// mathematics, tables to compare and Mermaid for diagrams.
 pub const DEFAULT_SYSTEM_PROMPT: &str = "\
@@ -143,6 +198,9 @@ pub struct AiProfile {
     pub base_url: String,
     /// Bearer token. Empty means the panel refuses to send.
     pub api_key: String,
+    /// Set, the panel may only use these models; empty means every model the provider serves.
+    pub enabled: Vec<String>,
+    /// The model the panel asks for by default.
     pub model: String,
     /// Instructions for this profile. Empty means [`DEFAULT_SYSTEM_PROMPT`].
     pub system_prompt: String,
@@ -157,6 +215,7 @@ impl Default for AiProfile {
             base_url: DEFAULT_BASE_URL.to_string(),
             api_key: String::new(),
             model: DEFAULT_MODEL.to_string(),
+            enabled: Vec::new(),
             system_prompt: String::new(),
             timeout_s: 30,
         }
@@ -198,6 +257,7 @@ impl AiProfile {
             "base_url": self.base_url,
             "api_key": self.api_key,
             "model": self.model,
+            "models": self.enabled,
             "system_prompt": self.system_prompt,
             "timeout_s": self.timeout_s,
         })
@@ -219,6 +279,11 @@ impl AiProfile {
             base_url: text("base_url", &d.base_url),
             api_key: v.get("api_key").and_then(Value::as_str).unwrap_or("").trim().to_string(),
             model: text("model", &d.model),
+            enabled: v
+                .get("models")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_str).map(|s| s.trim().to_string()).collect())
+                .unwrap_or_default(),
             system_prompt: v.get("system_prompt").and_then(Value::as_str).unwrap_or("").trim().to_string(),
             timeout_s: v.get("timeout_s").and_then(Value::as_u64).map_or(d.timeout_s, |n| n.clamp(1, 600)),
         }
@@ -346,12 +411,137 @@ fn legacy_profile(a: &JsonFile) -> AiProfile {
         base_url: text(KEY_BASE_URL, &d.base_url),
         api_key: a.str(KEY_API_KEY).map(str::trim).unwrap_or("").to_string(),
         model: text(KEY_MODEL, &d.model),
+        enabled: Vec::new(),
         system_prompt: text(KEY_SYSTEM_PROMPT, ""),
         timeout_s: a.get(KEY_TIMEOUT).and_then(Value::as_u64).map_or(d.timeout_s, |n| n.clamp(1, 600)),
     }
 }
 
 /// The URL of the chat endpoint for `base`, which may already end in `/v1`.
+/// The address that lists the models of a provider, next to [`chat_url`].
+pub fn models_url(base: &str) -> String {
+    let base = base.trim().trim_end_matches('/');
+    let base = if base.is_empty() { DEFAULT_BASE_URL } else { base };
+    if base.ends_with("/v1") {
+        format!("{base}/models")
+    } else {
+        format!("{base}/v1/models")
+    }
+}
+
+/// The ids a `/models` body lists, sorted and without repeats. Providers answer the
+/// OpenAI-compatible shape (`{"data":[{"id":…}]}`); anything else yields an empty list instead
+/// of an error, so an unexpected body reads as "no models" rather than a failure to parse.
+pub fn parse_models(body: &str) -> Vec<String> {
+    let Ok(v) = serde_json::from_str::<Value>(body) else { return Vec::new() };
+    let mut ids: Vec<String> = v
+        .get("data")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|m| m.get("id").and_then(Value::as_str).or_else(|| m.as_str()))
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
+/// Ask a provider which models it serves. Blocking: the settings panel runs it on a thread.
+pub fn list_models(profile: &AiProfile) -> Result<Vec<String>, String> {
+    if profile.api_key.trim().is_empty() {
+        return Err("Falta la clave de API: cargala y volvé a consultar".to_string());
+    }
+    let secs = profile.timeout_s.clamp(1, 600);
+    let config = ureq::Agent::config_builder()
+        .timeout_connect(Some(Duration::from_secs(secs)))
+        .timeout_recv_response(Some(Duration::from_secs(secs)))
+        .timeout_recv_body(Some(Duration::from_secs(secs)))
+        .http_status_as_error(false)
+        .build();
+    let agent = ureq::Agent::new_with_config(config);
+    let auth = format!("Bearer {}", profile.api_key.trim());
+    let res = agent
+        .get(&models_url(&profile.base_url))
+        .header("Accept", "application/json")
+        .header("Authorization", auth.as_str())
+        .call()
+        .map_err(|e| format!("No se pudo contactar la API: {e}"))?;
+    let status = res.status();
+    let body = res.into_body().read_to_string().unwrap_or_default();
+    if !status.is_success() {
+        let hint = match status.as_u16() {
+            401 | 403 => "La clave fue rechazada".to_string(),
+            404 => "El proveedor no expone /models: escribí el modelo a mano".to_string(),
+            429 => "Demasiadas consultas: probá en un rato".to_string(),
+            s => format!("El proveedor respondió {s}"),
+        };
+        return Err(hint);
+    }
+    let ids = parse_models(&body);
+    if ids.is_empty() {
+        return Err("La respuesta no trae modelos: escribí el nombre a mano".to_string());
+    }
+    Ok(ids)
+}
+
+/// The models a provider listed, fetched on a thread so the panel never blocks on the network.
+#[derive(Default)]
+pub struct ModelList {
+    pending: Option<std::sync::mpsc::Receiver<Result<Vec<String>, String>>>,
+    /// The profile the list belongs to, so an answer for another profile is not applied.
+    pub profile: String,
+    pub list: Vec<String>,
+    pub error: Option<String>,
+}
+
+impl ModelList {
+    /// Starts the query for `profile`. A second call replaces the first.
+    pub fn fetch(&mut self, profile: &AiProfile) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let p = profile.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(list_models(&p));
+        });
+        self.profile = profile.name.clone();
+        self.list.clear();
+        self.error = None;
+        self.pending = Some(rx);
+    }
+
+    /// Whether a query is in flight for `profile`.
+    pub fn pending_for(&self, profile: &str) -> bool {
+        self.pending.is_some() && self.profile == profile
+    }
+
+    /// Takes an answer if one arrived. Returns whether anything changed.
+    pub fn poll(&mut self) -> bool {
+        let Some(rx) = &self.pending else { return false };
+        match rx.try_recv() {
+            Ok(Ok(list)) => {
+                self.list = list;
+                self.error = None;
+                self.pending = None;
+                true
+            }
+            Ok(Err(e)) => {
+                self.error = Some(e);
+                self.pending = None;
+                true
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => false,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.error = Some("La consulta de modelos se cortó".to_string());
+                self.pending = None;
+                true
+            }
+        }
+    }
+}
+
 pub fn chat_url(base: &str) -> String {
     let base = base.trim().trim_end_matches('/');
     let base = if base.is_empty() { DEFAULT_BASE_URL } else { base };
@@ -823,6 +1013,7 @@ mod tests {
             base_url: url.into(),
             api_key: "sk-test".into(),
             model: model.into(),
+            enabled: Vec::new(),
             system_prompt: "Sé breve.".into(),
             timeout_s: 20,
         }
@@ -1077,6 +1268,25 @@ mod tests {
         assert!(done, "the stream reports its end");
         assert_eq!(request["model"], DEFAULT_MODEL);
         assert_eq!(request["messages"][1]["content"], "hello");
+    }
+
+    #[test]
+    fn models_url_follows_the_same_rule_as_chat_url() {
+        assert_eq!(models_url("https://api.deepseek.com"), "https://api.deepseek.com/v1/models");
+        assert_eq!(models_url("http://localhost:11434/v1/"), "http://localhost:11434/v1/models");
+        assert_eq!(models_url(""), "https://api.deepseek.com/v1/models");
+    }
+
+    #[test]
+    fn a_models_body_becomes_a_sorted_list_of_ids() {
+        let body = r#"{"object":"list","data":[{"id":"deepseek-v4.1-flash"},{"id":"deepseek-v4-pro"},{"id":"deepseek-v4.1-flash"}]}"#;
+        // Sorted as bytes: `-` comes before `.`, so the v4 names go first and the v4.1 ones after.
+        assert_eq!(parse_models(body), vec!["deepseek-v4-pro", "deepseek-v4.1-flash"]);
+        // A provider that answers plain strings is still read.
+        assert_eq!(parse_models(r#"{"data":["b","a"]}"#), vec!["a", "b"]);
+        // Anything unexpected reads as "no models", not as a parse failure.
+        assert!(parse_models("no es json").is_empty());
+        assert!(parse_models(r#"{"data":[]}"#).is_empty());
     }
 
     #[test]

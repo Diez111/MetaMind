@@ -54,20 +54,8 @@ const NODES: [Node; 9] = [
 ];
 
 /// The edges of the graph, as indices into [`NODES`].
-const EDGES: [(usize, usize); 12] = [
-    (0, 1),
-    (0, 2),
-    (0, 3),
-    (0, 4),
-    (0, 5),
-    (0, 6),
-    (0, 7),
-    (0, 8),
-    (1, 7),
-    (4, 7),
-    (3, 8),
-    (6, 8),
-];
+const EDGES: [(usize, usize); 12] =
+    [(0, 1), (0, 2), (0, 3), (0, 4), (0, 5), (0, 6), (0, 7), (0, 8), (1, 7), (4, 7), (3, 8), (6, 8)];
 
 /// Two faint rings around the centre, `(radius, opacity)`.
 const GLOW: [(f32, f32); 2] = [(40.0 / 256.0, 0.15), (60.0 / 256.0, 0.08)];

@@ -1027,6 +1027,31 @@ impl App {
                     s.ai_edit = Some(at);
                 }
             }
+            // The models the provider lists: asked for on demand, then enabled one by one.
+            "ai-models" => {
+                let Ok(at) = arg.parse::<usize>() else { return true };
+                let cfg = AiConfig::from_config(&self.config);
+                if let Some(p) = cfg.profiles.get(at) {
+                    self.ai_models.fetch(p);
+                }
+            }
+            "ai-default-model" => {
+                if let Some((at, model)) = arg.split_once(':').and_then(|(a, m)| Some((a.parse::<usize>().ok()?, m))) {
+                    let mut cfg = AiConfig::from_config(&self.config);
+                    if at < cfg.profiles.len() {
+                        cfg.profiles[at].model = model.to_string();
+                        self.set_ai_config(&cfg);
+                        self.notice = Some(format!("«{model}» es el modelo predeterminado"));
+                    }
+                }
+            }
+            "ai-toggle-model" => {
+                if let Some((at, model)) =
+                    arg.split_once(':').and_then(|(a, m)| Some((a.parse::<usize>().ok()?, m)))
+                {
+                    self.ai_toggle_model(at, model);
+                }
+            }
             "ai-select" => {
                 if let Ok(at) = arg.parse::<usize>() {
                     if let Some(s) = &mut self.settings {
@@ -1202,6 +1227,17 @@ impl App {
     /// Writes what a dropdown picked: a settings choice, or the preset of an AI profile, which
     /// fills the URL and a model that provider usually serves.
     fn apply_choice(&mut self, key: &str, value: &str) {
+        if let Some(at) = key.strip_prefix("ai.prompt:").and_then(|a| a.parse::<usize>().ok()) {
+            let Ok(index) = value.parse::<usize>() else { return };
+            let Some(text) = crate::ai::preset_prompt(index) else { return };
+            let mut cfg = AiConfig::from_config(&self.config);
+            if at < cfg.profiles.len() {
+                cfg.profiles[at].system_prompt = text.to_string();
+                self.set_ai_config(&cfg);
+                self.notice = Some("Plantilla del prompt aplicada".to_string());
+            }
+            return;
+        }
         if let Some(at) = key.strip_prefix("ai.preset:").and_then(|a| a.parse::<usize>().ok()) {
             let Ok(index) = value.parse::<usize>() else { return };
             let Some(preset) = crate::ai::Preset::ALL.get(index).copied() else { return };
@@ -1218,6 +1254,32 @@ impl App {
                 self.save_setting(it.file, it.key, json!(value));
             }
         }
+    }
+
+    /// Turns one model of profile `at` on or off. An empty list means "every model the provider
+    /// serves", so the first toggle seeds it with everything that was listed.
+    fn ai_toggle_model(&mut self, at: usize, model: &str) {
+        let mut cfg = AiConfig::from_config(&self.config);
+        if at >= cfg.profiles.len() {
+            return;
+        }
+        let listed = self.ai_models.list.clone();
+        let mut enabled = if cfg.profiles[at].enabled.is_empty() {
+            listed.clone()
+        } else {
+            cfg.profiles[at].enabled.clone()
+        };
+        if let Some(i) = enabled.iter().position(|m| m == model) {
+            enabled.remove(i);
+        } else {
+            enabled.push(model.to_string());
+        }
+        // Having every listed model enabled is the same as having none singled out.
+        let all = !listed.is_empty()
+            && listed.iter().all(|m| enabled.iter().any(|e| e == m))
+            && enabled.len() == listed.len();
+        cfg.profiles[at].enabled = if all { Vec::new() } else { enabled };
+        self.set_ai_config(&cfg);
     }
 
     fn edit_key(&self) -> Option<&str> {
@@ -1367,6 +1429,15 @@ fn choice_options(key: &str) -> Option<Vec<(String, String)>> {
                 .iter()
                 .enumerate()
                 .map(|(i, p)| (i.to_string(), p.label().to_string()))
+                .collect(),
+        );
+    }
+    if key.starts_with("ai.prompt:") {
+        return Some(
+            crate::ai::PROMPT_PRESETS
+                .iter()
+                .enumerate()
+                .map(|(i, (label, desc))| (i.to_string(), format!("{label} — {desc}")))
                 .collect(),
         );
     }
@@ -2058,6 +2129,43 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     );
     let ctl = row(dom, parent, "Modelo", "Nombre del modelo tal como lo espera el proveedor.");
     input(dom, ctl, &format!("ai.p:model:{at}"), &p.model, ui.edit.as_ref(), Some("deepseek-v4.1-flash"));
+    // What the provider says it serves, asked for on demand: the list is the source of truth for
+    // the spelling of a model, which is where a hand-written name usually goes wrong.
+    let listing = app.ai_models.pending_for(&p.name);
+    let ctl = row(
+        dom,
+        parent,
+        "Modelos del proveedor",
+        "Se consultan por API con la clave cargada. Sin ninguno habilitado, el panel acepta cualquier \
+         modelo que el proveedor sirva.",
+    );
+    if listing {
+        dom.add(ctl, El::div().class("setting-value").text("Consultando…"));
+    } else {
+        button(dom, ctl, "Consultar", format!("settings:ai-models:{at}"), false);
+        if let Some(err) = &app.ai_models.error {
+            dom.add(ctl, El::div().class("setting-value").text(err.clone()));
+        } else if app.ai_models.profile == p.name && !app.ai_models.list.is_empty() {
+            let n = app.ai_models.list.len();
+            dom.add(
+                ctl,
+                El::div().class("setting-value").text(format!("{n} modelo{}", if n == 1 { "" } else { "s" })),
+            );
+        }
+    }
+    if app.ai_models.profile == p.name && !app.ai_models.list.is_empty() {
+        let listed = app.ai_models.list.clone();
+        for m in &listed {
+            let on = p.enabled.is_empty() || p.enabled.iter().any(|e| e == m);
+            let ctl = row(dom, parent, m, "");
+            if p.model == *m {
+                dom.add(ctl, El::div().class("setting-value").text("Por defecto"));
+            } else {
+                button(dom, ctl, "Predeterminar", format!("settings:ai-default-model:{at}:{m}"), false);
+            }
+            toggle(dom, ctl, on, format!("settings:ai-toggle-model:{at}:{m}"));
+        }
+    }
     let ctl = row(
         dom,
         parent,
@@ -2072,6 +2180,19 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
         "Instrucciones de este perfil. Vacío usa el prompt predeterminado.",
     );
     input(dom, ctl, &format!("ai.p:system_prompt:{at}"), &p.system_prompt, ui.edit.as_ref(), None);
+    // A starting point for the prompt: picking one writes the text, which stays editable.
+    let preset = crate::ai::PROMPT_PRESETS
+        .iter()
+        .enumerate()
+        .find(|(i, _)| crate::ai::preset_prompt(*i).is_some_and(|t| t.trim() == p.system_prompt.trim()))
+        .map_or("Personalizado", |(_, (label, _))| *label);
+    let ctl = row(
+        dom,
+        parent,
+        "Plantilla del prompt",
+        "Escribe el texto del prompt; después se puede editar a mano.",
+    );
+    dropdown(dom, ctl, ui, &format!("ai.prompt:{at}"), preset, preset);
     let ctl = row(dom, parent, "Tiempo de espera", "Segundos antes de cortar la conexión (1 a 600).");
     input(dom, ctl, &format!("ai.p:timeout_s:{at}"), &p.timeout_s.to_string(), ui.edit.as_ref(), Some("30"));
 }
@@ -2124,9 +2245,9 @@ fn calendar_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     items_view(app, dom, parent, ui, Section::Calendar, "", false);
     dom.add(
         parent,
-        El::div().class("settings-note").text(
-            "MetMind nunca escribe en Google: con la dirección iCal el calendario es de solo lectura.",
-        ),
+        El::div()
+            .class("settings-note")
+            .text("MetMind nunca escribe en Google: con la dirección iCal el calendario es de solo lectura."),
     );
 }
 
@@ -2149,7 +2270,8 @@ pub fn modal(app: &App, dom: &mut Dom) {
     dom.add(bar, El::div().class("settings-topbar-title").text("Ajustes"));
     let search_box = dom.add(bar, El::div().class("settings-search"));
     dom.add(search_box, icons::el("search").class("settings-search-icon"));
-    let search = ui.edit.as_ref().filter(|e| e.key == "search").map_or(ui.search.as_str(), |e| e.buf.as_str());
+    let search =
+        ui.edit.as_ref().filter(|e| e.key == "search").map_or(ui.search.as_str(), |e| e.buf.as_str());
     input(dom, search_box, "search", search, ui.edit.as_ref(), Some("Buscar ajustes…"));
     // The hint only says how to close: Ctrl+, is what opens this window, and it is in the
     // command list and the ribbon already.
