@@ -37,13 +37,7 @@ const SECTIONS: [(Section, &str, &str, &str, &str); 5] = [
         "Escritura, sangría, propiedades y corrección ortográfica.",
         "edit",
     ),
-    (
-        Section::Ai,
-        "ai",
-        "IA",
-        "Perfiles de proveedores, modelos y claves del copiloto.",
-        "sparkles",
-    ),
+    (Section::Ai, "ai", "IA", "Perfiles de proveedores, modelos y claves del copiloto.", "sparkles"),
     (
         Section::Plugins,
         "plugins",
@@ -1127,7 +1121,8 @@ fn theme_swatches(dom: &mut Dom, ctl: NodeId, current: &str) {
     for s in &SWATCHES {
         // The name goes under the preview, in the flow: a label laid over the box was cut by the
         // row below it.
-        let item = dom.add(wrap, El::div().class("theme-swatch-item").class_if(s.value == current, "is-active"));
+        let item =
+            dom.add(wrap, El::div().class("theme-swatch-item").class_if(s.value == current, "is-active"));
         let sw = dom.add(
             item,
             El::div()
@@ -1565,13 +1560,7 @@ fn ai_matches(needle: &str) -> bool {
 
 /// A text control whose contents are never painted: a row of dots when a value is set, and one
 /// dot per character while it is being edited.
-fn masked_input(
-    dom: &mut Dom,
-    ctl: NodeId,
-    key: &str,
-    set: bool,
-    edit: Option<&(String, String)>,
-) -> NodeId {
+fn masked_input(dom: &mut Dom, ctl: NodeId, key: &str, set: bool, edit: Option<&(String, String)>) -> NodeId {
     let editing = edit.filter(|e| e.0 == key);
     let text = match editing {
         Some(e) => format!("{}▏", "•".repeat(e.1.chars().count().clamp(1, 24))),

@@ -294,7 +294,8 @@ impl AiConfig {
         }
         let mut taken: Vec<String> = Vec::with_capacity(self.profiles.len());
         for p in &mut self.profiles {
-            let base = if p.name.trim().is_empty() { "Perfil".to_string() } else { p.name.trim().to_string() };
+            let base =
+                if p.name.trim().is_empty() { "Perfil".to_string() } else { p.name.trim().to_string() };
             let mut name = base.clone();
             let mut n = 2;
             while taken.contains(&name) {
@@ -558,8 +559,7 @@ impl AiPanel {
         // The newest turns are the ones the model needs; the oldest fall off.
         let start = self.messages.len().saturating_sub(MAX_HISTORY);
         let mut history: Vec<Message> = self.messages[start..].to_vec();
-        let payload =
-            build_payload(cfg, &system_content(cfg, note_context), &history, question).to_string();
+        let payload = build_payload(cfg, &system_content(cfg, note_context), &history, question).to_string();
         history.push(Message::user(question));
         history.push(Message::assistant(String::new()));
         self.messages = history;
@@ -814,12 +814,7 @@ mod tests {
     use std::net::TcpListener;
 
     fn tab(text: &str) -> Tab {
-        Tab::new(
-            "Nota.md".to_string(),
-            text,
-            vault_core::fsio::Stamp { mtime: 0, size: 0 },
-            false,
-        )
+        Tab::new("Nota.md".to_string(), text, vault_core::fsio::Stamp { mtime: 0, size: 0 }, false)
     }
 
     fn profile(name: &str, url: &str, model: &str) -> AiProfile {
@@ -1006,10 +1001,7 @@ mod tests {
             parse_delta(r#"{"choices":[{"delta":{"content":"Hola"}}]}"#).unwrap(),
             Some("Hola".to_string())
         );
-        assert_eq!(
-            parse_delta(r#"{"choices":[{"delta":{"role":"assistant"}}]}"#).unwrap(),
-            None
-        );
+        assert_eq!(parse_delta(r#"{"choices":[{"delta":{"role":"assistant"}}]}"#).unwrap(), None);
         assert_eq!(parse_delta(r#"{"choices":[]}"#).unwrap(), None);
         assert!(parse_delta(r#"{"error":{"message":"sin saldo"}}"#).unwrap_err().contains("sin saldo"));
         assert!(parse_delta("{").is_err());

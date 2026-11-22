@@ -4,8 +4,7 @@
 use crate::shell::{App, Key};
 use editor_core::{Change, EditKind, Editor, Sel};
 use ext_api::{
-    Discovered, Event, Extension, Extensions, Host, NoteInfo, PluginInfo as ExtInfo, PluginStatus,
-    Selection,
+    Discovered, Event, Extension, Extensions, Host, NoteInfo, PluginInfo as ExtInfo, PluginStatus, Selection,
 };
 use md_engine::frontmatter::Value as Fm;
 use serde_json::{json, Value};

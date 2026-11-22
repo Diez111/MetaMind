@@ -675,7 +675,9 @@ pub fn paint(dom: &mut Dom, items: &[Item], inline: &[InlineItem], fonts: &mut F
             Kind::Math { src, display } => {
                 let avail = r.w.max(1.0);
                 let mut size = BLOCK_SIZE;
-                let mut l = math_core::render_full(src, size, *display, &math_core::Metrics::default(), &mut fm).layout;
+                let mut l =
+                    math_core::render_full(src, size, *display, &math_core::Metrics::default(), &mut fm)
+                        .layout;
                 if l.width > avail {
                     // A display formula wider than its block is shrunk to fit rather than clipped:
                     // clipping loses the end of the line, which is where the result of the
@@ -684,13 +686,13 @@ pub fn paint(dom: &mut Dom, items: &[Item], inline: &[InlineItem], fonts: &mut F
                     // size so the real font metrics are the ones that decide the new width.
                     let sc = (avail / l.width).clamp(MATH_MIN_SCALE, 1.0);
                     size = BLOCK_SIZE * sc;
-                    l = math_core::render_full(src, size, *display, &math_core::Metrics::default(), &mut fm).layout;
+                    l = math_core::render_full(src, size, *display, &math_core::Metrics::default(), &mut fm)
+                        .layout;
                 }
                 let x = r.x + ((r.w - l.width) / 2.0).max(0.0);
                 let y = r.y + ((r.h - l.height()) / 2.0).max(0.0);
                 emit(&l, x, y, 1.0, &base, color, &mut cmds);
             }
-
         }
         dom.nodes[it.node].draw = cmds;
     }

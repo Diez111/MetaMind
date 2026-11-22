@@ -615,7 +615,11 @@ impl VideoPlayer {
 
     /// The playback rate, `1.0` at normal speed.
     pub fn speed(&self) -> f32 {
-        if self.speed > 0.0 { self.speed } else { 1.0 }
+        if self.speed > 0.0 {
+            self.speed
+        } else {
+            1.0
+        }
     }
 
     /// What the speed control shows: `1x`, `1.25x`, `0.75x`.
@@ -884,10 +888,7 @@ pub fn widget(app: &crate::App, dom: &mut Dom, view: NodeId) -> NodeId {
     let wide = fw.max(MIN_CARD_W);
     let card = dom.add(
         view,
-        El::div()
-            .class("video-player")
-            .class_if(loading, "is-loading")
-            .style(&format!("width: {wide:.0}px")),
+        El::div().class("video-player").class_if(loading, "is-loading").style(&format!("width: {wide:.0}px")),
     );
     let size = format!("width: {fw:.0}px; height: {fh:.0}px");
     // The picture is centred in the card: a narrow clip on a card as wide as the controls needs
@@ -896,11 +897,7 @@ pub fn widget(app: &crate::App, dom: &mut Dom, view: NodeId) -> NodeId {
     if let Some(image) = v.current() {
         dom.add(
             stage,
-            El::div()
-                .class("video-player-frame")
-                .style(&size)
-                .image(image.clone())
-                .action("video:toggle"),
+            El::div().class("video-player-frame").style(&size).image(image.clone()).action("video:toggle"),
         );
     } else {
         let frame = dom.add(stage, El::div().class("video-player-frame").style(&size).action("video:toggle"));

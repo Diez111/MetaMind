@@ -37,10 +37,10 @@ pub mod suggest;
 pub mod templates;
 pub mod update;
 pub mod uri;
+pub mod video;
 pub mod view;
 pub mod welcome;
 pub mod workspaces;
-pub mod video;
 
 pub use shell::{App, Key};
 
@@ -154,7 +154,8 @@ impl App {
     pub fn click(&mut self, frame: &Frame, fonts: &mut Fonts, x: f32, y: f32, shift: bool) {
         // A board shown full screen is a modal of its own: a click outside its box leaves it,
         // and a click inside belongs to the board.
-        if self.exc_fullscreen && self.exc_active() && !self.exc_rect(frame).is_some_and(|r| r.contains(x, y)) {
+        if self.exc_fullscreen && self.exc_active() && !self.exc_rect(frame).is_some_and(|r| r.contains(x, y))
+        {
             self.exc_fullscreen = false;
             self.last_click = None;
             return;
@@ -186,11 +187,9 @@ impl App {
             if action == "mermaid:zoom" {
                 // The block's source is kept with the item that paints it; the full-screen view
                 // re-renders the same diagram with the width of the window.
-                let src = frame.info.rich.iter().find(|it| it.node == node).and_then(|it| {
-                    match &it.kind {
-                        crate::rich::Kind::Mermaid(src) => Some(src.clone()),
-                        _ => None,
-                    }
+                let src = frame.info.rich.iter().find(|it| it.node == node).and_then(|it| match &it.kind {
+                    crate::rich::Kind::Mermaid(src) => Some(src.clone()),
+                    _ => None,
                 });
                 if let Some(src) = src {
                     self.open_diagram_zoom(src);
@@ -453,7 +452,8 @@ impl App {
         if self.diagram_zoom.is_some() {
             // Wheel over the full-screen diagram zooms it, around its centre.
             let step = (-lines / 6.0).exp();
-            self.diagram_zoom_scale = (self.diagram_zoom_scale * step).clamp(MIN_DIAGRAM_ZOOM, MAX_DIAGRAM_ZOOM);
+            self.diagram_zoom_scale =
+                (self.diagram_zoom_scale * step).clamp(MIN_DIAGRAM_ZOOM, MAX_DIAGRAM_ZOOM);
             return;
         }
         if let (Some(rect), Some(g)) = (graph_rect(frame), &mut self.graph_view) {

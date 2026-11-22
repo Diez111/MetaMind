@@ -1121,7 +1121,11 @@ impl App {
 
     /// Milliseconds until the player needs another tick (for the wait deadline), if playing.
     pub fn video_due_in(&self) -> Option<u64> {
-        if self.video.is_open() && !matches!(self.video.state(), crate::video::State::Paused) { Some(250) } else { None }
+        if self.video.is_open() && !matches!(self.video.state(), crate::video::State::Paused) {
+            Some(250)
+        } else {
+            None
+        }
     }
 
     /// Close the video player, called when the media file is deleted or renamed.
@@ -1412,7 +1416,7 @@ impl App {
             // These can add or remove files; the explorer rows are rebuilt on the next frame.
             self.tree = None;
         }
-                // ---- in-app video player ----
+        // ---- in-app video player ----
         // Toggle a folded callout: clicking its title expands/collapses the content.
         if let Some(block) = command.strip_prefix("callout:toggle:").and_then(|b| b.parse::<usize>().ok()) {
             let note = self.tabs.get(self.active).map(|t| t.path.clone()).unwrap_or_default();
@@ -1435,17 +1439,26 @@ impl App {
         if let Some(rest) = command.strip_prefix("video:") {
             if let Some((note, rel)) = rest.strip_prefix("open:").and_then(|r| r.split_once('|')) {
                 let path = self.store.abs(rel);
-                match self.video.open(rel, &path, note, ((640.0 * self.scale) as u32, (360.0 * self.scale) as u32)) {
+                match self.video.open(
+                    rel,
+                    &path,
+                    note,
+                    ((640.0 * self.scale) as u32, (360.0 * self.scale) as u32),
+                ) {
                     Ok(()) => {
-                        if let Some(waker) = self.video_waker.take() { waker(); }
+                        if let Some(waker) = self.video_waker.take() {
+                            waker();
+                        }
                     }
                     Err(e) => self.notice = Some(e),
                 }
                 return;
             }
-            if self.video.run_action(command) { return; }
+            if self.video.run_action(command) {
+                return;
+            }
         }
-if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
+        if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
             return self.accept_suggest(i);
         }
         if let Some(rest) = command.strip_prefix("spell:replace:") {

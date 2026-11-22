@@ -394,11 +394,7 @@ fn shape(name: &str) -> Shape {
             .l(3.0, 8.0)
             .l(8.0, 8.0),
         // lucide `x`
-        "pause" => s
-            .m(7.0, 5.0)
-            .l(7.0, 19.0)
-            .m(17.0, 5.0)
-            .l(17.0, 19.0),
+        "pause" => s.m(7.0, 5.0).l(7.0, 19.0).m(17.0, 5.0).l(17.0, 19.0),
         "maximize" => s
             .m(8.0, 4.0)
             .l(8.0, 8.0)
@@ -489,9 +485,11 @@ fn shape(name: &str) -> Shape {
         // lucide `layout-grid`: the four squares that stand for a set of add-ons. The settings
         // sidebar asked for `layout-dashboard`, which had no glyph and drew the empty square a
         // missing character leaves behind.
-        "plugins" | "layout-grid" | "layout-dashboard" => {
-            s.rect(3.0, 3.0, 10.0, 10.0).rect(14.0, 3.0, 21.0, 10.0).rect(14.0, 14.0, 21.0, 21.0).rect(3.0, 14.0, 10.0, 21.0)
-        }
+        "plugins" | "layout-grid" | "layout-dashboard" => s
+            .rect(3.0, 3.0, 10.0, 10.0)
+            .rect(14.0, 3.0, 21.0, 10.0)
+            .rect(14.0, 14.0, 21.0, 21.0)
+            .rect(3.0, 14.0, 10.0, 21.0),
         "blank" => s,
         // lucide `arrow-up-down`
         "sort" => s
