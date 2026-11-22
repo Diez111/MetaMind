@@ -1,0 +1,18 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Google Inc//Google Calendar 70.9054//EN
+CALSCALE:GREGORIAN
+X-WR-CALNAME:Trabajo
+BEGIN:VEVENT
+DTSTART;TZID=America/Argentina/Buenos_Aires:20250916T093000
+DTEND;TZID=America/Argentina/Buenos_Aires:20250916T103000
+RRULE:FREQ=WEEKLY;INTERVAL=1
+SUMMARY:Reunión de equipo\, semanal
+LOCATION:Sala 3
+DESCRIPTION:Línea uno\nLínea dos\; con punto y coma y una continuación
+  larga que sigue en la línea de abajo
+UID:abc-123@google.com
+SEQUENCE:0
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR
