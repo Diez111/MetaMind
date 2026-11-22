@@ -395,11 +395,7 @@ fn shape(name: &str) -> Shape {
             .l(3.0, 8.0)
             .l(8.0, 8.0),
         // lucide `x`
-        "pause" => s
-            .m(7.0, 5.0)
-            .l(7.0, 19.0)
-            .m(17.0, 5.0)
-            .l(17.0, 19.0),
+        "pause" => s.m(7.0, 5.0).l(7.0, 19.0).m(17.0, 5.0).l(17.0, 19.0),
         // lucide `maximize`: four corner brackets, the widest read at 16 px. The old glyph was a
         // box with ticks inside it, which at the size of a button was an unreadable smudge.
         "maximize" => s

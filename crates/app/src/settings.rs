@@ -1652,7 +1652,7 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     let p = &cfg.profiles[at];
     heading(dom, parent, &format!("Perfil «{}»", p.name));
     let ctl = row(dom, parent, "Nombre", "Cómo se llama en la lista y en el panel del copiloto.");
-    input(dom, ctl, &format!("ai.p:name:{at}"), &p.name, ui.edit.as_ref());
+    input(dom, ctl, &format!("ai.p:name:{at}"), &p.name, ui.edit.as_ref(), Some("Mi perfil"));
     let ctl = row(
         dom,
         parent,
@@ -1667,9 +1667,9 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
             .action(format!("settings:ai-preset:{at}")),
     );
     let ctl = row(dom, parent, "URL base", "Origen de la API, con o sin su /v1.");
-    input(dom, ctl, &format!("ai.p:base_url:{at}"), &p.base_url, ui.edit.as_ref());
+    input(dom, ctl, &format!("ai.p:base_url:{at}"), &p.base_url, ui.edit.as_ref(), Some("https://api.deepseek.com"));
     let ctl = row(dom, parent, "Modelo", "Nombre del modelo tal como lo espera el proveedor.");
-    input(dom, ctl, &format!("ai.p:model:{at}"), &p.model, ui.edit.as_ref());
+    input(dom, ctl, &format!("ai.p:model:{at}"), &p.model, ui.edit.as_ref(), Some("deepseek-v4.1-flash"));
     let ctl = row(
         dom,
         parent,
@@ -1683,9 +1683,9 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
         "Prompt del sistema",
         "Instrucciones de este perfil. Vacío usa el prompt predeterminado.",
     );
-    input(dom, ctl, &format!("ai.p:system_prompt:{at}"), &p.system_prompt, ui.edit.as_ref());
+    input(dom, ctl, &format!("ai.p:system_prompt:{at}"), &p.system_prompt, ui.edit.as_ref(), None);
     let ctl = row(dom, parent, "Tiempo de espera", "Segundos antes de cortar la conexión (1 a 600).");
-    input(dom, ctl, &format!("ai.p:timeout_s:{at}"), &p.timeout_s.to_string(), ui.edit.as_ref());
+    input(dom, ctl, &format!("ai.p:timeout_s:{at}"), &p.timeout_s.to_string(), ui.edit.as_ref(), Some("30"));
 }
 
 /// The settings window, drawn over everything else.
@@ -1711,7 +1711,10 @@ pub fn modal(app: &App, dom: &mut Dom) {
     dom.add(bar, El::div().class("settings-topbar-hint").text("Esc cierra"));
     let close = dom.add(
         bar,
-        El::div().class("settings-topbar-close").attr("aria-label", "Cerrar ajustes").action("settings:close"),
+        El::div()
+            .class("settings-topbar-close")
+            .attr("aria-label", "Cerrar ajustes")
+            .action("settings:close"),
     );
     dom.add(close, icons::el("x"));
 

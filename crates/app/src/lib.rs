@@ -640,9 +640,7 @@ fn in_graph_panel(frame: &Frame, x: f32, y: f32) -> bool {
 /// Whether the point is inside the player card of the frame. While the overlay is up the note
 /// draws no player of its own, so the card found here is always the one over the window.
 fn player_at(frame: &Frame, x: f32, y: f32) -> bool {
-    frame.dom.nodes.iter().any(|n| {
-        n.el.classes.iter().any(|c| c == "video-player") && n.rect.contains(x, y)
-    })
+    frame.dom.nodes.iter().any(|n| n.el.classes.iter().any(|c| c == "video-player") && n.rect.contains(x, y))
 }
 
 /// The graph pane of a frame, when the graph is showing.

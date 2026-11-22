@@ -2724,9 +2724,7 @@ fn video_fullscreen(app: &App, dom: &mut Dom, parent: NodeId) {
     }
     let backdrop = dom.add(
         parent,
-        El::div()
-            .class("modal-container mod-dim video-fullscreen")
-            .action("video:fullscreen-close"),
+        El::div().class("modal-container mod-dim video-fullscreen").action("video:fullscreen-close"),
     );
     // The box is as wide as the card it holds, taken from the space the overlay really has: the
     // modal's padding and the margin around it are what the note's numbers do not know about.
