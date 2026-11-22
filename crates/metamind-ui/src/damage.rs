@@ -166,12 +166,6 @@ fn dirty_rects(prev: &[Cmd], next: &[Cmd], fonts: &mut Fonts, scale: f32, w: u32
     if old.is_empty() && new.is_empty() {
         return Some(Vec::new());
     }
-    // A clip that is pushed or popped differently shifts what everything after it is clipped to,
-    // and no rectangle bounds that: repaint the window.
-    let clip_changed = |c: &Cmd| matches!(c, Cmd::PushClip(_) | Cmd::PopClip);
-    if old.iter().any(clip_changed) || new.iter().any(clip_changed) {
-        return None;
-    }
     let mut out: Vec<DevRect> = Vec::new();
     let add = |r: &crate::scene::Rect, out: &mut Vec<DevRect>| {
         let d = DevRect::from_rect(r, scale).clamped(w, h);
@@ -179,26 +173,64 @@ fn dirty_rects(prev: &[Cmd], next: &[Cmd], fonts: &mut Fonts, scale: f32, w: u32
             out.push(d);
         }
     };
-    if old.len() == new.len() {
-        // Same shape of list: only the commands that differ matter, and each contributes the
-        // pixels it painted before and the ones it paints now.
-        for (a, b) in old.iter().zip(new) {
-            if a != b {
-                add(&a.bounds(fonts), &mut out);
-                add(&b.bounds(fonts), &mut out);
-            }
+    let mut clips_old = Clips::new();
+    let mut clips_new = Clips::new();
+    // The trimmed prefix is the same list in both, so the two clip stacks start out equal and
+    // only the changed middle can pull them apart.
+    // Walk both stretches keeping them aligned: the commands that compare equal cost nothing, a
+    // command that differs contributes the pixels it painted before and the ones it paints now,
+    // and a run of commands that was inserted or removed is absorbed by looking a few commands
+    // ahead for the point where the two lists line up again. A mismatch that cannot be resynced
+    // cheaply is charged to both sides, which is always safe: it only ever repaints more.
+    let (mut ia, mut ib) = (0, 0);
+    while ia < old.len() && ib < new.len() {
+        // An unchanged command may still be clipped differently than it was: where the clip open
+        // at this point disagrees, no rectangle bounds what everything after it does.
+        if clips_old.effective() != clips_new.effective() {
+            return None;
         }
-    } else {
-        // Commands were inserted or removed: everything around them shifted, so the changed
-        // stretch is one region, from the first command that differs to the last.
-        let mut union: Option<DevRect> = None;
-        for c in old.iter().chain(new.iter()) {
-            let d = DevRect::from_rect(&c.bounds(fonts), scale).clamped(w, h);
-            if !d.is_empty() {
-                union = Some(union.map_or(d, |u| u.union(&d)));
-            }
+        if old[ia] == new[ib] {
+            clips_old.apply(&old[ia]);
+            clips_new.apply(&new[ib]);
+            ia += 1;
+            ib += 1;
+            continue;
         }
-        out.extend(union);
+        let (del, ins) = resync(old, new, ia, ib);
+        if del == 0 && ins == 0 {
+            add(&old[ia].bounds(fonts), &mut out);
+            add(&new[ib].bounds(fonts), &mut out);
+            clips_old.apply(&old[ia]);
+            clips_new.apply(&new[ib]);
+            ia += 1;
+            ib += 1;
+            continue;
+        }
+        for cmd in &old[ia..ia + del] {
+            add(&cmd.bounds(fonts), &mut out);
+            clips_old.apply(cmd);
+        }
+        for cmd in &new[ib..ib + ins] {
+            add(&cmd.bounds(fonts), &mut out);
+            clips_new.apply(cmd);
+        }
+        ia += del;
+        ib += ins;
+    }
+    // Whatever is left over at either end was inserted or removed.
+    for cmd in &old[ia..] {
+        add(&cmd.bounds(fonts), &mut out);
+        clips_old.apply(cmd);
+    }
+    for cmd in &new[ib..] {
+        add(&cmd.bounds(fonts), &mut out);
+        clips_new.apply(cmd);
+    }
+    // The unchanged tail after the change is only safe to leave alone when it ends up clipped the
+    // same way it was: otherwise a clip was pushed, popped or resized and that moves pixels no
+    // command bounds.
+    if clips_old.effective() != clips_new.effective() {
+        return None;
     }
     let rects = merge(out, w, h);
     // Past this much of the window, a single full pass beats replaying the scene per rect.
@@ -207,6 +239,63 @@ fn dirty_rects(prev: &[Cmd], next: &[Cmd], fonts: &mut Fonts, scale: f32, w: u32
         return None;
     }
     Some(rects)
+}
+
+/// How far ahead the diff looks for the point where two lists line up again.
+const RESYNC: usize = 8;
+
+/// The shortest run of commands to drop from each side to line the lists up again at `(ia, ib)`:
+/// `(removed from old, added from new)`. `(0, 0)` when nothing matches close enough.
+///
+/// A whole block of rows appearing or disappearing — expanding a folder — shifts everything after
+/// it by its length, far past a local scan. That case is exactly the leftover length difference, so
+/// it is probed first and costs one comparison.
+fn resync(old: &[Cmd], new: &[Cmd], ia: usize, ib: usize) -> (usize, usize) {
+    let delta = (new.len() - ib) as isize - (old.len() - ia) as isize;
+    if delta > 0 && old[ia] == new[ib + delta as usize] {
+        return (0, delta as usize);
+    }
+    if delta < 0 && old[ia + (-delta) as usize] == new[ib] {
+        return ((-delta) as usize, 0);
+    }
+    for s in 1..=RESYNC {
+        if ia + s < old.len() && old[ia + s] == new[ib] {
+            return (s, 0);
+        }
+        if ib + s < new.len() && old[ia] == new[ib + s] {
+            return (0, s);
+        }
+    }
+    (0, 0)
+}
+
+/// The clip in force at a point of a display list: what every command drawn there is cut to.
+struct Clips {
+    stack: Vec<crate::scene::Rect>,
+}
+
+impl Clips {
+    fn new() -> Clips {
+        Clips { stack: Vec::new() }
+    }
+    /// The current clip; the whole plane when nothing is pushed.
+    fn effective(&self) -> crate::scene::Rect {
+        const EVERYTHING: crate::scene::Rect =
+            crate::scene::Rect { x: f32::NEG_INFINITY, y: f32::NEG_INFINITY, w: f32::INFINITY, h: f32::INFINITY };
+        self.stack.last().copied().unwrap_or(EVERYTHING)
+    }
+    fn apply(&mut self, cmd: &Cmd) {
+        match cmd {
+            Cmd::PushClip(r) => {
+                let e = self.effective().intersect(r);
+                self.stack.push(e);
+            }
+            Cmd::PopClip => {
+                self.stack.pop();
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Unions overlapping and nearby rects, then folds the smallest ones away until at most

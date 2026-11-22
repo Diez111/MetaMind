@@ -181,6 +181,20 @@ fn damage_never_changes_a_pixel() {
         assert!(painted.len() > 2, "{name}: no frames recorded");
         assert_same_pixels(name, painted);
     }
+    let partials = |name: &str| -> usize {
+        all.iter().find(|(n, _)| n == name).map(|(_, p)| p.iter().filter(|f| f.partial).count()).unwrap_or(0)
+    };
+    // The scenarios whose whole point is a small change: they must go through the dirty path, or
+    // the pixel gate above would pass by repainting everything every time.
+    let summary: Vec<String> = all.iter().map(|(n, _)| format!("{n}: {}", partials(n))).collect();
+    println!("frames de daño parcial por escenario: {summary:?}");
+    if forced_full() {
+        // The escape hatch repaints everything by design: only the pixels are asserted then.
+        return;
+    }
+    for name in ["typing", "hover"] {
+        assert!(partials(name) > 0, "{name} never took the dirty path: {summary:?}");
+    }
     // The gate is only worth something if the damage path actually ran: at least some frames must
     // have repainted a part of the window instead of all of it.
     let partial = all.iter().flat_map(|(_, p)| p).filter(|p| p.partial).count();
@@ -203,12 +217,17 @@ fn the_check_catches_a_leaked_pixel() {
     assert_ne!(a.data(), b.data(), "the pixel comparison is blind");
 }
 
+/// Whether the run is the `METAMIND_FULL_PAINT` fallback, where nothing is meant to be partial.
+fn forced_full() -> bool {
+    std::env::var_os("METAMIND_FULL_PAINT").is_some_and(|v| v != "0" && !v.is_empty())
+}
+
 #[test]
 fn full_paint_fallback_tracks_the_environment() {
     // `METAMIND_FULL_PAINT` is the escape hatch; when it is set the tracker must stop diffing and
     // paint everything. The variable is process wide, so this test only asserts the default here:
     // the fallback itself is exercised by running the suite with it set.
-    if std::env::var_os("METAMIND_FULL_PAINT").is_some_and(|v| v != "0" && !v.is_empty()) {
+    if forced_full() {
         return;
     }
     let d = vault();
