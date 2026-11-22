@@ -1675,6 +1675,17 @@ if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
             }
             "ai:send" => self.ai_send(),
             "ai:clear" => self.ai.clear(),
+            "ai:explain-selection" => self.ai_quick(crate::ai::QuickAsk::Selection),
+            "ai:summarize-note" => self.ai_quick(crate::ai::QuickAsk::Summary),
+            c if c.starts_with("ai:profile:") => {
+                let name = &c["ai:profile:".len()..];
+                let mut cfg = self.ai_config();
+                if cfg.profiles.iter().any(|p| p.name == name) {
+                    cfg.active = name.to_string();
+                    self.set_ai_config(&cfg);
+                    self.notice = Some(format!("Perfil de IA: {name}"));
+                }
+            }
             "ai:settings" => {
                 if self.settings.is_none() {
                     self.run("app:open-settings");

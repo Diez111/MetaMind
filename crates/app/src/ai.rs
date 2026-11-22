@@ -5,15 +5,22 @@
 //! the window keeps drawing while an answer streams in. The panel sends the markdown of the note
 //! that is open as context (truncated, see [`MAX_CONTEXT_CHARS`]) and, for a note whose front
 //! matter says `tipo: materia`, asks for a more pedagogical answer.
+//!
+//! The user may configure as many providers as they want: `ai.profiles` holds one
+//! [`AiProfile`] per provider and `ai.active` names the one the panel sends to. A vault written
+//! by an older build only has a single endpoint (`ai.base_url`, `ai.model`, …); those keys are
+//! folded into the "Predeterminado" profile the first time they are read.
 
-use crate::shell::{App, Key, Tab};
+use crate::shell::{App, Key, RightPanel, Tab};
 use serde_json::{json, Value};
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::time::Duration;
+use vault_core::config::JsonFile;
 
-/// Where requests go when `ai.base_url` is unset.
+/// Where requests go when a profile leaves `base_url` unset.
 pub const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
-/// The model used when `ai.model` is unset: a cheap one, as the panel is for quick questions.
+/// The model used by the default profile and the DeepSeek preset: a cheap one, as the panel is
+/// for quick questions.
 pub const DEFAULT_MODEL: &str = "deepseek-v4.1-flash";
 /// The instructions the panel sends unless `ai.system_prompt` says otherwise: short, LaTeX for
 /// mathematics, tables to compare and Mermaid for diagrams.
@@ -39,56 +46,155 @@ const MAX_SELECTION_CHARS: usize = 1500;
 const MAX_HISTORY: usize = 20;
 
 /// Settings keys, written to `.obsidian/app.json` like every other setting.
+pub const KEY_PROFILES: &str = "ai.profiles";
+/// Name of the profile the panel sends to.
+pub const KEY_ACTIVE: &str = "ai.active";
+/// The single-endpoint keys of older vaults; they are read once and folded into a profile.
 pub const KEY_BASE_URL: &str = "ai.base_url";
 pub const KEY_API_KEY: &str = "ai.api_key";
 pub const KEY_MODEL: &str = "ai.model";
 pub const KEY_SYSTEM_PROMPT: &str = "ai.system_prompt";
 pub const KEY_TIMEOUT: &str = "ai.timeout";
+/// The profile the legacy single-endpoint keys turn into.
+pub const LEGACY_PROFILE_NAME: &str = "Predeterminado";
 
-/// What the panel needs to reach a model.
+/// The question «Explicar selección» asks; the selection itself follows, quoted.
+pub const EXPLAIN_SELECTION_PROMPT: &str =
+    "Explica el texto que cité: qué significa, para qué sirve y un ejemplo mínimo.";
+/// The question «Resumir nota» asks about the open note.
+pub const SUMMARIZE_NOTE_PROMPT: &str = "Resume la nota abierta: la idea central en una frase y \
+    después hasta cinco puntos clave, en una lista.";
+
+/// The provider presets offered in Ajustes → IA: picking one fills the URL and a typical model.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Preset {
+    DeepSeek,
+    OpenAi,
+    OpenRouter,
+    Groq,
+    Ollama,
+    /// Keeps whatever URL and model the profile has.
+    Custom,
+}
+
+impl Preset {
+    /// The presets in the order the settings dropdown walks them.
+    pub const ALL: [Preset; 6] =
+        [Preset::DeepSeek, Preset::OpenAi, Preset::OpenRouter, Preset::Groq, Preset::Ollama, Preset::Custom];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Preset::DeepSeek => "DeepSeek",
+            Preset::OpenAi => "OpenAI",
+            Preset::OpenRouter => "OpenRouter",
+            Preset::Groq => "Groq",
+            Preset::Ollama => "Ollama local",
+            Preset::Custom => "Personalizado",
+        }
+    }
+
+    /// The origin the preset writes. [`Preset::Custom`] has none: it keeps what is there.
+    pub fn base_url(self) -> &'static str {
+        match self {
+            Preset::DeepSeek => "https://api.deepseek.com",
+            Preset::OpenAi => "https://api.openai.com",
+            Preset::OpenRouter => "https://openrouter.ai/api/v1",
+            Preset::Groq => "https://api.groq.com/openai/v1",
+            Preset::Ollama => "http://localhost:11434/v1",
+            Preset::Custom => "",
+        }
+    }
+
+    /// A model the provider usually serves.
+    pub fn model(self) -> &'static str {
+        match self {
+            Preset::DeepSeek => DEFAULT_MODEL,
+            Preset::OpenAi => "gpt-4o-mini",
+            Preset::OpenRouter => "openai/gpt-4o-mini",
+            Preset::Groq => "llama-3.3-70b-versatile",
+            Preset::Ollama => "llama3.2",
+            Preset::Custom => "",
+        }
+    }
+
+    /// The preset a saved `base_url` belongs to; [`Preset::Custom`] when none matches.
+    pub fn of_base_url(base_url: &str) -> Preset {
+        let norm = |u: &str| u.trim().trim_end_matches('/').to_ascii_lowercase();
+        let url = norm(base_url);
+        Preset::ALL
+            .into_iter()
+            .find(|p| *p != Preset::Custom && norm(p.base_url()) == url)
+            .unwrap_or(Preset::Custom)
+    }
+
+    /// The next preset in the dropdown.
+    pub fn next(self) -> Preset {
+        let at = Preset::ALL.iter().position(|p| *p == self).unwrap_or(0);
+        Preset::ALL[(at + 1) % Preset::ALL.len()]
+    }
+}
+
+/// One provider the user configured: where it lives, the key it uses and the model to ask for.
 #[derive(Clone, Debug, PartialEq)]
-pub struct AiConfig {
+pub struct AiProfile {
+    /// How the panel lists it; `ai.active` points at a profile by this name.
+    pub name: String,
     /// Origin of the API, with or without its `/v1`. See [`chat_url`].
     pub base_url: String,
     /// Bearer token. Empty means the panel refuses to send.
     pub api_key: String,
     pub model: String,
+    /// Instructions for this profile. Empty means [`DEFAULT_SYSTEM_PROMPT`].
     pub system_prompt: String,
     /// Connect, response-header and per-read timeout of the request, in seconds.
     pub timeout_s: u64,
 }
 
-impl Default for AiConfig {
-    fn default() -> AiConfig {
-        AiConfig {
+impl Default for AiProfile {
+    fn default() -> AiProfile {
+        AiProfile {
+            name: LEGACY_PROFILE_NAME.to_string(),
             base_url: DEFAULT_BASE_URL.to_string(),
             api_key: String::new(),
             model: DEFAULT_MODEL.to_string(),
-            system_prompt: DEFAULT_SYSTEM_PROMPT.to_string(),
+            system_prompt: String::new(),
             timeout_s: 30,
         }
     }
 }
 
-impl AiConfig {
-    /// Read the settings, falling back to the defaults for what is unset or blank.
-    pub fn from_config(config: &vault_core::config::VaultConfig) -> AiConfig {
-        let a = &config.app;
-        let d = AiConfig::default();
-        let text = |key: &str, default: &str| {
-            a.str(key).map(str::trim).filter(|v| !v.is_empty()).unwrap_or(default).to_string()
-        };
-        AiConfig {
-            base_url: text(KEY_BASE_URL, &d.base_url),
-            api_key: a.str(KEY_API_KEY).map(str::trim).unwrap_or("").to_string(),
-            model: text(KEY_MODEL, &d.model),
-            system_prompt: text(KEY_SYSTEM_PROMPT, &d.system_prompt),
-            timeout_s: a.get(KEY_TIMEOUT).and_then(Value::as_u64).map_or(d.timeout_s, |n| n.clamp(1, 600)),
+impl AiProfile {
+    /// A profile named `name` with the default endpoint, model and no key.
+    pub fn named(name: impl Into<String>) -> AiProfile {
+        AiProfile { name: name.into(), ..AiProfile::default() }
+    }
+
+    /// The instructions to send: this profile's, or the default ones when it has none.
+    pub fn instructions(&self) -> &str {
+        if self.system_prompt.trim().is_empty() {
+            DEFAULT_SYSTEM_PROMPT
+        } else {
+            &self.system_prompt
         }
+    }
+
+    /// The preset this profile's URL belongs to.
+    pub fn preset(&self) -> Preset {
+        Preset::of_base_url(&self.base_url)
+    }
+
+    /// Take the endpoint and the model from `preset`; [`Preset::Custom`] changes nothing.
+    pub fn apply_preset(&mut self, preset: Preset) {
+        if preset == Preset::Custom {
+            return;
+        }
+        self.base_url = preset.base_url().to_string();
+        self.model = preset.model().to_string();
     }
 
     pub fn to_json(&self) -> Value {
         json!({
+            "name": self.name,
             "base_url": self.base_url,
             "api_key": self.api_key,
             "model": self.model,
@@ -97,9 +203,9 @@ impl AiConfig {
         })
     }
 
-    /// Read a serialized config (see [`AiConfig::to_json`]), with defaults for missing fields.
-    pub fn from_json(v: &Value) -> AiConfig {
-        let d = AiConfig::default();
+    /// Read a profile (see [`AiProfile::to_json`]), with defaults for the missing fields.
+    pub fn from_json(v: &Value) -> AiProfile {
+        let d = AiProfile::default();
         let text = |key: &str, default: &str| {
             v.get(key)
                 .and_then(Value::as_str)
@@ -108,13 +214,139 @@ impl AiConfig {
                 .unwrap_or(default)
                 .to_string()
         };
-        AiConfig {
+        AiProfile {
+            name: text("name", &d.name),
             base_url: text("base_url", &d.base_url),
             api_key: v.get("api_key").and_then(Value::as_str).unwrap_or("").trim().to_string(),
             model: text("model", &d.model),
-            system_prompt: text("system_prompt", &d.system_prompt),
+            system_prompt: v.get("system_prompt").and_then(Value::as_str).unwrap_or("").trim().to_string(),
             timeout_s: v.get("timeout_s").and_then(Value::as_u64).map_or(d.timeout_s, |n| n.clamp(1, 600)),
         }
+    }
+}
+
+/// Every provider the user configured, and the name of the one the panel talks to.
+///
+/// A vault that only has the older single-endpoint keys has no `ai.profiles`; the first read
+/// builds the "Predeterminado" profile from them, so the panel keeps working untouched.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AiConfig {
+    /// At least one profile: the constructors and [`AiConfig::normalize`] see to it.
+    pub profiles: Vec<AiProfile>,
+    /// The active profile's name. A name that matches no profile falls back to the first one;
+    /// [`AiConfig::normalize`] leaves this field pointing at an existing profile.
+    pub active: String,
+}
+
+impl Default for AiConfig {
+    fn default() -> AiConfig {
+        let p = AiProfile::default();
+        AiConfig { active: p.name.clone(), profiles: vec![p] }
+    }
+}
+
+impl AiConfig {
+    /// Read `ai.profiles` and `ai.active`, folding the legacy single-endpoint keys into a profile
+    /// when the vault has none.
+    pub fn from_config(config: &vault_core::config::VaultConfig) -> AiConfig {
+        let a = &config.app;
+        let profiles = a
+            .get(KEY_PROFILES)
+            .and_then(Value::as_array)
+            .map(|list| list.iter().map(AiProfile::from_json).collect())
+            .unwrap_or_default();
+        let active = a.str(KEY_ACTIVE).unwrap_or("").trim().to_string();
+        let mut cfg = AiConfig { profiles, active };
+        if cfg.profiles.is_empty() {
+            cfg.profiles.push(legacy_profile(a));
+        }
+        cfg.normalize();
+        cfg
+    }
+
+    /// The settings this struct owns, ready to be written to `.obsidian/app.json`.
+    pub fn to_json(&self) -> Value {
+        json!({
+            "profiles": self.profiles.iter().map(AiProfile::to_json).collect::<Vec<_>>(),
+            "active": self.active,
+        })
+    }
+
+    /// Read a serialized config (see [`AiConfig::to_json`]), with defaults for what is missing.
+    pub fn from_json(v: &Value) -> AiConfig {
+        let profiles = v
+            .get("profiles")
+            .and_then(Value::as_array)
+            .map(|list| list.iter().map(AiProfile::from_json).collect::<Vec<_>>())
+            .unwrap_or_default();
+        let active = v.get("active").and_then(Value::as_str).unwrap_or("").trim().to_string();
+        let mut cfg = AiConfig { profiles, active };
+        cfg.normalize();
+        cfg
+    }
+
+    /// Enforce what every reader relies on: at least one profile, every profile named and no two
+    /// sharing a name (the name is how `ai.active` points at one), and `active` naming a profile
+    /// that exists.
+    pub(crate) fn normalize(&mut self) {
+        if self.profiles.is_empty() {
+            self.profiles.push(AiProfile::default());
+        }
+        let mut taken: Vec<String> = Vec::with_capacity(self.profiles.len());
+        for p in &mut self.profiles {
+            let base = if p.name.trim().is_empty() { "Perfil".to_string() } else { p.name.trim().to_string() };
+            let mut name = base.clone();
+            let mut n = 2;
+            while taken.contains(&name) {
+                name = format!("{base} {n}");
+                n += 1;
+            }
+            p.name = name.clone();
+            taken.push(name);
+        }
+        if !self.profiles.iter().any(|p| p.name == self.active) {
+            self.active = self.profiles[0].name.clone();
+        }
+    }
+
+    /// Position of the active profile; the first one when `active` names none.
+    pub fn active_index(&self) -> usize {
+        self.profiles.iter().position(|p| p.name == self.active).unwrap_or(0)
+    }
+
+    /// The profile the panel sends to.
+    pub fn active_profile(&self) -> &AiProfile {
+        &self.profiles[self.active_index()]
+    }
+
+    /// A name no profile uses yet: `base`, else `base 2`, `base 3`…
+    pub fn free_name(&self, base: &str) -> String {
+        let base = base.trim();
+        let base = if base.is_empty() { "Perfil" } else { base };
+        let mut n = 1;
+        loop {
+            let name = if n == 1 { base.to_string() } else { format!("{base} {n}") };
+            if !self.profiles.iter().any(|p| p.name == name) {
+                return name;
+            }
+            n += 1;
+        }
+    }
+}
+
+/// The profile built from the single-endpoint keys of older vaults.
+fn legacy_profile(a: &JsonFile) -> AiProfile {
+    let d = AiProfile::default();
+    let text = |key: &str, default: &str| {
+        a.str(key).map(str::trim).filter(|v| !v.is_empty()).unwrap_or(default).to_string()
+    };
+    AiProfile {
+        name: LEGACY_PROFILE_NAME.to_string(),
+        base_url: text(KEY_BASE_URL, &d.base_url),
+        api_key: a.str(KEY_API_KEY).map(str::trim).unwrap_or("").to_string(),
+        model: text(KEY_MODEL, &d.model),
+        system_prompt: text(KEY_SYSTEM_PROMPT, ""),
+        timeout_s: a.get(KEY_TIMEOUT).and_then(Value::as_u64).map_or(d.timeout_s, |n| n.clamp(1, 600)),
     }
 }
 
@@ -158,8 +390,8 @@ pub enum Event {
 }
 
 /// The system message: the instructions plus the note context, when there is one.
-pub fn system_content(cfg: &AiConfig, note_context: &str) -> String {
-    let mut out = cfg.system_prompt.trim_end().to_string();
+pub fn system_content(cfg: &AiProfile, note_context: &str) -> String {
+    let mut out = cfg.instructions().trim_end().to_string();
     if !note_context.trim().is_empty() {
         out.push_str("\n\n## Contexto de la bóveda\n\n");
         out.push_str(note_context.trim());
@@ -168,7 +400,7 @@ pub fn system_content(cfg: &AiConfig, note_context: &str) -> String {
 }
 
 /// The OpenAI request body: system message, prior turns and the question.
-pub fn build_payload(cfg: &AiConfig, system: &str, history: &[Message], user_input: &str) -> Value {
+pub fn build_payload(cfg: &AiProfile, system: &str, history: &[Message], user_input: &str) -> Value {
     let mut messages = Vec::with_capacity(history.len() + 2);
     messages.push(json!({ "role": "system", "content": system }));
     for m in history {
@@ -229,6 +461,33 @@ fn selection(tab: &Tab, text: &str) -> Option<String> {
     (!slice.is_empty()).then(|| truncate_chars(slice, MAX_SELECTION_CHARS))
 }
 
+/// What the editor has selected, trimmed and cut to [`MAX_SELECTION_CHARS`].
+pub fn selected_text(tab: &Tab) -> Option<String> {
+    let text = tab.editor.buf.text();
+    selection(tab, &text)
+}
+
+/// What a quick action of the panel asks about the open note.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QuickAsk {
+    /// The editor's selection, quoted in the question.
+    Selection,
+    /// The whole open note.
+    Summary,
+}
+
+/// The question a quick action sends about `tab`. `Err` is the notice to show instead: a
+/// selection action with nothing selected, for instance.
+pub fn quick_question(kind: QuickAsk, tab: &Tab) -> Result<String, &'static str> {
+    match kind {
+        QuickAsk::Selection => {
+            let sel = selected_text(tab).ok_or("Seleccioná texto en el editor para explicarlo.")?;
+            Ok(format!("{EXPLAIN_SELECTION_PROMPT}\n\n\"\"\"\n{sel}\n\"\"\""))
+        }
+        QuickAsk::Summary => Ok(SUMMARIZE_NOTE_PROMPT.to_string()),
+    }
+}
+
 /// A reply or a question broken into the parts the view draws differently.
 #[derive(Debug, PartialEq)]
 pub enum Chunk {
@@ -286,7 +545,7 @@ pub struct AiPanel {
 impl AiPanel {
     /// Ask the model, streaming the answer into an empty assistant message. `note_context` is
     /// what [`context_from_note`] returned, or empty when no note is open.
-    pub fn send(&mut self, cfg: &AiConfig, note_context: &str, user_input: &str) {
+    pub fn send(&mut self, cfg: &AiProfile, note_context: &str, user_input: &str) {
         let question = user_input.trim();
         if self.streaming || question.is_empty() {
             return;
@@ -378,7 +637,7 @@ impl AiPanel {
 }
 
 /// POST `payload` to the endpoint of `cfg` and forward the streamed deltas to `tx`.
-pub(crate) fn stream_request(cfg: &AiConfig, payload: &str, tx: &Sender<Event>) {
+pub(crate) fn stream_request(cfg: &AiProfile, payload: &str, tx: &Sender<Event>) {
     let secs = cfg.timeout_s.clamp(1, 600);
     let config = ureq::Agent::config_builder()
         .timeout_connect(Some(Duration::from_secs(secs)))
@@ -464,15 +723,56 @@ pub(crate) fn parse_delta(data: &str) -> Result<Option<String>, String> {
 }
 
 impl App {
-    /// Send what the panel's input holds, with the open note as context.
+    /// The AI settings as stored in `.obsidian/app.json`.
+    pub(crate) fn ai_config(&self) -> AiConfig {
+        AiConfig::from_config(&self.config)
+    }
+
+    /// Write the profiles and the active one to `.obsidian/app.json`.
+    pub(crate) fn set_ai_config(&mut self, cfg: &AiConfig) {
+        let v = cfg.to_json();
+        self.config.app.set(KEY_PROFILES, v["profiles"].clone());
+        self.config.app.set(KEY_ACTIVE, v["active"].clone());
+        if let Err(e) = self.config.app.save() {
+            self.notice = Some(format!("No se pudieron guardar los perfiles de IA: {e}"));
+        }
+    }
+
+    /// Send what the panel's input holds, with the open note as context and the active profile.
     pub(crate) fn ai_send(&mut self) {
         if self.ai.input.trim().is_empty() {
             return;
         }
-        let cfg = AiConfig::from_config(&self.config);
+        let profile = self.ai_config().active_profile().clone();
         let context = self.tab().map(context_from_note).unwrap_or_default();
         let input = self.ai.input.clone();
-        self.ai.send(&cfg, &context, &input);
+        self.ai.send(&profile, &context, &input);
+        if let Some(e) = &self.ai.error {
+            self.notice = Some(e.clone());
+        }
+    }
+
+    /// Run a quick action: the panel opens and asks a prepared question about the open note.
+    pub(crate) fn ai_quick(&mut self, kind: QuickAsk) {
+        if self.ai.busy() {
+            self.notice = Some("Esperá a que termine la respuesta.".to_string());
+            return;
+        }
+        let asked = match self.tab() {
+            Some(tab) => quick_question(kind, tab).map(|q| (q, context_from_note(tab))),
+            None => Err("Abrí una nota para usar la IA sobre ella."),
+        };
+        let (question, context) = match asked {
+            Ok(asked) => asked,
+            Err(notice) => {
+                self.notice = Some(notice.to_string());
+                return;
+            }
+        };
+        let profile = self.ai_config().active_profile().clone();
+        self.right_open = true;
+        self.right_panel = RightPanel::Ai;
+        self.ai.send(&profile, &context, &question);
         if let Some(e) = &self.ai.error {
             self.notice = Some(e.clone());
         }
@@ -522,22 +822,115 @@ mod tests {
         )
     }
 
-    #[test]
-    fn config_serializes_and_defaults() {
-        let cfg = AiConfig {
-            base_url: "http://localhost:8080/v1".into(),
+    fn profile(name: &str, url: &str, model: &str) -> AiProfile {
+        AiProfile {
+            name: name.into(),
+            base_url: url.into(),
             api_key: "sk-test".into(),
-            model: "m".into(),
-            system_prompt: "p".into(),
-            timeout_s: 12,
+            model: model.into(),
+            system_prompt: "Sé breve.".into(),
+            timeout_s: 20,
+        }
+    }
+
+    #[test]
+    fn profiles_roundtrip_through_json() {
+        let cfg = AiConfig {
+            profiles: vec![
+                profile("Local", "http://localhost:11434/v1", "llama3.2"),
+                profile("Nube", "https://api.openai.com", "gpt-4o-mini"),
+            ],
+            active: "Nube".into(),
         };
-        assert_eq!(AiConfig::from_json(&cfg.to_json()), cfg);
-        let empty = AiConfig::from_json(&json!({}));
-        assert_eq!(empty, AiConfig::default());
-        assert_eq!(AiConfig::from_json(&json!({ "model": "  " })).model, DEFAULT_MODEL);
-        assert_eq!(AiConfig::from_json(&json!({ "timeout_s": 0 })).timeout_s, 1);
+        let json = cfg.to_json();
+        assert_eq!(json["active"], "Nube");
+        assert_eq!(json["profiles"].as_array().unwrap().len(), 2);
+        assert_eq!(AiConfig::from_json(&json), cfg);
+
+        // A profile with missing fields takes the defaults.
+        assert_eq!(AiProfile::from_json(&json!({})), AiProfile::default());
+        assert_eq!(AiProfile::from_json(&json!({ "model": "  " })).model, DEFAULT_MODEL);
+        assert_eq!(AiProfile::from_json(&json!({ "timeout_s": 0 })).timeout_s, 1);
+        assert_eq!(AiConfig::from_json(&json!({})), AiConfig::default());
         assert_eq!(chat_url("https://api.deepseek.com/"), "https://api.deepseek.com/v1/chat/completions");
         assert_eq!(chat_url("http://127.0.0.1:1/v1"), "http://127.0.0.1:1/v1/chat/completions");
+    }
+
+    #[test]
+    fn legacy_single_endpoint_settings_become_a_profile() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join(".obsidian")).unwrap();
+        std::fs::write(
+            d.path().join(".obsidian/app.json"),
+            r#"{"ai.base_url":"https://api.groq.com/openai/v1","ai.api_key":"sk-legacy",
+                "ai.model":"llama-3.3-70b-versatile","ai.system_prompt":"Sé breve.","ai.timeout":45}"#,
+        )
+        .unwrap();
+        let config = vault_core::config::VaultConfig::load(d.path()).unwrap();
+        let cfg = AiConfig::from_config(&config);
+        assert_eq!(cfg.profiles.len(), 1, "the installed keys become a single profile");
+        assert_eq!(cfg.active, LEGACY_PROFILE_NAME, "and that profile is the active one");
+        let p = cfg.active_profile();
+        assert_eq!(p.name, LEGACY_PROFILE_NAME);
+        assert_eq!(p.base_url, "https://api.groq.com/openai/v1");
+        assert_eq!(p.api_key, "sk-legacy");
+        assert_eq!(p.model, "llama-3.3-70b-versatile");
+        assert_eq!(p.instructions(), "Sé breve.");
+        assert_eq!(p.timeout_s, 45);
+    }
+
+    #[test]
+    fn a_vault_without_ai_settings_gets_one_default_profile() {
+        let d = tempfile::tempdir().unwrap();
+        let config = vault_core::config::VaultConfig::load(d.path()).unwrap();
+        let cfg = AiConfig::from_config(&config);
+        assert_eq!(cfg.profiles, vec![AiProfile::default()]);
+        assert_eq!(cfg.active, LEGACY_PROFILE_NAME);
+        assert_eq!(cfg.active_profile().instructions(), DEFAULT_SYSTEM_PROMPT);
+        assert_eq!(cfg.active_profile().model, DEFAULT_MODEL);
+    }
+
+    #[test]
+    fn the_active_profile_falls_back_to_the_first() {
+        let cfg = AiConfig::from_json(&json!({
+            "profiles": [{ "name": "A" }, { "name": "B" }],
+            "active": "B"
+        }));
+        assert_eq!(cfg.active_index(), 1);
+        assert_eq!(cfg.active_profile().name, "B");
+
+        let dangling = AiConfig::from_json(&json!({
+            "profiles": [{ "name": "A" }, { "name": "B" }],
+            "active": "Z"
+        }));
+        assert_eq!(dangling.active, "A", "a name that matches nothing falls back to the first");
+        assert_eq!(dangling.active_profile().name, "A");
+
+        // The name is the key `ai.active` points at, so blanks and repeats are fixed.
+        let dup = AiConfig::from_json(&json!({
+            "profiles": [{ "name": "A" }, { "name": "A" }, { "name": "  " }]
+        }));
+        let names: Vec<_> = dup.profiles.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["A", "A 2", "Predeterminado"], "a nameless profile takes the default name");
+        assert_eq!(dup.free_name("A"), "A 3");
+        assert_eq!(dup.free_name("Local"), "Local");
+    }
+
+    #[test]
+    fn presets_fill_the_endpoint_and_a_model() {
+        let mut p = AiProfile::named("Local");
+        p.apply_preset(Preset::Ollama);
+        assert_eq!(p.base_url, "http://localhost:11434/v1");
+        assert_eq!(p.model, Preset::Ollama.model());
+        assert_eq!(p.preset(), Preset::Ollama);
+        p.apply_preset(Preset::Custom);
+        assert_eq!(p.base_url, "http://localhost:11434/v1", "Personalizado keeps what is there");
+        assert_eq!(Preset::of_base_url("https://openrouter.ai/api/v1/"), Preset::OpenRouter);
+        assert_eq!(Preset::of_base_url("http://127.0.0.1:8080"), Preset::Custom);
+        assert_eq!(Preset::DeepSeek.next(), Preset::OpenAi);
+        assert_eq!(Preset::Custom.next(), Preset::DeepSeek);
+        let labels: Vec<_> = Preset::ALL.iter().map(|p| p.label()).collect();
+        assert_eq!(labels, ["DeepSeek", "OpenAI", "OpenRouter", "Groq", "Ollama local", "Personalizado"]);
     }
 
     #[test]
@@ -565,18 +958,32 @@ mod tests {
 
     #[test]
     fn system_prompt_carries_the_context() {
-        let cfg = AiConfig::default();
+        let cfg = AiProfile::default();
         let ctx = context_from_note(&tab("la nota"));
         let system = system_content(&cfg, &ctx);
-        assert!(system.starts_with(&cfg.system_prompt));
+        assert!(system.starts_with(cfg.instructions()));
         assert!(system.contains("la nota"), "{system}");
         assert!(system.contains("$...$") || system.contains("LaTeX"));
-        assert_eq!(system_content(&cfg, "   "), cfg.system_prompt);
+        assert_eq!(system_content(&cfg, "   "), cfg.instructions());
+        let custom = AiProfile { system_prompt: "Solo respuestas cortas.".into(), ..Default::default() };
+        assert!(system_content(&custom, "").starts_with("Solo respuestas cortas."));
+    }
+
+    #[test]
+    fn quick_actions_ask_about_the_selection_and_the_note() {
+        let mut t = tab("primera linea\nsegunda linea\n");
+        let err = quick_question(QuickAsk::Selection, &t).unwrap_err();
+        assert!(err.contains("Seleccioná"), "{err}");
+        t.editor.buf.set_sels(vec![editor_core::Sel::new(0, 13)]);
+        let q = quick_question(QuickAsk::Selection, &t).unwrap();
+        assert!(q.starts_with(EXPLAIN_SELECTION_PROMPT), "{q}");
+        assert!(q.contains("primera linea"), "the selection travels in the question");
+        assert_eq!(quick_question(QuickAsk::Summary, &t).unwrap(), SUMMARIZE_NOTE_PROMPT);
     }
 
     #[test]
     fn payload_is_openai_shaped() {
-        let cfg = AiConfig::default();
+        let cfg = AiProfile::default();
         let history = vec![Message::user("antes"), Message::assistant("respuesta")];
         let p = build_payload(&cfg, "SYS", &history, "hola");
         assert_eq!(p["model"], cfg.model);
@@ -659,7 +1066,7 @@ mod tests {
              data: {\"choices\":[{\"delta\":{\"content\":\" mundo\"}}]}\n\n\
              data: [DONE]\n\n",
         );
-        let cfg = AiConfig { base_url: base, api_key: "sk-test".into(), ..Default::default() };
+        let cfg = AiProfile { base_url: base, api_key: "sk-test".into(), ..Default::default() };
         let payload = build_payload(&cfg, "SYS", &[], "hello").to_string();
         let (tx, rx) = channel();
         let worker = std::thread::spawn(move || stream_request(&cfg, &payload, &tx));
@@ -683,7 +1090,7 @@ mod tests {
     #[test]
     fn send_requires_a_key_and_fills_the_panel() {
         let mut panel = AiPanel { input: "hola".into(), ..Default::default() };
-        let cfg = AiConfig::default();
+        let cfg = AiProfile::default();
         panel.send(&cfg, "", "hola");
         assert!(panel.error.as_deref().unwrap().contains("clave"));
         assert!(panel.messages.is_empty());
@@ -691,7 +1098,7 @@ mod tests {
 
         // A configured panel starts a request; the answer goes into the last message.
         let (base, _server) = mock_server("data: [DONE]\n\n");
-        let cfg = AiConfig { base_url: base, api_key: "sk".into(), ..Default::default() };
+        let cfg = AiProfile { base_url: base, api_key: "sk".into(), ..Default::default() };
         panel.send(&cfg, "contexto", "¿qué es una derivada?");
         assert!(panel.streaming);
         assert_eq!(panel.messages.len(), 2);

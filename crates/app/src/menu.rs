@@ -165,6 +165,21 @@ impl App {
         self.show_menu(x, y, items);
     }
 
+    /// The AI panel header: pick the profile the copilot sends to.
+    pub(crate) fn ai_profile_menu(&mut self, x: f32, y: f32) {
+        let cfg = crate::ai::AiConfig::from_config(&self.config);
+        let active = cfg.active_index();
+        let mut b = Builder { app: self, items: Vec::new() };
+        for (i, p) in cfg.profiles.iter().enumerate() {
+            let icon = if i == active { "check" } else { "blank" };
+            b.item(icon, &format!("{} · {}", p.name, p.model), format!("ai:profile:{}", p.name));
+        }
+        b.separator();
+        b.item("settings", "Gestionar perfiles…", "ai:settings");
+        let items = b.items;
+        self.show_menu(x, y, items);
+    }
+
     fn show_menu(&mut self, x: f32, y: f32, mut items: Vec<MenuItem>) {
         while items.last().is_some_and(|i| i.action.is_empty()) {
             items.pop();

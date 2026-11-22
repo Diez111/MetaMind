@@ -895,22 +895,31 @@ fn right_sidebar(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) 
     ai_panel(app, dom, parent, info);
 }
 
-/// The AI copilot: the conversation, the waiting dots and the input.
+/// The AI copilot: the active provider, the quick actions, the conversation and the input.
 fn ai_panel(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
     let panel = dom.add(parent, El::div().class("ai-panel"));
     let bar = dom.add(panel, El::div().class("nav-buttons-container ai-toolbar"));
-    let model = app
-        .config
-        .app
-        .str(crate::ai::KEY_MODEL)
-        .map(str::trim)
-        .filter(|m| !m.is_empty())
-        .unwrap_or(crate::ai::DEFAULT_MODEL);
-    dom.add(bar, El::div().class("ai-model").text(model));
+    let cfg = crate::ai::AiConfig::from_config(&app.config);
+    let profile = cfg.active_profile();
+    let pill = dom.add(
+        bar,
+        El::div()
+            .class("ai-model ai-profile")
+            .text(format!("{} · {}", profile.name, profile.model))
+            .action("ai:profile-menu"),
+    );
+    dom.nodes[pill].el.attrs.push(("aria-label".into(), "Cambiar de perfil de IA".into()));
     let b = icon_button(dom, bar, "trash", "ai:clear", false);
     dom.nodes[b].el.attrs.push(("aria-label".into(), "Borrar la conversación".into()));
     let b = icon_button(dom, bar, "settings", "ai:settings", false);
     dom.nodes[b].el.attrs.push(("aria-label".into(), "Ajustes de la IA".into()));
+    let quick = dom.add(panel, El::div().class("ai-quick"));
+    for (label, action) in [
+        ("Explicar selección", "ai:explain-selection"),
+        ("Resumir nota", "ai:summarize-note"),
+    ] {
+        dom.add(quick, El::div().class("ai-quick-button").text(label).action(action));
+    }
     let list = dom.add(panel, El::div().class("ai-messages").id("ai-messages"));
     if app.ai.messages.is_empty() {
         dom.add(

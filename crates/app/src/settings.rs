@@ -2,6 +2,7 @@
 //! all of them. Every control writes the same `.obsidian/*.json` key the vault format uses (other
 //! keys are left as they are) and takes effect at once.
 
+use crate::ai::{AiConfig, AiProfile};
 use crate::icons;
 use crate::plugins::PluginInfo;
 use crate::shell::{default_keymap, load_theme, App, Key, COMMANDS};
@@ -36,7 +37,13 @@ const SECTIONS: [(Section, &str, &str, &str, &str); 5] = [
         "Escritura, sangría, propiedades y corrección ortográfica.",
         "edit",
     ),
-    (Section::Ai, "ai", "IA", "Asistente, proveedor y corrección con modelos de lenguaje.", "sparkles"),
+    (
+        Section::Ai,
+        "ai",
+        "IA",
+        "Perfiles de proveedores, modelos y claves del copiloto.",
+        "sparkles",
+    ),
     (
         Section::Plugins,
         "plugins",
@@ -158,6 +165,8 @@ pub struct SettingsUi {
     pub plugin: Option<&'static str>,
     /// Keyboard focus ring on the category list: index into `SECTIONS`.
     pub nav: Option<usize>,
+    /// The profile whose form Ajustes → IA shows; `None` means the active one.
+    pub ai_edit: Option<usize>,
 }
 
 impl SettingsUi {
@@ -172,6 +181,7 @@ impl SettingsUi {
             snippets: Vec::new(),
             plugin: None,
             nav: None,
+            ai_edit: None,
         };
         s.scan(app);
         s
@@ -357,41 +367,6 @@ const ITEMS: &[Item] = &[
         name: "Listas inteligentes",
         desc: "Intro continúa un elemento de lista y Backspace elimina uno vacío.",
         control: Toggle(true),
-    },
-    Item {
-        section: Section::Ai,
-        file: File::App,
-        key: "aiAssistant",
-        name: "Asistente de IA",
-        desc: "Activa las acciones de IA del editor cuando el módulo esté disponible.",
-        control: Toggle(false),
-    },
-    Item {
-        section: Section::Ai,
-        file: File::App,
-        key: "aiProvider",
-        name: "Proveedor de IA",
-        desc: "Dónde se ejecutan los modelos: en tu equipo o en un servicio externo.",
-        control: Choice(
-            "local",
-            &[("local", "Local (en tu equipo)"), ("openai", "OpenAI"), ("anthropic", "Anthropic")],
-        ),
-    },
-    Item {
-        section: Section::Ai,
-        file: File::App,
-        key: "aiModel",
-        name: "Modelo de IA",
-        desc: "Nombre del modelo que usará el asistente, tal como lo espera el proveedor.",
-        control: Text,
-    },
-    Item {
-        section: Section::Ai,
-        file: File::App,
-        key: "aiRewrite",
-        name: "Reescribir con IA",
-        desc: "Muestra la orden «Reescribir» al seleccionar texto en el editor.",
-        control: Toggle(false),
     },
     Item {
         section: Advanced,
@@ -611,6 +586,10 @@ impl App {
             self.set_plugin_setting(plugin, setting, json!(text.trim()));
             return;
         }
+        if let Some((field, at)) = ai_field_key(&key) {
+            self.commit_ai_field(field, at, &text);
+            return;
+        }
         let Some(it) = item(&key) else { return };
         let v = match it.control {
             Number(_, lo, hi) => match text.trim().parse::<f64>() {
@@ -706,6 +685,11 @@ impl App {
                 {
                     match self.plugin_registry().get(plugin).cloned() {
                         Some(p) => self.plugin_setting(&p, setting).as_str().unwrap_or("").to_string(),
+                        None => return true,
+                    }
+                } else if let Some((field, at)) = ai_field_key(arg) {
+                    match ai_field_text(&self.ai_config(), field, at) {
+                        Some(text) => text,
                         None => return true,
                     }
                 } else {
@@ -814,6 +798,71 @@ impl App {
                     s.snippets = ui.snippets;
                 }
             }
+            "ai-new" => {
+                let mut cfg = AiConfig::from_config(&self.config);
+                let name = cfg.free_name("Perfil");
+                cfg.profiles.push(AiProfile::named(name));
+                self.set_ai_config(&cfg);
+                if let Some(s) = &mut self.settings {
+                    s.ai_edit = Some(cfg.profiles.len() - 1);
+                }
+            }
+            "ai-dup" => {
+                let Ok(at) = arg.parse::<usize>() else { return true };
+                let mut cfg = AiConfig::from_config(&self.config);
+                let Some(src) = cfg.profiles.get(at).cloned() else { return true };
+                let mut copy = src;
+                copy.name = cfg.free_name(&format!("{} (copia)", copy.name));
+                cfg.profiles.insert(at + 1, copy);
+                self.set_ai_config(&cfg);
+                if let Some(s) = &mut self.settings {
+                    s.ai_edit = Some(at + 1);
+                }
+            }
+            "ai-del" => {
+                let Ok(at) = arg.parse::<usize>() else { return true };
+                let mut cfg = AiConfig::from_config(&self.config);
+                if at >= cfg.profiles.len() {
+                    return true;
+                }
+                cfg.profiles.remove(at);
+                // Normalising keeps at least one profile and points `active` at one that exists.
+                cfg.normalize();
+                self.set_ai_config(&cfg);
+                if let Some(s) = &mut self.settings {
+                    s.ai_edit = Some(at.min(cfg.profiles.len() - 1));
+                }
+            }
+            "ai-use" => {
+                let Ok(at) = arg.parse::<usize>() else { return true };
+                let mut cfg = AiConfig::from_config(&self.config);
+                if let Some(p) = cfg.profiles.get(at) {
+                    cfg.active = p.name.clone();
+                    self.set_ai_config(&cfg);
+                }
+                if let Some(s) = &mut self.settings {
+                    s.ai_edit = Some(at);
+                }
+            }
+            "ai-select" => {
+                if let Ok(at) = arg.parse::<usize>() {
+                    if let Some(s) = &mut self.settings {
+                        s.ai_edit = Some(at);
+                    }
+                }
+            }
+            "ai-preset" => {
+                let Ok(at) = arg.parse::<usize>() else { return true };
+                let mut cfg = AiConfig::from_config(&self.config);
+                if let Some(p) = cfg.profiles.get_mut(at) {
+                    let next = p.preset().next();
+                    p.apply_preset(next);
+                }
+                self.set_ai_config(&cfg);
+                if let Some(s) = &mut self.settings {
+                    s.ai_edit = Some(at);
+                }
+            }
             "perf" => self.perf = !self.perf,
             "core" => {
                 if CORE_PLUGINS.iter().any(|c| c.0 == arg) {
@@ -841,6 +890,54 @@ impl App {
             _ => {}
         }
         true
+    }
+
+    /// Write one field of profile `at`, then save the profiles.
+    fn commit_ai_field(&mut self, field: &str, at: usize, text: &str) {
+        let mut cfg = AiConfig::from_config(&self.config);
+        if at >= cfg.profiles.len() {
+            return;
+        }
+        let old_name = cfg.profiles[at].name.clone();
+        let mut new_name: Option<String> = None;
+        match field {
+            "name" => {
+                let name = text.trim();
+                if name.is_empty() {
+                    self.notice = Some("El perfil necesita un nombre".to_string());
+                    return;
+                }
+                new_name = Some(name.to_string());
+            }
+            "base_url" => cfg.profiles[at].base_url = text.trim().to_string(),
+            "model" => cfg.profiles[at].model = text.trim().to_string(),
+            "api_key" => cfg.profiles[at].api_key = text.trim().to_string(),
+            "system_prompt" => cfg.profiles[at].system_prompt = text.trim().to_string(),
+            "timeout_s" => match text.trim().parse::<u64>() {
+                Ok(n) => cfg.profiles[at].timeout_s = n.clamp(1, 600),
+                Err(_) => {
+                    self.notice = Some(format!("\"{}\" no es un número de segundos", text.trim()));
+                    return;
+                }
+            },
+            _ => return,
+        }
+        if let Some(name) = new_name {
+            cfg.profiles[at].name = name.clone();
+            if cfg.active == old_name {
+                cfg.active = name;
+            }
+        }
+        // A blank URL or model means the default one.
+        let d = AiProfile::default();
+        if cfg.profiles[at].base_url.trim().is_empty() {
+            cfg.profiles[at].base_url = d.base_url;
+        }
+        if cfg.profiles[at].model.trim().is_empty() {
+            cfg.profiles[at].model = d.model;
+        }
+        cfg.normalize();
+        self.set_ai_config(&cfg);
     }
 
     fn edit_key(&self) -> Option<&str> {
@@ -1360,6 +1457,7 @@ fn search_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, needle
                     reg.plugins.iter().filter(|p| plugin_matches(needle, p)).count()
                         + CORE_PLUGINS.iter().filter(|c| matches(needle, c.1, c.2)).count()
                 }
+                Section::Ai => usize::from(ai_matches(needle)),
                 _ => ITEMS.iter().filter(|i| i.section == sec && matches(needle, i.name, i.desc)).count(),
             }
         };
@@ -1370,6 +1468,7 @@ fn search_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, needle
         section_header(dom, parent, sec);
         match sec {
             Section::Plugins => plugins_view(app, dom, parent, ui, if whole { "" } else { needle }),
+            Section::Ai => ai_view(app, dom, parent, ui),
             Section::Appearance if whole => appearance_view(app, dom, parent, ui, false),
             Section::Advanced => advanced_view(app, dom, parent, ui, if whole { "" } else { needle }),
             _ => items_view(app, dom, parent, ui, sec, if whole { "" } else { needle }, false),
@@ -1428,14 +1527,126 @@ fn advanced_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, need
     }
 }
 
+/// The fields of a profile the settings form edits, keyed `ai.p:<field>:<index>`.
+fn ai_field_key(key: &str) -> Option<(&str, usize)> {
+    let (field, at) = key.strip_prefix("ai.p:")?.rsplit_once(':')?;
+    Some((field, at.parse().ok()?))
+}
+
+/// The text a profile field opens with.
+fn ai_field_text(cfg: &AiConfig, field: &str, at: usize) -> Option<String> {
+    let p = cfg.profiles.get(at)?;
+    Some(match field {
+        "name" => p.name.clone(),
+        "base_url" => p.base_url.clone(),
+        "model" => p.model.clone(),
+        "api_key" => p.api_key.clone(),
+        "system_prompt" => p.system_prompt.clone(),
+        "timeout_s" => p.timeout_s.to_string(),
+        _ => return None,
+    })
+}
+
+/// Whether the settings search text names something of Ajustes → IA.
+fn ai_matches(needle: &str) -> bool {
+    ["perfil", "perfiles", "proveedor", "proveedores", "modelo", "clave", "endpoint", "ollama"]
+        .iter()
+        .any(|w| w.contains(needle) || needle.contains(w))
+        || category_matches(needle, Section::Ai)
+}
+
+/// A text control whose contents are never painted: a row of dots when a value is set, and one
+/// dot per character while it is being edited.
+fn masked_input(
+    dom: &mut Dom,
+    ctl: NodeId,
+    key: &str,
+    set: bool,
+    edit: Option<&(String, String)>,
+) -> NodeId {
+    let editing = edit.filter(|e| e.0 == key);
+    let text = match editing {
+        Some(e) => format!("{}▏", "•".repeat(e.1.chars().count().clamp(1, 24))),
+        None if set => "••••••••".to_string(),
+        None => "Sin clave".to_string(),
+    };
+    let id = dom.add(
+        ctl,
+        El::div()
+            .class("setting-input")
+            .class_if(editing.is_some(), "is-editing")
+            .text(text)
+            .action(format!("settings:edit:{key}")),
+    );
+    if editing.is_some() {
+        dom.nodes[id].focus = true;
+    }
+    id
+}
+
 fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
+    let cfg = AiConfig::from_config(&app.config);
+    let active = cfg.active_index();
+    heading(dom, parent, "Perfiles de proveedor");
     dom.add(
         parent,
-        El::div()
-            .class("settings-note")
-            .text("El módulo de IA todavía no está conectado: estos ajustes se guardan para cuando llegue."),
+        El::div().class("settings-note").text(
+            "Cada perfil guarda la URL, el modelo y la clave de un proveedor compatible con OpenAI. \
+             El copiloto usa el perfil activo: podés tener uno por servicio.",
+        ),
     );
-    items_view(app, dom, parent, ui, Section::Ai, "", false);
+    for (i, p) in cfg.profiles.iter().enumerate() {
+        let ctl = row(dom, parent, &p.name, &format!("{} · {}", p.model, p.base_url));
+        if i == active {
+            dom.add(ctl, El::div().class("setting-value").text("Activo"));
+        } else {
+            button(dom, ctl, "Activar", format!("settings:ai-use:{i}"), false);
+        }
+        button(dom, ctl, "Editar", format!("settings:ai-select:{i}"), false);
+        button(dom, ctl, "Duplicar", format!("settings:ai-dup:{i}"), false);
+        button(dom, ctl, "Eliminar", format!("settings:ai-del:{i}"), false);
+    }
+    let ctl = row(dom, parent, "Nuevo perfil", "Agrega un perfil con el endpoint predeterminado.");
+    button(dom, ctl, "Agregar", "settings:ai-new".into(), true);
+
+    let at = ui.ai_edit.filter(|&i| i < cfg.profiles.len()).unwrap_or(active);
+    let p = &cfg.profiles[at];
+    heading(dom, parent, &format!("Perfil «{}»", p.name));
+    let ctl = row(dom, parent, "Nombre", "Cómo se llama en la lista y en el panel del copiloto.");
+    input(dom, ctl, &format!("ai.p:name:{at}"), &p.name, ui.edit.as_ref());
+    let ctl = row(
+        dom,
+        parent,
+        "Proveedor",
+        "Elegir un preset completa la URL y un modelo típico; «Personalizado» deja los tuyos.",
+    );
+    dom.add(
+        ctl,
+        El::div()
+            .class("dropdown")
+            .text(format!("{} ▾", p.preset().label()))
+            .action(format!("settings:ai-preset:{at}")),
+    );
+    let ctl = row(dom, parent, "URL base", "Origen de la API, con o sin su /v1.");
+    input(dom, ctl, &format!("ai.p:base_url:{at}"), &p.base_url, ui.edit.as_ref());
+    let ctl = row(dom, parent, "Modelo", "Nombre del modelo tal como lo espera el proveedor.");
+    input(dom, ctl, &format!("ai.p:model:{at}"), &p.model, ui.edit.as_ref());
+    let ctl = row(
+        dom,
+        parent,
+        "Clave de API",
+        "Se guarda en .obsidian/app.json y no se muestra en claro. Sin clave el panel no envía.",
+    );
+    masked_input(dom, ctl, &format!("ai.p:api_key:{at}"), !p.api_key.trim().is_empty(), ui.edit.as_ref());
+    let ctl = row(
+        dom,
+        parent,
+        "Prompt del sistema",
+        "Instrucciones de este perfil. Vacío usa el prompt predeterminado.",
+    );
+    input(dom, ctl, &format!("ai.p:system_prompt:{at}"), &p.system_prompt, ui.edit.as_ref());
+    let ctl = row(dom, parent, "Tiempo de espera", "Segundos antes de cortar la conexión (1 a 600).");
+    input(dom, ctl, &format!("ai.p:timeout_s:{at}"), &p.timeout_s.to_string(), ui.edit.as_ref());
 }
 
 /// The settings window, drawn over everything else.

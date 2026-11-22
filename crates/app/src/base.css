@@ -563,6 +563,11 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .ai-panel { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden }
 .ai-toolbar { align-items: center; justify-content: space-between; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--background-modifier-border) }
 .ai-model { flex-grow: 1; color: var(--text-faint); font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.ai-profile { cursor: pointer }
+.ai-profile:hover { color: var(--text-normal) }
+.ai-quick { display: flex; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--background-modifier-border) }
+.ai-quick-button { padding: 3px 8px; border-radius: var(--radius-m); background-color: var(--rs-pill); color: var(--text-muted); font-size: var(--font-ui-smaller); white-space: nowrap; cursor: pointer }
+.ai-quick-button:hover { color: var(--text-normal); background-color: var(--background-modifier-hover) }
 .ai-messages { flex-grow: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 10px }
 .ai-msg { display: flex; flex-direction: column; gap: 2px }
 .ai-msg-role { display: flex; align-items: center; gap: 5px; color: var(--text-faint); font-size: var(--font-ui-smaller) }
