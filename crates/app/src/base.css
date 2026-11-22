@@ -228,14 +228,16 @@ body {
 .media-card-action.is-busy { color: var(--text-muted); border-style: dashed }
 .media-card-note { margin-top: 3px; color: var(--text-faint); font-size: 0.8em; white-space: normal }
 .empty-state { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px }
-.empty-state-container { width: 380px; display: flex; flex-direction: column; align-items: center }
+/* The welcome card asks for 380 px but takes what the pane has: in a narrow window a fixed
+   card pushed its rows, and their hotkeys, past the right edge. */
+.empty-state-container { width: 100%; max-width: 380px; min-width: 0; display: flex; flex-direction: column; align-items: center }
 .empty-state-logo { width: 72px; height: 72px; margin-bottom: 14px }
 .empty-state-title { font-size: 20px; font-weight: 600; color: var(--text-normal); text-align: center }
 .empty-state-subtitle { color: var(--text-muted); margin: 6px 0 16px 0; text-align: center }
 .empty-state-action-list { width: 100%; display: flex; flex-direction: column; gap: 2px }
 .empty-state-action { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-radius: var(--radius-s); color: var(--text-accent); font-size: 14px }
 .empty-state-action:hover { background-color: var(--background-modifier-hover) }
-.empty-state-action-label { flex-grow: 1; white-space: nowrap }
+.empty-state-action-label { flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .empty-state-action-hotkey { color: var(--text-faint); font-size: var(--font-ui-smaller); white-space: nowrap }
 .status-bar-hint { flex-grow: 1; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis }
 .status-bar { display: flex; justify-content: flex-end; gap: 14px; padding: 4px 18px 4px 14px; background-color: var(--background-secondary); border-top: 1px solid var(--background-modifier-border); color: var(--text-muted); font-size: var(--font-ui-smaller); flex-shrink: 0; overflow: hidden }
@@ -447,7 +449,9 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .settings-search .setting-input.is-editing, .settings-search .setting-input:focus { border: none }
 .settings-search-icon { width: 14px; height: 14px; flex-shrink: 0; color: var(--text-faint) }
 .settings-search:focus-within .settings-search-icon { color: var(--text-accent) }
-.settings-body { display: flex; flex-grow: 1; overflow: hidden }
+/* `min-height: 0` is what lets a flex child be shorter than its content: without it the
+   panel's children refuse to shrink and the settings rows paint below the modal's edge. */
+.settings-body { display: flex; flex-grow: 1; min-height: 0; overflow: hidden }
 .vertical-tab-header { width: 212px; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; background-color: var(--background-secondary); border-right: 1px solid var(--background-modifier-border) }
 .vertical-tab-header-group-title { color: var(--text-faint); font-size: var(--font-ui-smaller); padding: 4px 10px 6px 10px; font-weight: 600 }
 .vertical-tab-nav-item { display: flex; align-items: center; gap: 10px; margin: 0 6px; padding: 7px 10px; border: 1px solid transparent; border-radius: var(--radius-s); color: var(--text-muted); font-size: 14px; cursor: pointer }
@@ -460,14 +464,14 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .vertical-tab-nav-badge { color: var(--text-faint); font-size: 11px; padding: 0 6px; border-radius: 999px; background-color: var(--rs-pill) }
 .vertical-tab-nav-item.is-active .vertical-tab-nav-badge { color: var(--text-accent); background-color: var(--background-primary) }
 .settings-nav-note { margin-top: auto; padding: 10px 10px 4px 10px; color: var(--text-faint); font-size: var(--font-ui-smaller); line-height: 1.45 }
-.vertical-tab-content-container { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; background-color: var(--background-primary) }
+.vertical-tab-content-container { flex-grow: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background-color: var(--background-primary) }
 .settings-section-header { display: flex; align-items: center; gap: 12px; padding: 14px 24px 12px 24px; flex-shrink: 0; border-bottom: 1px solid var(--background-modifier-border) }
 .settings-section-icon { width: 38px; height: 38px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 10px; background-color: var(--background-modifier-active-hover); color: var(--text-accent) }
 .settings-section-icon .svg-icon { width: 19px; height: 19px }
 .settings-section-text { display: flex; flex-direction: column; gap: 2px; min-width: 0 }
 .settings-section-title { font-size: 17px; font-weight: 600; color: var(--text-normal) }
 .settings-section-desc { font-size: var(--font-ui-smaller); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-.vertical-tab-content { flex-grow: 1; overflow-y: auto; padding: 4px 22px 22px 22px }
+.vertical-tab-content { flex-grow: 1; min-height: 0; overflow-y: auto; padding: 4px 22px 22px 22px }
 .setting-item { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-top: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); cursor: default }
 .setting-item:hover { background-color: var(--background-modifier-hover) }
 .setting-item-main { display: flex; align-items: center; gap: 16px }
@@ -550,7 +554,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .modal.mod-settings.is-narrow .setting-item-control > .setting-hotkey { width: auto; flex-grow: 1 }
 /* The three previews are the whole control of the theme row, so they get the room they need
    instead of sharing the column with a dropdown that says the same thing. */
-.theme-swatches { display: flex; align-items: flex-start; gap: 8px; margin-right: 4px; align-self: center }
+.theme-swatches { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin-right: 4px; align-self: center }
 /* The selected scheme is the one inside the accent ring: the ring lives on the wrapper and is
    always there (transparent when it is not selected), so the three previews keep one size and
    one way of saying which one is on. */
@@ -897,3 +901,10 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .setting-menu-wrap { display: flex; justify-content: flex-end; width: 100% }
 .calendar-day-open-icon { width: 12px; height: 12px; flex-shrink: 0 }
 .calendar-day-open-label { white-space: nowrap }
+/* The three previews of the scheme take the row's width when the row has one: they used to hang
+   out of a 152 px box on a narrow window. */
+/* On a narrow row the three previews share the width they are given instead of asking for a
+   fixed 52 px each and hanging out of the box. */
+.modal.mod-settings.is-narrow .setting-item-control > .theme-swatches { width: 100%; justify-content: flex-start }
+.modal.mod-settings.is-narrow .theme-swatch-item { flex: 1 1 0; min-width: 0 }
+.modal.mod-settings.is-narrow .theme-swatch { width: 100%; max-width: 52px }

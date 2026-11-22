@@ -3429,13 +3429,16 @@ const POPOVER_H: f32 = 260.0;
 fn hover_popover(app: &App, dom: &mut Dom, viewport_h: f32) {
     let Some(h) = &app.hover_preview else { return };
     let (px, py) = h.at;
-    let x = if px + 12.0 + POPOVER_W > app.window_w { (px - 12.0 - POPOVER_W).max(0.0) } else { px + 12.0 };
+    // A window narrower than the preview gets the preview at its own width: floating 380 px in a
+    // 360 px window put the card half outside, where it could not be read or dismissed.
+    let w = POPOVER_W.min((app.window_w - 16.0).max(200.0));
+    let x = if px + 12.0 + w > app.window_w { (px - 12.0 - w).max(8.0) } else { px + 12.0 };
     let y = if py + 16.0 + POPOVER_H > viewport_h { (py - 8.0 - POPOVER_H).max(0.0) } else { py + 16.0 };
     let t = app.anims.t("hover");
     let pop = dom.add(
         0,
         El::div().class("popover hover-popover").id("hover-popover").style(&format!(
-            "left: {x:.1}px; top: {:.1}px; width: {POPOVER_W}px; max-height: {POPOVER_H}px; opacity: {:.2}",
+            "left: {x:.1}px; top: {:.1}px; width: {w:.0}px; max-height: {POPOVER_H}px; opacity: {:.2}",
             y + 4.0 * (1.0 - t),
             0.4 + 0.6 * t
         )),

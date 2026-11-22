@@ -2158,6 +2158,14 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     let at = ui.ai_edit.filter(|&i| i < cfg.profiles.len()).unwrap_or(active);
     let p = &cfg.profiles[at];
     heading(dom, parent, &format!("Perfil «{}»", p.name));
+    dom.add(
+        parent,
+        El::div().class("settings-note").text(
+            "Un perfil es un servicio con su clave. Los campos de esta página son los del perfil \
+             elegido arriba; el copiloto usa el activo.",
+        ),
+    );
+    heading(dom, parent, "Conexión");
     let ctl = row(dom, parent, "Nombre", "Cómo se llama en la lista y en el panel del copiloto.");
     input(dom, ctl, &format!("ai.p:name:{at}"), &p.name, ui.edit.as_ref(), Some("Mi perfil"));
     let ctl = row(
@@ -2181,7 +2189,8 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     // What the provider says it serves right now, when it has been asked: the model comes from
     // this list instead of being typed from memory.
     if app.ai_models.profile == p.name && !app.ai_models.list.is_empty() {
-        let ctl = row(dom, parent, "Elegir del proveedor", "Los modelos que la API respondió hace un momento.");
+        let ctl =
+            row(dom, parent, "Elegir del proveedor", "Los modelos que la API respondió hace un momento.");
         dropdown(dom, ctl, ui, &format!("ai.model:{at}"), &p.model, &p.model);
     }
     // What the provider says it serves, asked for on demand: the list is the source of truth for
@@ -2228,6 +2237,9 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
         "Se guarda en .obsidian/app.json y no se muestra en claro. Sin clave el panel no envía.",
     );
     masked_input(dom, ctl, &format!("ai.p:api_key:{at}"), !p.api_key.trim().is_empty(), ui.edit.as_ref());
+    let ctl = row(dom, parent, "Tiempo de espera", "Segundos antes de cortar la conexión (1 a 600).");
+    input(dom, ctl, &format!("ai.p:timeout_s:{at}"), &p.timeout_s.to_string(), ui.edit.as_ref(), Some("30"));
+    heading(dom, parent, "Instrucciones");
     let ctl = row(
         dom,
         parent,
@@ -2262,8 +2274,6 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
         let on = p.skills.iter().any(|s| s == id);
         toggle(dom, ctl, on, format!("settings:ai-skill:{at}:{id}"));
     }
-    let ctl = row(dom, parent, "Tiempo de espera", "Segundos antes de cortar la conexión (1 a 600).");
-    input(dom, ctl, &format!("ai.p:timeout_s:{at}"), &p.timeout_s.to_string(), ui.edit.as_ref(), Some("30"));
 }
 
 /// Whether the settings search text names something of Ajustes → Calendario.
@@ -2328,6 +2338,10 @@ pub fn modal(app: &App, dom: &mut Dom) {
     let t = app.anims.t("settings");
     let backdrop = El::div().class("modal-container mod-dim").action("settings:close");
     let mut style = format!("margin-bottom: {:.0}px; ", crate::view::STATUS_BAR_H);
+    // The panel asks for 620 px, which is more than a small window has: it takes the height the
+    // window can give, so it never sticks out of the top with its bar cut.
+    let room = (app.window_h - crate::view::STATUS_BAR_H - 24.0).max(320.0);
+    style.push_str(&format!("height: {:.0}px; ", room.min(620.0)));
     if t < 1.0 {
         style.push_str(&format!("margin-top: {:.1}px; ", 14.0 * (1.0 - t)));
     }
