@@ -497,11 +497,14 @@ fn mermaid_blocks_are_drawn_or_explained() {
     let mut fonts = Fonts::new();
     let mut pm = Pixmap::new(900, 900).unwrap();
     let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
-    assert_eq!(frame.info.rich.len(), 1);
-    assert!(frame.dom.nodes[frame.info.rich[0].node].draw.len() > 5);
+    // Both kinds are drawn since mermaid-core learned `pie`: no block falls back to an
+    // explanation any more.
+    assert_eq!(frame.info.rich.len(), 2);
+    for it in &frame.info.rich {
+        assert!(frame.dom.nodes[it.node].draw.len() > 2, "the diagram paints something");
+    }
     let texts: Vec<&str> = frame.dom.nodes.iter().filter_map(|n| n.el.text.as_deref()).collect();
-    assert!(texts.iter().any(|t| t.contains("`pie` no son compatibles")), "{texts:?}");
-    assert!(frame.info.blocks.iter().any(|b| b.display.contains("pie title x")));
+    assert!(!texts.iter().any(|t| t.contains("no son compatibles")), "{texts:?}");
     // Source mode shows the fence untouched.
     app.tabs[0].mode = ViewMode::Source;
     let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
