@@ -495,6 +495,11 @@ pub struct App {
     pub anims: crate::anim::Anims,
     /// The in-app video player, while a note's video card is playing.
     pub video: crate::video::VideoPlayer,
+    /// YouTube links played inside the application: the `yt-dlp` lookup and the run in flight.
+    pub youtube: crate::youtube::Jobs,
+    /// Width and height of the workspace in the last frame drawn: the space an over-window
+    /// overlay has, with the status bar already taken out of it.
+    pub video_area: (f32, f32),
     /// The AI copilot of the right sidebar.
     pub ai: crate::ai::AiPanel,
     /// UI scale factor (window scale).
@@ -679,6 +684,8 @@ impl App {
             show_base: false,
             dataview: Default::default(),
             video: Default::default(),
+            youtube: crate::youtube::Jobs::new(),
+            video_area: (0.0, 0.0),
             ai: Default::default(),
             scale: 1.0,
             video_waker: None,
@@ -1038,12 +1045,36 @@ impl App {
         self.active = if prev > i { prev - 1 } else { prev.min(self.tabs.len().saturating_sub(1)) };
     }
 
-    /// Called from `render_window` before building the view: reads frames, updates the clock.
+    /// The frame size a player in a note asks for: the card the column shows at 1x.
+    pub fn card_cap(&self) -> (u32, u32) {
+        let scale = if self.scale > 0.0 { self.scale } else { 1.0 };
+        ((640.0 * scale) as u32, (360.0 * scale) as u32)
+    }
+
+    /// Called from `render_window` before building the view: reads frames, updates the clock,
+    /// and finishes the `yt-dlp` runs that were started from a YouTube card.
     pub fn video_tick(&mut self, now: std::time::Instant) {
         self.video.tick(now);
         let _ = self.video.run_action("");
         if let crate::video::State::Failed(message) = self.video.state() {
             self.notice = Some(message.to_string());
+        }
+        // A resolved YouTube stream opens the player, in the note whose card asked for it.
+        match self.youtube.poll() {
+            Some(crate::youtube::Outcome::Ready { watch, url, note }) => {
+                self.notice = None;
+                if let Err(e) = self.video.open_url(&watch, &url, &note, self.card_cap()) {
+                    self.notice = Some(e);
+                } else if let Some(waker) = &self.video_waker {
+                    waker();
+                }
+            }
+            Some(crate::youtube::Outcome::Failed(message)) => self.notice = Some(message),
+            None => {}
+        }
+        // The overlay asks for a frame that fits the box it has, once per window size.
+        if self.video_fullscreen {
+            self.fit_video_overlay();
         }
         if !self.video.note().is_empty() {
             let open = self.all_tabs().any(|t| t.path.eq_ignore_ascii_case(self.video.note()));
@@ -1055,7 +1086,16 @@ impl App {
 
     /// Milliseconds until the player needs another tick (for the wait deadline), if playing.
     pub fn video_due_in(&self) -> Option<u64> {
-        if self.video.is_open() && !matches!(self.video.state(), crate::video::State::Paused) { Some(250) } else { None }
+        if self.video.is_open() && !matches!(self.video.state(), crate::video::State::Paused) {
+            Some(250)
+        } else {
+            None
+        }
+    }
+
+    /// Milliseconds until the running `yt-dlp` has to be looked at again, if one is running.
+    pub fn youtube_due_in(&self) -> Option<u64> {
+        self.youtube.busy().then_some(150)
     }
 
     /// Close the video player, called when the media file is deleted or renamed.
@@ -1364,12 +1404,30 @@ impl App {
             self.set_video_fullscreen(false);
             return;
         }
+        // A YouTube card: `yt-dlp` resolves the stream in the background and the player opens when
+        // it answers (see `video_tick`). The video is drawn where the note is.
+        if let Some(url) = command.strip_prefix("youtube:open:") {
+            let note = self.tab().map(|t| t.path.clone()).unwrap_or_default();
+            match self.youtube.start(url, &note) {
+                Ok(()) => self.notice = Some("Preparando el video…".to_string()),
+                Err(e) => self.notice = Some(e),
+            }
+            return;
+        }
+        // A plain link the app cannot show: the browser opens it.
+        if let Some(url) = command.strip_prefix("open-url:") {
+            self.open_in_browser(url);
+            return;
+        }
         if let Some(rest) = command.strip_prefix("video:") {
             if let Some((note, rel)) = rest.strip_prefix("open:").and_then(|r| r.split_once('|')) {
                 let path = self.store.abs(rel);
-                match self.video.open(rel, &path, note, ((640.0 * self.scale) as u32, (360.0 * self.scale) as u32)) {
+                match self.video.open(rel, &path, note, self.card_cap()) {
                     Ok(()) => {
-                        if let Some(waker) = self.video_waker.take() { waker(); }
+                        // The frames arrive on a thread of their own: the window has to know.
+                        if let Some(waker) = &self.video_waker {
+                            waker();
+                        }
                     }
                     Err(e) => self.notice = Some(e),
                 }

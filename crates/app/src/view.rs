@@ -166,6 +166,9 @@ impl BlockView {
 pub struct ViewInfo {
     pub blocks: Vec<BlockView>,
     pub editor: Option<NodeId>,
+    /// The workspace element: everything the windows show above the status bar. The over-window
+    /// overlays live inside it, so they reserve the height the status bar takes.
+    pub workspace: Option<NodeId>,
     /// The graph pane and the hidden elements its colors are read from.
     pub graph: Option<NodeId>,
     pub graph_colors: Vec<NodeId>,
@@ -1929,7 +1932,7 @@ fn embeds(
         } else if crate::video::is_video(rel) && app.video.is_open() && app.video.path() == rel {
             // While the player is full screen it lives in the overlay, not in the note.
             if !app.video_fullscreen {
-                crate::video::widget(app, dom, view);
+                crate::video::widget(app, dom, view, None);
             }
         } else {
             // Video, audio and anything else this build does not decode: a card that names the
@@ -1955,6 +1958,71 @@ fn embeds(
                     }),
             );
         }
+    }
+    // A YouTube link in the block is a video of its own: the card plays it in the application when
+    // `yt-dlp` can resolve the stream, and offers the browser when it cannot. Code blocks keep
+    // their text, so an example is never turned into a player.
+    youtube_embed(app, dom, view, tree, block_text);
+}
+
+/// The YouTube card of a block, if the block links to one.
+fn youtube_embed(app: &App, dom: &mut Dom, view: NodeId, tree: &md_engine::Tree, block_text: &str) {
+    if matches!(tree.root().kind, NodeKind::CodeBlock { .. }) {
+        return;
+    }
+    if let Some(link) = crate::youtube::find(block_text) {
+        youtube_card(app, dom, view, &link);
+    }
+}
+
+/// The card a YouTube link shows under its line: a player while that video is the open one, an
+/// offer to play it otherwise. Without `yt-dlp` the card says why it cannot and hands the link to
+/// the browser instead of failing silently.
+fn youtube_card(app: &App, dom: &mut Dom, view: NodeId, link: &crate::youtube::Link) {
+    if app.video.is_open() && app.video.path() == link.url {
+        // While the player is over the window it lives there, not in the note.
+        if !app.video_fullscreen {
+            crate::video::widget(app, dom, view, None);
+        }
+        return;
+    }
+    let card = dom.add(view, El::div().class("media-card media-card-youtube"));
+    let icon = dom.add(card, El::div().class("media-card-icon"));
+    dom.add(icon, icons::el("play"));
+    let body = dom.add(card, El::div().class("media-card-body"));
+    dom.add(body, El::div().class("media-card-title").text(format!("YouTube · {}", link.id)));
+    if app.youtube.available() {
+        // While `yt-dlp` runs, the card says so instead of looking dead.
+        let waiting = app.youtube.resolving() == Some(link.url.as_str());
+        dom.add(
+            body,
+            El::div()
+                .class("media-card-action")
+                .class_if(waiting, "is-busy")
+                .text(if waiting { "Preparando el video…" } else { "Reproducir en MetaMind" })
+                .action(format!("youtube:open:{}", link.url)),
+        );
+        dom.add(
+            body,
+            El::div()
+                .class("media-card-note media-card-secondary")
+                .text("Abrir en el navegador")
+                .action(format!("open-url:{}", link.url)),
+        );
+    } else {
+        dom.add(
+            body,
+            El::div()
+                .class("media-card-action")
+                .text("Abrir en el navegador")
+                .action(format!("open-url:{}", link.url)),
+        );
+        dom.add(
+            body,
+            El::div()
+                .class("media-card-note")
+                .text("No está instalado yt-dlp: el video solo se puede ver en el navegador."),
+        );
     }
 }
 
@@ -2485,25 +2553,40 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
     );
 }
 
-/// The player over the window, at the size of the window: the same card as in the note, asked to
-/// decode a frame that fills it. A click on the frame plays or pauses it; a click outside the
-/// card, or Escape, goes back to the player in its note.
-fn video_fullscreen(app: &App, dom: &mut Dom, viewport_h: f32) {
+/// The player over the window, in the box the workspace has: the same card as in the note, asked
+/// to decode a frame that fills it. A click on the frame plays or pauses it; a click anywhere
+/// outside the card, or Escape, goes back to the player in its note.
+///
+/// The dim layer is a child of the workspace and not of the window, so the status bar keeps its
+/// own height instead of being covered (or borrowed) by the overlay, and the card is laid out
+/// from its picture instead of from a size guessed here: a fixed box is what used to cut the
+/// controls off the bottom.
+fn video_fullscreen(app: &App, dom: &mut Dom, parent: NodeId) {
     if !app.video_fullscreen || !app.video.is_open() {
         return;
     }
-    let (w, h) = ((app.window_w - 80.0).max(240.0), (viewport_h - 80.0).max(160.0));
     let backdrop = dom.add(
-        0,
-        El::div().class("modal-container mod-dim video-fullscreen").action("video:fullscreen-close"),
-    );
-    let modal = dom.add(
-        backdrop,
+        parent,
         El::div()
-            .class("modal mod-video")
-            .style(&format!("width: {w:.0}px; height: {h:.0}px")),
+            .class("modal-container mod-dim video-fullscreen")
+            .action("video:fullscreen-close"),
     );
-    crate::video::widget(app, dom, modal);
+    // The box is as wide as the card it holds, taken from the space the overlay really has: the
+    // modal's padding and the margin around it are what the note's numbers do not know about.
+    let area = if app.video_area.0 > 0.0 && app.video_area.1 > 0.0 {
+        app.video_area
+    } else {
+        (app.window_w.max(320.0), app.window_h.max(240.0))
+    };
+    let max_w = area.0 - 2.0 * (crate::video::OVERLAY_MARGIN + crate::video::OVERLAY_PAD);
+    let modal = dom.add(backdrop, El::div().class("modal mod-video"));
+    crate::video::widget(app, dom, modal, Some(max_w.max(160.0)));
+    dom.add(
+        modal,
+        El::div()
+            .class("diagram-zoom-hint video-fullscreen-hint")
+            .text("Clic en el cuadro para pausar · Esc o clic fuera para volver a la nota"),
+    );
 }
 
 /// A Mermaid diagram opened full screen by a click on its block: the window behind it dims and
@@ -2547,8 +2630,12 @@ fn diagram_zoom(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate:
 }
 
 /// Prompts, the hover preview, settings, menus and notices, over the window.
-fn overlays(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate::rich::Item>) {
-    video_fullscreen(app, dom, viewport_h);
+fn overlays(app: &App, dom: &mut Dom, workspace: Option<NodeId>, viewport_h: f32, rich: &mut Vec<crate::rich::Item>) {
+    // The player over the window is part of the workspace, not of the window: the status bar keeps
+    // the height it has.
+    if let Some(ws) = workspace {
+        video_fullscreen(app, dom, ws);
+    }
     diagram_zoom(app, dom, viewport_h, rich);
     if let Some(p) = &app.prompt {
         let t = app.anims.t("prompt");
@@ -2665,6 +2752,7 @@ pub fn build(app: &App, viewport_h: f32, solo: Option<usize>) -> (Dom, ViewInfo)
     let mut dom = Dom::new();
     dom.nodes[0].el.classes.push(if app.dark { "theme-dark" } else { "theme-light" }.to_string());
     let ws = dom.add(0, El::div().class("workspace"));
+    info.workspace = Some(ws);
     match solo {
         Some(p) => {
             let root = dom.add(ws, El::div().class("workspace-split mod-root"));
@@ -2677,7 +2765,7 @@ pub fn build(app: &App, viewport_h: f32, solo: Option<usize>) -> (Dom, ViewInfo)
         None => !app.is_popped(app.pane),
     };
     if here {
-        overlays(app, &mut dom, viewport_h, &mut info.rich);
+        overlays(app, &mut dom, info.workspace, viewport_h, &mut info.rich);
     }
     for (id, y) in &app.scrolls {
         if let Some(n) = dom.by_id(id) {

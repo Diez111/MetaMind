@@ -18,7 +18,7 @@
 //! separator-vertical, separator-horizontal, unlink, code, list, link, calendar, vault,
 //! chevrons-down-up, house, hard-drive, check, play, triangle-alert, panel-left, layout-template,
 //! panel-right, circle-help, copy, clipboard, scissors, trash, bold, italic, strikethrough,
-//! highlighter, table, scan-text, sparkles.
+//! highlighter, table, scan-text, sparkles, pause, maximize, minimize, download.
 //!
 //! The names are MetaMind's, so a few point at the nearest Lucide icon rather than one with the
 //! same name: `note` is `file-text`, `note-plus` is `file-plus`, `canvas` is `layout-dashboard`,
@@ -399,19 +399,57 @@ fn shape(name: &str) -> Shape {
             .l(7.0, 19.0)
             .m(17.0, 5.0)
             .l(17.0, 19.0),
+        // lucide `maximize`: four corner brackets, the widest read at 16 px. The old glyph was a
+        // box with ticks inside it, which at the size of a button was an unreadable smudge.
         "maximize" => s
-            .m(8.0, 4.0)
-            .l(8.0, 8.0)
-            .m(4.0, 4.0)
-            .l(4.0, 20.0)
-            .l(20.0, 20.0)
-            .l(20.0, 4.0)
-            .l(4.0, 4.0)
-            .m(12.0, 4.0)
-            .l(12.0, 8.0)
-            .m(4.0, 8.0)
-            .l(12.0, 8.0)
-            .l(12.0, 4.0),
+            .m(8.0, 3.0)
+            .l(5.0, 3.0)
+            .c(3.895, 3.0, 3.0, 3.895, 3.0, 5.0)
+            .l(3.0, 8.0)
+            .m(21.0, 8.0)
+            .l(21.0, 5.0)
+            .c(21.0, 3.895, 20.105, 3.0, 19.0, 3.0)
+            .l(16.0, 3.0)
+            .m(3.0, 16.0)
+            .l(3.0, 19.0)
+            .c(3.0, 20.105, 3.895, 21.0, 5.0, 21.0)
+            .l(8.0, 21.0)
+            .m(16.0, 21.0)
+            .l(19.0, 21.0)
+            .c(20.105, 21.0, 21.0, 20.105, 21.0, 19.0)
+            .l(21.0, 16.0),
+        // lucide `minimize`: the same brackets turned inward, for leaving the full-screen view.
+        "minimize" => s
+            .m(8.0, 3.0)
+            .l(8.0, 6.0)
+            .c(8.0, 7.105, 7.105, 8.0, 6.0, 8.0)
+            .l(3.0, 8.0)
+            .m(21.0, 8.0)
+            .l(18.0, 8.0)
+            .c(16.895, 8.0, 16.0, 7.105, 16.0, 6.0)
+            .l(16.0, 3.0)
+            .m(3.0, 16.0)
+            .l(6.0, 16.0)
+            .c(7.105, 16.0, 8.0, 16.895, 8.0, 18.0)
+            .l(8.0, 21.0)
+            .m(16.0, 21.0)
+            .l(16.0, 18.0)
+            .c(16.0, 16.895, 16.895, 16.0, 18.0, 16.0)
+            .l(21.0, 16.0),
+        // lucide `download`: an arrow into a tray. Any element that asks for it used to fall back
+        // to the placeholder square, which is what a broken icon looked like.
+        "download" => s
+            .m(21.0, 15.0)
+            .l(21.0, 19.0)
+            .c(21.0, 20.105, 20.105, 21.0, 19.0, 21.0)
+            .l(5.0, 21.0)
+            .c(3.895, 21.0, 3.0, 20.105, 3.0, 19.0)
+            .l(3.0, 15.0)
+            .m(7.0, 10.0)
+            .l(12.0, 15.0)
+            .l(17.0, 10.0)
+            .m(12.0, 15.0)
+            .l(12.0, 3.0),
         "x" => s.m(18.0, 6.0).l(6.0, 18.0).m(6.0, 6.0).l(18.0, 18.0),
         // lucide `pin`
         "pin" => s
@@ -1074,5 +1112,45 @@ pub fn for_file(path: &str) -> &'static str {
         "base" => "table",
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" => "image",
         _ => "file",
+    }
+}
+
+/// Whether `name` draws a glyph of its own instead of the placeholder square an unknown name
+/// falls back to. A square in a button is what a missing icon looks like to a reader.
+pub fn known(name: &str) -> bool {
+    let placeholder = Shape::default().rect(3.0, 3.0, 21.0, 21.0).lines;
+    shape(name).lines != placeholder
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every glyph the player and the media cards draw has to exist: an unknown name is a square.
+    #[test]
+    fn the_icons_the_player_draws_are_all_drawn() {
+        for name in ["play", "pause", "maximize", "minimize", "download", "x", "warning"] {
+            assert!(known(name), "`{name}` has no glyph and would be drawn as a square");
+            assert!(!shape(name).lines.is_empty(), "`{name}` draws nothing");
+        }
+        // An unknown name is the placeholder, and says so.
+        assert!(!known("no-such-icon"));
+    }
+
+    /// The old `maximize` was a box with ticks, unreadable at button size. It is now the four
+    /// corner brackets of Lucide, which are four separate subpaths.
+    #[test]
+    fn maximize_is_four_corner_brackets() {
+        let m = shape("maximize");
+        assert_eq!(m.lines.len(), 4, "{:#?}", m.lines);
+        // Each bracket starts on 3 or the 24 grid's mirror and ends on 8 (or its mirror):
+        // nothing is drawn in the middle of the box, where the label of a button lives.
+        for line in &m.lines {
+            let (x, y) = *line.first().expect("a subpath starts somewhere");
+            assert!(x <= 3.0 || x >= 16.0 || y <= 3.0 || y >= 16.0, "{line:?} sits in the middle");
+        }
+        // `minimize` is its mirror image: the same brackets, turned inward.
+        let n = shape("minimize");
+        assert_eq!(n.lines.len(), 4, "{:#?}", n.lines);
     }
 }
