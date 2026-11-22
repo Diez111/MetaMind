@@ -19,7 +19,7 @@
 //! chevrons-down-up, house, hard-drive, check, play, triangle-alert, panel-left, layout-template,
 //! panel-right, circle-help, copy, clipboard, scissors, trash, bold, italic, strikethrough,
 //! highlighter, table, scan-text, sparkles, square, circle, diamond, type, minus,
-//! pause, maximize, minimize, download.
+//! pause, maximize, minimize, download, undo, redo.
 //!
 //! The names are MetaMind's, so a few point at the nearest Lucide icon rather than one with the
 //! same name: `note` is `file-text`, `note-plus` is `file-plus`, `canvas` is `layout-dashboard`,
@@ -384,8 +384,7 @@ fn shape(name: &str) -> Shape {
         // lucide `plus`
         "plus" => s.m(5.0, 12.0).l(19.0, 12.0).m(12.0, 5.0).l(12.0, 19.0),
         // lucide `rotate-ccw`
-        "rotate-ccw" => s
-            .m(3.0, 12.0)
+        "rotate-ccw" => s            .m(3.0, 12.0)
             .c(3.0, 16.971, 7.029, 21.0, 12.0, 21.0)
             .c(16.971, 21.0, 21.0, 16.971, 21.0, 12.0)
             .c(21.0, 7.029, 16.971, 3.0, 12.0, 3.0)
@@ -394,6 +393,28 @@ fn shape(name: &str) -> Shape {
             .m(3.0, 3.0)
             .l(3.0, 8.0)
             .l(8.0, 8.0),
+        // lucide `undo`: an arrow turned back over a hook to the right.
+        "undo" => s
+            .m(9.0, 14.0)
+            .l(4.0, 9.0)
+            .l(9.0, 4.0)
+            .m(4.0, 9.0)
+            .l(14.0, 9.0)
+            .l(18.5, 12.0)
+            .l(18.5, 17.0)
+            .l(14.0, 20.0)
+            .l(11.0, 20.0),
+        // lucide `redo`: its mirror image.
+        "redo" => s
+            .m(15.0, 14.0)
+            .l(20.0, 9.0)
+            .l(15.0, 4.0)
+            .m(20.0, 9.0)
+            .l(10.0, 9.0)
+            .l(5.5, 12.0)
+            .l(5.5, 17.0)
+            .l(10.0, 20.0)
+            .l(13.0, 20.0),
         // lucide `x`
         "pause" => s.m(7.0, 5.0).l(7.0, 19.0).m(17.0, 5.0).l(17.0, 19.0),
         // lucide `maximize`: four corner brackets, the widest read at 16 px. The old glyph was a

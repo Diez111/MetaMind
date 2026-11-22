@@ -37,7 +37,7 @@
 //! `excalidraw-core` and of the painter it feeds; the toolbar has no frame, embed or image tool,
 //! undo is the editor's (the board writes as it goes), and a selection is one element at a time.
 
-use crate::excalidraw::{paint_op, Pen};
+use crate::excalidraw::{grid, luma, paint_op, surface, Pen};
 use crate::shell::{App, Focus};
 use excalidraw_core::{new_element, ElementType, Rgba, Scene};
 use metamind_ui::{Cmd, Dom, El, Fonts, NodeId, Rect, TextStyle};
@@ -61,10 +61,6 @@ const MIN_ZOOM: f32 = 0.1;
 const MAX_ZOOM: f32 = 8.0;
 /// Room kept around the board by *Ajustar*, so no element touches the edge of the pane.
 const FIT_MARGIN: f32 = 48.0;
-/// Scene units between two dots of the grid.
-const GRID: f64 = 20.0;
-/// The grid coarsens instead of painting more dots than this.
-const MAX_DOTS: f32 = 12_000.0;
 /// Screen pixels a wheel line scrolls the board by.
 const WHEEL_PAN: f32 = 42.0;
 /// How far the pointer travels before a press becomes a drag.
@@ -73,6 +69,9 @@ const DRAG_START: f32 = 3.0;
 const MIN_SIZE: f64 = 2.0;
 /// Advance of the text font, as a fraction of its size, for a box nobody has measured.
 const CHAR_W: f64 = 0.55;
+/// Edits kept for `Ctrl+Z`. A board is a few kilobytes of JSON: a hundred is a comfortable
+/// history without holding on to anything large.
+const HISTORY: usize = 100;
 
 /// The drawing tools of the left toolbar.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -161,12 +160,14 @@ impl Tool {
 enum Drag {
     /// Space held, or the select tool on empty space: the board follows the pointer.
     Pan { last: (f32, f32) },
-    /// Moving the selected element.
-    Move { id: String, last: [f64; 2] },
+    /// Moving the selected elements.
+    Move { last: [f64; 2] },
     /// Drawing a new shape, from the point the press started at.
     Draw { id: String, from: [f64; 2] },
     /// Adding points to a freedraw stroke.
     Free { id: String },
+    /// The select tool dragged a box over the surface: everything it touches is selected.
+    Band { from: [f64; 2] },
     /// A press that does nothing until the second half of a double click.
     Idle,
 }
@@ -175,6 +176,15 @@ struct Press {
     drag: Drag,
     at: (f32, f32),
     moved: bool,
+}
+
+/// How a board is painted: the theme it sits in, whether its camera follows the elements, and how
+/// far the element just drawn has faded in.
+#[derive(Clone, Copy)]
+pub struct Look {
+    pub dark: bool,
+    pub primary: bool,
+    pub fade: f32,
 }
 
 /// A `.excalidraw` board opened as a tab.
@@ -194,6 +204,10 @@ pub struct ExcView {
     pub fill: String,
     pub width: f64,
     pub selected: Option<String>,
+    /// More elements selected with the rubber band, besides `selected`.
+    pub band: Vec<String>,
+    /// The rubber band being dragged, from the press point to the pointer.
+    band_to: Option<[f64; 2]>,
     /// The text element being typed into.
     pub editing: Option<String>,
     /// Its text, as typed.
@@ -202,6 +216,16 @@ pub struct ExcView {
     fresh: bool,
     /// The space bar is held: a press pans the board instead of drawing.
     space_held: bool,
+    /// The toolbar and its palette are folded away: the board fills the pane.
+    pub tools_hidden: bool,
+    /// Scenes before each edit, oldest first: `Ctrl+Z` walks back through them.
+    history: Vec<Scene>,
+    /// Scenes `Ctrl+Z` took away, for `Ctrl+Shift+Z`.
+    redo: Vec<Scene>,
+    /// The element just created, fading in while the editor's `exc-new` clock runs.
+    pub fade: Option<String>,
+    /// The clock for `fade` was started: a finished clock must not start it again.
+    fade_started: bool,
     pub dirty: bool,
     press: Option<Press>,
     seed: u64,
@@ -222,10 +246,17 @@ impl ExcView {
             fill: FILLS[0].to_string(),
             width: WIDTHS[1],
             selected: None,
+            band: Vec::new(),
+            band_to: None,
             editing: None,
             buf: String::new(),
             fresh: false,
             space_held: false,
+            tools_hidden: false,
+            history: Vec::new(),
+            redo: Vec::new(),
+            fade: None,
+            fade_started: false,
             dirty: false,
             press: None,
             seed: fsio::now_ms() | 1,
@@ -338,6 +369,8 @@ impl ExcView {
                 self.selected = None;
             }
             self.dirty |= !fresh;
+            // Nothing was typed: the box goes and the step it opened is not an undo step.
+            self.drop_checkpoint();
             return true;
         }
         if let Some(e) = self.scene.element_mut(&id) {
@@ -356,6 +389,7 @@ impl ExcView {
             e.bump(fsio::now_ms(), self.seed);
         }
         self.dirty = true;
+        self.drop_checkpoint();
         true
     }
 
@@ -412,19 +446,120 @@ impl ExcView {
         let id = e.id.clone();
         self.scene.elements.push(e);
         self.selected = Some(id.clone());
+        self.band.clear();
+        self.fade = Some(id.clone());
+        self.fade_started = false;
         self.dirty = true;
         self.auto_fit = false;
         id
     }
 
-    /// Delete the selected element.
+    /// Delete the selected elements.
     pub fn delete_selected(&mut self) -> bool {
         self.editing = None;
         self.buf.clear();
         self.fresh = false;
-        let Some(id) = self.selected.take() else { return false };
-        self.scene.remove(&id);
+        let ids = self.ids();
+        if ids.is_empty() {
+            return false;
+        }
+        self.checkpoint();
+        for id in &ids {
+            self.scene.remove(id);
+        }
+        self.clear_selection();
         self.dirty = true;
+        true
+    }
+
+    /// Every selected element, the primary one first.
+    pub fn ids(&self) -> Vec<String> {
+        let mut ids = self.selected.iter().cloned().collect::<Vec<_>>();
+        for id in &self.band {
+            if !ids.contains(id) {
+                ids.push(id.clone());
+            }
+        }
+        ids
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selected = None;
+        self.band.clear();
+        self.band_to = None;
+    }
+
+    /// The element the pointer is over, if any.
+    pub fn element_at(&self, x: f64, y: f64) -> Option<String> {
+        self.scene.hit(x, y).map(|e| e.id.clone())
+    }
+
+    // ---- history ----
+
+    /// Remember the scene before an edit, so `Ctrl+Z` can come back to it. A scene equal to the
+    /// last one kept is not kept twice: a click that changes nothing leaves no step behind.
+    fn checkpoint(&mut self) {
+        if self.history.last().is_none_or(|s| *s != self.scene) {
+            self.history.push(self.scene.clone());
+            if self.history.len() > HISTORY {
+                self.history.remove(0);
+            }
+        }
+        self.redo.clear();
+    }
+
+    /// Drop the last step when the edit it was taken for changed nothing: a shape drawn by
+    /// accident and dropped on release, or a text box left empty, is not an undo step.
+    fn drop_checkpoint(&mut self) {
+        if self.history.last().is_some_and(|s| *s == self.scene) {
+            self.history.pop();
+        }
+    }
+
+    pub fn can_undo(&self) -> bool {
+        !self.history.is_empty()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
+    /// Undo the last edit. The scene is the whole state of a board, so a step is a scene.
+    pub fn undo(&mut self) -> bool {
+        if self.editing.is_some() {
+            self.commit_edit();
+        }
+        let Some(prev) = self.history.pop() else { return false };
+        let now = std::mem::replace(&mut self.scene, prev);
+        self.redo.push(now);
+        if self.redo.len() > HISTORY {
+            self.redo.remove(0);
+        }
+        self.clear_selection();
+        self.editing = None;
+        self.buf.clear();
+        self.fade = None;
+        self.fade_started = false;
+        self.dirty = true;
+        self.auto_fit = false;
+        true
+    }
+
+    /// Redo what `undo` took away.
+    pub fn redo(&mut self) -> bool {
+        if self.editing.is_some() {
+            self.commit_edit();
+        }
+        let Some(next) = self.redo.pop() else { return false };
+        let now = std::mem::replace(&mut self.scene, next);
+        self.history.push(now);
+        self.clear_selection();
+        self.editing = None;
+        self.buf.clear();
+        self.fade = None;
+        self.fade_started = false;
+        self.dirty = true;
+        self.auto_fit = false;
         true
     }
 
@@ -450,21 +585,32 @@ impl ExcView {
         match self.tool {
             Tool::Select => match self.scene.hit(w[0], w[1]).map(|e| e.id.clone()) {
                 Some(id) => {
-                    self.selected = Some(id.clone());
-                    self.press = Some(Press { drag: Drag::Move { id, last: w }, at: (x, y), moved: false });
+                    // Pressing an element already in the selection keeps it: the drag moves the
+                    // whole group. Pressing another one selects just that.
+                    if !self.ids().contains(&id) {
+                        self.selected = Some(id);
+                        self.band.clear();
+                    }
+                    self.band_to = None;
+                    self.press =
+                        Some(Press { drag: Drag::Move { last: w }, at: (x, y), moved: false });
                 }
                 None => {
-                    self.selected = None;
-                    self.start_pan(x, y);
+                    // An empty spot starts the rubber band, the way Excalidraw's arrow does.
+                    self.clear_selection();
+                    self.band_to = Some(w);
+                    self.press = Some(Press { drag: Drag::Band { from: w }, at: (x, y), moved: false });
                 }
             },
             Tool::Text => {
+                self.checkpoint();
                 let id = self.create(ElementType::Text, w);
                 self.start_edit(&id, true);
                 self.press = Some(Press { drag: Drag::Idle, at: (x, y), moved: false });
             }
             tool => {
                 let Some(kind) = tool.kind() else { return };
+                self.checkpoint();
                 let id = self.create(kind.clone(), w);
                 let drag = if matches!(kind, ElementType::Freedraw) {
                     Drag::Free { id }
@@ -478,25 +624,38 @@ impl ExcView {
 
     pub fn drag(&mut self, rect: &Rect, x: f32, y: f32) {
         let w = self.to_world(rect, x, y);
-        let Some(press) = &mut self.press else { return };
-        if !press.moved && (x - press.at.0).abs() + (y - press.at.1).abs() < DRAG_START {
+        let Some(p) = &self.press else { return };
+        if !p.moved && (x - p.at.0).abs() + (y - p.at.1).abs() < DRAG_START {
             return;
         }
+        // The first movement of a drag is where the step is taken, before anything moves: a
+        // press that never moves leaves no undo step behind.
+        let first_move = !p.moved && matches!(&p.drag, Drag::Move { .. });
+        let ids = self.ids();
+        if first_move {
+            self.checkpoint();
+        }
+        let Some(press) = &mut self.press else { return };
         press.moved = true;
         match &mut press.drag {
             Drag::Idle => {}
+            Drag::Band { .. } => {
+                self.band_to = Some(w);
+            }
             Drag::Pan { last } => {
                 self.cam[0] -= (x - last.0) / self.zoom;
                 self.cam[1] -= (y - last.1) / self.zoom;
                 *last = (x, y);
                 self.auto_fit = false;
             }
-            Drag::Move { id, last } => {
+            Drag::Move { last, .. } => {
                 let (dx, dy) = (w[0] - last[0], w[1] - last[1]);
                 *last = w;
-                if let Some(e) = self.scene.element_mut(id) {
-                    e.x += dx;
-                    e.y += dy;
+                for id in &ids {
+                    if let Some(e) = self.scene.element_mut(id) {
+                        e.x += dx;
+                        e.y += dy;
+                    }
                 }
                 self.dirty = true;
             }
@@ -532,35 +691,62 @@ impl ExcView {
     /// The button came up. True when the board changed and has to be written.
     pub fn release(&mut self) -> bool {
         let Some(p) = self.press.take() else { return false };
+        let band = match &p.drag {
+            Drag::Band { from } => Some(*from),
+            _ => None,
+        };
+        if let Some(from) = band {
+            if p.moved {
+                if let Some(to) = self.band_to {
+                    self.select_in(from, to);
+                }
+            }
+            self.band_to = None;
+            return false;
+        }
         let drawn = match &p.drag {
             Drag::Draw { id, .. } | Drag::Free { id } => Some(id.clone()),
             _ => None,
         };
-        let touched = match &p.drag {
-            Drag::Move { id, .. } | Drag::Draw { id, .. } | Drag::Free { id } => Some(id.clone()),
-            _ => None,
-        };
-        if let Some(id) = &touched {
+        let moved = matches!(p.drag, Drag::Move { .. });
+        if let Some(id) = &drawn {
             let tiny = self.scene.element(id).is_some_and(|e| e.width < MIN_SIZE && e.height < MIN_SIZE);
-            if drawn.is_some() && tiny {
-                // A click with a shape tool is not a zero-sized shape.
+            if tiny {
+                // A click with a shape tool is not a zero-sized shape, and not an undo step.
                 self.scene.remove(id);
-                if self.selected.as_deref() == Some(id.as_str()) {
-                    self.selected = None;
-                }
+                self.clear_selection();
+                self.drop_checkpoint();
                 return false;
             }
         }
         if p.moved {
             let nonce = self.next_seed();
             let now = fsio::now_ms();
-            if let Some(id) = touched {
-                if let Some(e) = self.scene.element_mut(&id) {
+            let ids = if drawn.is_some() { Vec::new() } else if moved { self.ids() } else { Vec::new() };
+            for id in drawn.iter().chain(ids.iter()) {
+                if let Some(e) = self.scene.element_mut(id) {
                     e.bump(now, nonce);
                 }
             }
         }
         p.moved && self.dirty
+    }
+
+    /// Everything the box from `from` to `to` touches becomes the selection, the topmost element
+    /// being the primary one.
+    fn select_in(&mut self, from: [f64; 2], to: [f64; 2]) {
+        let (x0, x1) = (from[0].min(to[0]), from[0].max(to[0]));
+        let (y0, y1) = (from[1].min(to[1]), from[1].max(to[1]));
+        let mut hits: Vec<String> = self
+            .scene
+            .elements
+            .iter()
+            .filter(|e| e.painted())
+            .filter(|e| e.x + e.width >= x0 && e.x <= x1 && e.y + e.height >= y0 && e.y <= y1)
+            .map(|e| e.id.clone())
+            .collect();
+        self.selected = hits.pop();
+        self.band = hits;
     }
 
     pub fn wheel(&mut self, rect: &Rect, x: f32, y: f32, lines: f32, zoom: bool) {
@@ -586,11 +772,13 @@ impl ExcView {
         let w = self.to_world(rect, x, y);
         match self.scene.hit(w[0], w[1]).map(|e| (e.id.clone(), e.kind.clone())) {
             Some((id, ElementType::Text)) => {
+                self.checkpoint();
                 self.start_edit(&id, false);
                 true
             }
             Some(_) => false,
             None if self.tool == Tool::Text => {
+                self.checkpoint();
                 let id = self.create(ElementType::Text, w);
                 self.start_edit(&id, true);
                 true
@@ -603,48 +791,14 @@ impl ExcView {
 
     /// The page colour: the board's own, unless it is the white that dazzles on a dark theme.
     fn surface(&self, c: &[Color; 12], dark: bool) -> Color {
-        let saved = self.scene.app_state.view_background_color.as_deref().and_then(Rgba::parse);
-        match saved {
-            // Pure white is Excalidraw's default, not a choice: on a dark theme it becomes the
-            // theme's own very soft grey.
-            Some(bg) if dark && bg.r > 240 && bg.g > 240 && bg.b > 240 => mix(c[0], c[2], 0.06),
-            Some(bg) => Color { r: bg.r, g: bg.g, b: bg.b, a: 255 },
-            None if dark => mix(c[0], c[2], 0.06),
-            None => Color::rgb(255, 255, 255),
-        }
+        surface(self.scene.app_state.view_background_color.as_deref().and_then(Rgba::parse), c, dark)
     }
 
     /// The faint dot grid, so the board reads as a surface and not as a blank pane.
     fn grid(&self, cmds: &mut Vec<Cmd>, rect: Rect, board: Color, dark: bool) {
-        let z = f64::from(self.zoom);
-        if z <= 0.0 {
-            return;
-        }
-        let mut step = GRID * z;
-        while (f64::from(rect.w) / step) * (f64::from(rect.h) / step) > f64::from(MAX_DOTS) {
-            step *= 2.0;
-        }
-        if step < 6.0 {
-            return;
-        }
-        let ws = step / z;
-        let left = f64::from(self.cam[0]) - f64::from(rect.w) / 2.0 / z;
-        let top = f64::from(self.cam[1]) - f64::from(rect.h) / 2.0 / z;
-        let (right, bottom) = (left + f64::from(rect.w) / z, top + f64::from(rect.h) / z);
-        let radius = if step > 26.0 { 1.5 } else { 1.0 };
-        let mut items = Vec::new();
-        let mut y = (top / ws).ceil() * ws;
-        while y <= bottom {
-            let mut x = (left / ws).ceil() * ws;
-            while x <= right {
-                let (sx, sy) = self.to_screen(&rect, x, y);
-                items.push([sx, sy, radius]);
-                x += ws;
-            }
-            y += ws;
-        }
-        let faint = if dark { Color::rgb(255, 255, 255) } else { Color::rgb(0, 0, 0) };
-        cmds.push(Cmd::Circles { items, color: mix(board, faint, if dark { 0.2 } else { 0.12 }) });
+        let ox = rect.x + rect.w / 2.0 - self.cam[0] * self.zoom;
+        let oy = rect.y + rect.h / 2.0 - self.cam[1] * self.zoom;
+        grid(rect, self.zoom, ox, oy, board, dark, cmds);
     }
 
     pub fn paint(
@@ -652,21 +806,44 @@ impl ExcView {
         rect: Rect,
         c: &[Color; 12],
         text: &TextStyle,
-        dark: bool,
-        primary: bool,
+        look: Look,
         fonts: &mut Fonts,
     ) -> Vec<Cmd> {
-        if primary {
+        if look.primary {
             self.fit(&rect);
         }
+        let dark = look.dark;
         let board = self.surface(c, dark);
         let mut cmds = vec![Cmd::PushClip(rect), Cmd::Fill { rect, color: board, radius: 0.0 }];
         self.grid(&mut cmds, rect, board, dark);
         let ox = rect.x + rect.w / 2.0 - self.cam[0] * self.zoom;
         let oy = rect.y + rect.h / 2.0 - self.cam[1] * self.zoom;
         let pen = Pen::new(self.zoom, ox, oy, text, luma(board) < 0.5);
-        for op in &self.scene.display_list().ops {
-            paint_op(&mut cmds, op, &pen, fonts);
+        // A shape that was just drawn fades in under the pointer: the rest of the board is painted
+        // as always and the new element goes on top with its own alpha, so nothing else blinks.
+        let fresh = self.fade.clone().filter(|_| look.fade < 1.0);
+        if let Some(id) = fresh {
+            let mut rest = self.scene.clone();
+            rest.elements.retain(|e| e.id != id);
+            for op in &rest.display_list().ops {
+                paint_op(&mut cmds, op, &pen, fonts);
+            }
+            if let Some(e) = self.scene.element(&id).cloned() {
+                let mut only = self.scene.clone();
+                only.elements = vec![e];
+                let mut fading = Vec::new();
+                for op in &only.display_list().ops {
+                    paint_op(&mut fading, op, &pen, fonts);
+                }
+                for cmd in &mut fading {
+                    fade_cmd(cmd, look.fade);
+                }
+                cmds.append(&mut fading);
+            }
+        } else {
+            for op in &self.scene.display_list().ops {
+                paint_op(&mut cmds, op, &pen, fonts);
+            }
         }
         self.selection(&mut cmds, &pen, rect, c);
         self.caret(&mut cmds, &pen, rect, c, fonts);
@@ -674,36 +851,66 @@ impl ExcView {
         cmds
     }
 
-    /// The dashed frame and the corner dots around the selected element.
+    /// The dashed frame and the corner dots around the selected elements, and the rubber band
+    /// while it is being dragged.
     fn selection(&self, cmds: &mut Vec<Cmd>, pen: &Pen, rect: Rect, c: &[Color; 12]) {
-        let Some(e) = self.selected.as_deref().and_then(|id| self.scene.element(id)) else { return };
-        let (x, y) = pen.p(e.x, e.y);
-        let (w, h) = ((e.width as f32 * pen.s).max(2.0), (e.height as f32 * pen.s).max(2.0));
-        let frame = Rect::new(x - 1.0, y - 1.0, w + 2.0, h + 2.0);
-        let outside = frame.x + frame.w < rect.x
-            || frame.x > rect.x + rect.w
-            || frame.y + frame.h < rect.y
-            || frame.y > rect.y + rect.h;
-        if outside {
-            return;
+        for id in self.ids() {
+            let Some(e) = self.scene.element(&id) else { continue };
+            let (x, y) = pen.p(e.x, e.y);
+            let (w, h) = ((e.width as f32 * pen.s).max(2.0), (e.height as f32 * pen.s).max(2.0));
+            let frame = Rect::new(x - 1.0, y - 1.0, w + 2.0, h + 2.0);
+            let outside = frame.x + frame.w < rect.x
+                || frame.x > rect.x + rect.w
+                || frame.y + frame.h < rect.y
+                || frame.y > rect.y + rect.h;
+            if outside {
+                continue;
+            }
+            let pts = [
+                (frame.x, frame.y),
+                (frame.x + frame.w, frame.y),
+                (frame.x + frame.w, frame.y + frame.h),
+                (frame.x, frame.y + frame.h),
+                (frame.x, frame.y),
+            ];
+            cmds.push(Cmd::Lines { segs: crate::rich::dashed(&pts, 5.0, 4.0), width: 1.5, color: c[5] });
+            cmds.push(Cmd::Circles {
+                items: vec![
+                    [frame.x, frame.y, 2.5],
+                    [frame.x + frame.w, frame.y, 2.5],
+                    [frame.x + frame.w, frame.y + frame.h, 2.5],
+                    [frame.x, frame.y + frame.h, 2.5],
+                ],
+                color: c[5],
+            });
         }
-        let pts = [
-            (frame.x, frame.y),
-            (frame.x + frame.w, frame.y),
-            (frame.x + frame.w, frame.y + frame.h),
-            (frame.x, frame.y + frame.h),
-            (frame.x, frame.y),
-        ];
-        cmds.push(Cmd::Lines { segs: crate::rich::dashed(&pts, 5.0, 4.0), width: 1.5, color: c[5] });
-        cmds.push(Cmd::Circles {
-            items: vec![
-                [frame.x, frame.y, 2.5],
-                [frame.x + frame.w, frame.y, 2.5],
-                [frame.x + frame.w, frame.y + frame.h, 2.5],
-                [frame.x, frame.y + frame.h, 2.5],
-            ],
-            color: c[5],
-        });
+        // The box being dragged over the surface, while the button is still down.
+        if let (Some(from), Some(to)) = (self.band_from(), self.band_to) {
+            let (a, b) = (pen.p(from[0], from[1]), pen.p(to[0], to[1]));
+            let box_ = Rect::new(a.0.min(b.0), a.1.min(b.1), (b.0 - a.0).abs(), (b.1 - a.1).abs());
+            let fill = c[5].with_alpha(0.12);
+            cmds.push(Cmd::Fill { rect: box_, color: fill, radius: 0.0 });
+            let pts = [
+                (box_.x, box_.y),
+                (box_.x + box_.w, box_.y),
+                (box_.x + box_.w, box_.y + box_.h),
+                (box_.x, box_.y + box_.h),
+                (box_.x, box_.y),
+            ];
+            cmds.push(Cmd::Lines {
+                segs: crate::rich::dashed(&pts, 4.0, 3.0),
+                width: 1.0,
+                color: c[5],
+            });
+        }
+    }
+
+    /// Where the rubber band started, while one is being dragged.
+    fn band_from(&self) -> Option<[f64; 2]> {
+        match self.press.as_ref().map(|p| &p.drag) {
+            Some(Drag::Band { from }) if self.band_to.is_some() => Some(*from),
+            _ => None,
+        }
     }
 
     /// The caret of the text being typed, and the box that text really takes: the paint pass is
@@ -738,13 +945,25 @@ impl ExcView {
     }
 }
 
-fn mix(a: Color, b: Color, t: f32) -> Color {
-    let m = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round() as u8;
-    Color { r: m(a.r, b.r), g: m(a.g, b.g), b: m(a.b, b.b), a: 255 }
-}
-
-fn luma(c: Color) -> f32 {
-    (0.299 * f32::from(c.r) + 0.587 * f32::from(c.g) + 0.114 * f32::from(c.b)) / 255.0
+/// Scale the alpha of every colour a command paints: how a freshly drawn element fades in.
+fn fade_cmd(cmd: &mut Cmd, t: f32) {
+    let t = t.clamp(0.0, 1.0);
+    let fade = |c: &mut Color| c.a = (f32::from(c.a) * t).round().clamp(0.0, 255.0) as u8;
+    match cmd {
+        Cmd::Fill { color, .. } | Cmd::Lines { color, .. } | Cmd::Circles { color, .. } => fade(color),
+        Cmd::Text { style, spans, .. } => {
+            fade(&mut style.color);
+            for s in spans {
+                if let Some(c) = &mut s.color {
+                    fade(c);
+                }
+                if let Some(c) = &mut s.background {
+                    fade(c);
+                }
+            }
+        }
+        Cmd::Image { .. } | Cmd::PushClip(_) | Cmd::PopClip => {}
+    }
 }
 
 // ---- the pane ----
@@ -753,54 +972,72 @@ fn luma(c: Color) -> f32 {
 /// box). The containers hold an action of their own, so a click on their background is not read as
 /// a click on the board underneath.
 fn controls(v: &ExcView, dom: &mut Dom, parent: NodeId) {
-    let tools = dom.add(parent, El::div().class("exc-toolbar").action("exc:none"));
-    for tool in Tool::ALL {
-        let b = dom.add(
-            tools,
-            El::div()
-                .class("exc-tool")
-                .class_if(v.tool == tool, "is-active")
-                .action(format!("exc:tool:{}", tool.id())),
-        );
-        dom.add(b, crate::icons::el(tool.icon()));
-    }
-    let palette = dom.add(parent, El::div().class("exc-palette").action("exc:none"));
-    for (i, hex) in STROKES.iter().enumerate() {
-        dom.add(
-            palette,
-            El::div()
-                .class("exc-swatch")
-                .class_if(v.stroke.eq_ignore_ascii_case(hex), "is-active")
-                .style(&format!("background-color: {hex}"))
-                .action(format!("exc:stroke:{i}")),
-        );
-    }
-    for (i, hex) in FILLS.iter().enumerate() {
-        let empty = *hex == "transparent";
-        let on = if empty { v.fill == "transparent" } else { v.fill.eq_ignore_ascii_case(hex) };
-        let bg = if empty { "transparent".to_string() } else { (*hex).to_string() };
-        dom.add(
-            palette,
-            El::div()
-                .class("exc-swatch")
-                .class_if(on, "is-active")
-                .class_if(empty, "is-empty")
-                .style(&format!("background-color: {bg}"))
-                .action(format!("exc:fill:{i}")),
-        );
-    }
-    let widths = dom.add(palette, El::div().class("exc-widths"));
-    for (i, w) in WIDTHS.iter().enumerate() {
-        let b = dom.add(
-            widths,
-            El::div()
-                .class("exc-width")
-                .class_if((v.width - w).abs() < 0.01, "is-active")
-                .action(format!("exc:width:{i}")),
-        );
-        dom.add(b, El::div().class("exc-width-dot").style(&format!("height: {}px", (w * 1.6).round())));
+    if v.tools_hidden {
+        // Folded away: one small handle is all that is left, so the board is a clean surface.
+        let flap = dom.add(parent, El::div().class("exc-tools-handle").action("exc:tools"));
+        dom.add(flap, crate::icons::el("chevron-right"));
+        dom.add(flap, El::div().class("exc-tools-label").text("Herramientas"));
+    } else {
+        let tools = dom.add(parent, El::div().class("exc-toolbar").action("exc:none"));
+        // The fold control lives in the toolbar it folds.
+        let fold = dom.add(tools, El::div().class("exc-tool exc-fold").action("exc:tools"));
+        dom.add(fold, crate::icons::el("collapse"));
+        for tool in Tool::ALL {
+            let b = dom.add(
+                tools,
+                El::div()
+                    .class("exc-tool")
+                    .class_if(v.tool == tool, "is-active")
+                    .action(format!("exc:tool:{}", tool.id())),
+            );
+            dom.add(b, crate::icons::el(tool.icon()));
+        }
+        let palette = dom.add(parent, El::div().class("exc-palette").action("exc:none"));
+        for (i, hex) in STROKES.iter().enumerate() {
+            dom.add(
+                palette,
+                El::div()
+                    .class("exc-swatch")
+                    .class_if(v.stroke.eq_ignore_ascii_case(hex), "is-active")
+                    .style(&format!("background-color: {hex}"))
+                    .action(format!("exc:stroke:{i}")),
+            );
+        }
+        for (i, hex) in FILLS.iter().enumerate() {
+            let empty = *hex == "transparent";
+            let on = if empty { v.fill == "transparent" } else { v.fill.eq_ignore_ascii_case(hex) };
+            let bg = if empty { "transparent".to_string() } else { (*hex).to_string() };
+            dom.add(
+                palette,
+                El::div()
+                    .class("exc-swatch")
+                    .class_if(on, "is-active")
+                    .class_if(empty, "is-empty")
+                    .style(&format!("background-color: {bg}"))
+                    .action(format!("exc:fill:{i}")),
+            );
+        }
+        let widths = dom.add(palette, El::div().class("exc-widths"));
+        for (i, w) in WIDTHS.iter().enumerate() {
+            let b = dom.add(
+                widths,
+                El::div()
+                    .class("exc-width")
+                    .class_if((v.width - w).abs() < 0.01, "is-active")
+                    .action(format!("exc:width:{i}")),
+            );
+            dom.add(
+                b,
+                El::div().class("exc-width-dot").style(&format!("height: {}px", (w * 1.6).round())),
+            );
+        }
     }
     let zoom = dom.add(parent, El::div().class("exc-zoombar").action("exc:none"));
+    for (icon, cmd, on) in [("undo", "exc:undo", v.can_undo()), ("redo", "exc:redo", v.can_redo())] {
+        let b = dom
+            .add(zoom, El::div().class("exc-zoom").class_if(!on, "is-off").action(cmd));
+        dom.add(b, crate::icons::el(icon));
+    }
     for (icon, cmd) in [("minus", "exc:zoom-out"), ("plus", "exc:zoom-in")] {
         let b = dom.add(zoom, El::div().class("exc-zoom").action(cmd));
         dom.add(b, crate::icons::el(icon));
@@ -833,15 +1070,20 @@ pub fn pane(v: &ExcView, dom: &mut Dom, parent: NodeId, info: &mut crate::view::
         label.push_str(&skipped);
     }
     dom.add(header, El::div().class("graph-count").text(label));
-    for (label, cmd) in
-        [("Ajustar", "exc:zoom-fit"), ("100%", "exc:zoom-reset"), ("Pantalla completa", "exc:fullscreen")]
-    {
+    for (label, cmd) in [("Ajustar", "exc:zoom-fit"), ("100%", "exc:zoom-reset")] {
         dom.add(header, El::div().class("graph-control").text(label).action(cmd));
     }
+    // The full-screen button shows what it will do: maximize while the board is in its pane.
+    let full = dom.add(
+        header,
+        El::div().class("graph-control exc-fullscreen-button").action("exc:fullscreen"),
+    );
+    dom.add(full, crate::icons::el("maximize"));
     board_node(v, dom, parent, info);
 }
 
-/// The board over the whole window: `window_w` × `viewport_h`, dimming what is behind it.
+/// The board over the whole workspace: the window under it is dimmed, and leaving is one press on
+/// the minimize button (or Escape).
 pub fn fullscreen(
     v: &ExcView,
     dom: &mut Dom,
@@ -849,12 +1091,15 @@ pub fn fullscreen(
     viewport_h: f32,
     info: &mut crate::view::ViewInfo,
 ) {
-    let w = (window_w - 40.0).max(200.0);
-    let h = (viewport_h - 40.0).max(160.0);
+    let w = window_w.max(200.0);
+    let h = viewport_h.max(160.0);
     let backdrop = dom.add(0, El::div().class("modal-container mod-dim exc-fullscreen"));
     let modal = dom
         .add(backdrop, El::div().class("modal mod-exc").style(&format!("width: {w:.0}px; height: {h:.0}px")));
     board_node(v, dom, modal, info);
+    // The way out, over the board's top-right corner: the same button that opened the view.
+    let exit = dom.add(modal, El::div().class("exc-fullscreen-exit").action("exc:fullscreen-close"));
+    dom.add(exit, crate::icons::el("minimize"));
 }
 
 /// After layout: paint every board node the view built. The camera fits the full-screen box when
@@ -871,12 +1116,32 @@ pub fn add_exc(app: &mut App, dom: &mut Dom, info: &crate::view::ViewInfo, fonts
     let dark = app.dark;
     let primary =
         if app.exc_fullscreen { info.excview.last().copied() } else { info.excview.first().copied() };
+    // A shape that was just drawn fades in. The clock is the editor's own (`exc-new`), started
+    // here because the view cannot reach the animation set; with reduced motion the clock is off
+    // and the element is simply there.
+    let fresh = app.exc_view.as_ref().is_some_and(|v| v.fade.is_some());
+    let started = app.exc_view.as_ref().is_some_and(|v| v.fade_started);
+    let mut fade = 1.0;
+    if fresh {
+        if !started {
+            app.anims.start("exc-new", crate::anim::FAST_MS);
+            if let Some(v) = &mut app.exc_view {
+                v.fade_started = true;
+            }
+        }
+        fade = app.anims.t("exc-new");
+    }
     let Some(v) = &mut app.exc_view else { return };
     for node in &info.excview {
         let rect = dom.nodes[*node].rect;
         let text = dom.nodes[*node].style.text.clone();
-        let draw = v.paint(rect, &colors, &text, dark, Some(*node) == primary, fonts);
+        let look = Look { dark, primary: Some(*node) == primary, fade };
+        let draw = v.paint(rect, &colors, &text, look, fonts);
         dom.nodes[*node].draw = draw;
+    }
+    if v.fade.is_some() && fade >= 1.0 {
+        v.fade = None;
+        v.fade_started = false;
     }
 }
 
@@ -946,19 +1211,53 @@ impl App {
     /// React to the file changing on disk: a board with no unsaved edit is read again.
     pub(crate) fn exc_files_changed(&mut self, paths: &[String]) {
         let Some(v) = self.exc_view.as_mut() else { return };
-        if v.dirty || !paths.iter().any(|p| p.eq_ignore_ascii_case(&v.path)) {
+        if !paths.iter().any(|p| p.eq_ignore_ascii_case(&v.path)) {
             return;
         }
-        let current = v.to_json();
-        if let Ok((text, stamp)) = self.store.read(&v.path) {
-            if text != current {
-                if let Ok(scene) = Scene::parse(&text) {
-                    v.scene = scene;
-                    v.editing = None;
-                    v.selected = None;
-                }
+        let Ok((text, stamp)) = self.store.read(&v.path) else { return };
+        if v.dirty {
+            // The file moved under unsaved edits. They are kept — a save reports the conflict —
+            // and the user is told now, not when Ctrl+S seems to do nothing.
+            if text != v.to_json() {
+                self.notice =
+                    Some(format!("{} cambió fuera de MetaMind; tus cambios siguen en la pestaña", v.path));
             }
-            v.stamp = stamp;
+            return;
+        }
+        if text != v.to_json() {
+            if let Ok(scene) = Scene::parse(&text) {
+                v.scene = scene;
+                v.editing = None;
+                v.clear_selection();
+                self.notice = Some(format!("{} cambió en disco: se recargó", v.path));
+            }
+        }
+        v.stamp = stamp;
+    }
+
+    /// `editor:undo`, `editor:redo` and `editor:select-all` while a board is the open view: they
+    /// act on the board, not on the note behind it. True when the command was the board's.
+    pub(crate) fn run_exc_editor(&mut self, command: &str) -> bool {
+        if self.exc_view.is_none() || !self.exc_active() {
+            return false;
+        }
+        match command {
+            "editor:undo" => self.run_exc("exc:undo"),
+            "editor:redo" => self.run_exc("exc:redo"),
+            "editor:select-all" => {
+                let Some(v) = &mut self.exc_view else { return true };
+                let mut ids: Vec<String> = v
+                    .scene
+                    .elements
+                    .iter()
+                    .filter(|e| e.painted())
+                    .map(|e| e.id.clone())
+                    .collect();
+                v.selected = ids.pop();
+                v.band = ids;
+                true
+            }
+            _ => false,
         }
     }
 
@@ -966,6 +1265,12 @@ impl App {
     pub(crate) fn run_exc(&mut self, command: &str) -> bool {
         let Some(rest) = command.strip_prefix("exc:") else { return false };
         if rest == "none" {
+            return true;
+        }
+        // A press on a board embedded in a note: `exc:open:<path>` opens the file in its own tab.
+        // It is answered with no board open, which is the normal case for an embed.
+        if let Some(rel) = rest.strip_prefix("open:") {
+            self.open_exc(rel);
             return true;
         }
         if self.exc_view.is_none() {
@@ -1000,6 +1305,23 @@ impl App {
                     v.zoom_reset();
                 }
             }
+            "undo" => {
+                if let Some(v) = &mut self.exc_view {
+                    v.undo();
+                }
+                self.exc_save();
+            }
+            "redo" => {
+                if let Some(v) = &mut self.exc_view {
+                    v.redo();
+                }
+                self.exc_save();
+            }
+            "tools" => {
+                if let Some(v) = &mut self.exc_view {
+                    v.tools_hidden = !v.tools_hidden;
+                }
+            }
             "delete-selected" => {
                 if let Some(v) = &mut self.exc_view {
                     v.delete_selected();
@@ -1009,6 +1331,7 @@ impl App {
             "edit-selected" => {
                 if let Some(v) = &mut self.exc_view {
                     if let Some(id) = v.selected.clone() {
+                        v.checkpoint();
                         v.start_edit(&id, false);
                     }
                 }
@@ -1091,6 +1414,16 @@ impl App {
             }
             return true;
         }
+        // `Ctrl+Z` is the keymap's `editor:undo`; `Ctrl+Y` is only the board's, the second name
+        // redo answers to.
+        if key.ctrl {
+            match key.key.to_ascii_lowercase().as_str() {
+                "z" if key.shift => return self.run_exc("exc:redo"),
+                "z" => return self.run_exc("exc:undo"),
+                "y" => return self.run_exc("exc:redo"),
+                _ => {}
+            }
+        }
         match key.key.as_str() {
             "Delete" | "Backspace" => {
                 self.run_exc("exc:delete-selected");
@@ -1102,7 +1435,7 @@ impl App {
                 if self.exc_fullscreen {
                     self.exc_fullscreen = false;
                 } else if let Some(v) = &mut self.exc_view {
-                    v.selected = None;
+                    v.clear_selection();
                 }
             }
             _ => return false,
@@ -1189,21 +1522,41 @@ impl App {
     }
 }
 
-/// Give the selected element the style the toolbar now shows, so a colour or a width picked after
+/// Give the selected elements the style the toolbar now shows, so a colour or a width picked after
 /// a shape was drawn still applies to it.
 fn apply_style(v: &mut ExcView) {
-    let Some(id) = v.selected.clone() else { return };
+    let ids = v.ids();
+    if ids.is_empty() {
+        return;
+    }
     let (stroke, fill, width) = (v.stroke.clone(), v.fill.clone(), v.width);
-    if let Some(e) = v.scene.element_mut(&id) {
-        e.stroke_color = stroke;
-        if !matches!(
-            e.kind,
-            ElementType::Arrow | ElementType::Line | ElementType::Freedraw | ElementType::Text
-        ) {
-            e.background_color = fill;
+    let changes = ids.iter().any(|id| {
+        v.scene.element(id).is_some_and(|e| {
+            let filled = !matches!(
+                e.kind,
+                ElementType::Arrow | ElementType::Line | ElementType::Freedraw | ElementType::Text
+            );
+            e.stroke_color != stroke
+                || (filled && e.background_color != fill)
+                || (e.stroke_width - width).abs() > 0.001
+        })
+    });
+    if !changes {
+        return;
+    }
+    v.checkpoint();
+    for id in &ids {
+        if let Some(e) = v.scene.element_mut(id) {
+            e.stroke_color = stroke.clone();
+            if !matches!(
+                e.kind,
+                ElementType::Arrow | ElementType::Line | ElementType::Freedraw | ElementType::Text
+            ) {
+                e.background_color = fill.clone();
+            }
+            e.stroke_width = width;
+            e.bump(fsio::now_ms(), 0);
         }
-        e.stroke_width = width;
-        e.bump(fsio::now_ms(), 0);
     }
     v.dirty = true;
 }

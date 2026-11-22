@@ -51,6 +51,10 @@ const BOARD_W: f32 = 700.0;
 const PAD: f32 = 8.0;
 /// An ellipse is painted as this many straight sides.
 const ELLIPSE_SIDES: usize = 64;
+/// Scene units between two dots of the surface grid, in the embed and in the editor.
+pub(crate) const GRID: f64 = 20.0;
+/// The grid coarsens instead of painting more dots than this.
+const MAX_DOTS: f32 = 12_000.0;
 
 /// A board ready to draw: the display list and the box its ops occupy.
 pub struct Board {
@@ -93,13 +97,21 @@ pub enum Loaded {
 pub struct Item {
     pub node: NodeId,
     pub board: Arc<Board>,
+    /// The twelve theme colours the surface and the grid are read from: the same hidden
+    /// `.exc-view` elements the board's tab uses, so both paint the same page.
+    pub colors: Vec<NodeId>,
 }
 
 /// Reserve the space of a board `parent` and hand it to the paint pass.
 pub fn add(dom: &mut Dom, parent: NodeId, board: Arc<Board>, items: &mut Vec<Item>) -> NodeId {
     let h = (board.bounds.3 * board.scale(BOARD_W) + 2.0 * PAD).ceil();
     let node = dom.add(parent, El::div().class("exc-board").style(&format!("height: {h}px")));
-    items.push(Item { node, board });
+    let swatches = dom.add(node, El::div().class("exc-view-colors"));
+    let colors = crate::excalidrawview::COLOR_CLASSES
+        .iter()
+        .map(|k| dom.add(swatches, El::div().class("exc-view").class(k)))
+        .collect();
+    items.push(Item { node, board, colors });
     node
 }
 
@@ -130,11 +142,19 @@ pub fn skipped_note(list: &DisplayList) -> Option<String> {
     ))
 }
 
-/// Fill in the draw list of every board after layout.
-pub fn paint(dom: &mut Dom, items: &[Item], fonts: &mut Fonts) {
+/// Fill in the draw list of every board after layout. `dark` is the theme: a board's plain white
+/// page is painted as the theme's soft grey with the dot grid on it, exactly as its tab does, so
+/// the embed is never a white flash inside a dark note.
+pub fn paint(dom: &mut Dom, items: &[Item], fonts: &mut Fonts, dark: bool) {
     for it in items {
         let r = dom.content_rect(it.node);
         let base = dom.nodes[it.node].style.text.clone();
+        let mut theme = [Color::rgb(128, 128, 128); 12];
+        for (slot, &n) in theme.iter_mut().zip(&it.colors) {
+            let s = &dom.nodes[n].style;
+            *slot = s.text.color.with_alpha(s.opacity);
+        }
+        let page = surface(it.board.list.background, &theme, dark);
         let mut cmds = Vec::new();
         let (bx, by, bw, bh) = it.board.bounds;
         if bw > 0.0 && bh > 0.0 {
@@ -144,10 +164,13 @@ pub fn paint(dom: &mut Dom, items: &[Item], fonts: &mut Fonts) {
             let oy = r.y + ((r.h - bh * s) / 2.0).max(0.0) - by * s;
             let area = Rect::new(ox + bx * s, oy + by * s, bw * s, bh * s);
             cmds.push(Cmd::PushClip(r));
-            if let Some(bg) = it.board.list.background {
-                cmds.push(Cmd::Fill { rect: area, color: solid(bg, 1.0), radius: 0.0 });
+            cmds.push(Cmd::Fill { rect: area, color: page, radius: 0.0 });
+            // The grid belongs to the dark surface, where an empty board would otherwise be a
+            // flat grey slab: the page the user writes on has to read as a surface.
+            if dark && it.board.list.background.is_none_or(is_plain_white) {
+                grid(area, s, ox, oy, page, dark, &mut cmds);
             }
-            let pen = Pen::new(s, ox, oy, &base, false);
+            let pen = Pen::new(s, ox, oy, &base, luma(page) < 0.5);
             for op in &it.board.list.ops {
                 paint_op(&mut cmds, op, &pen, fonts);
             }
@@ -158,6 +181,75 @@ pub fn paint(dom: &mut Dom, items: &[Item], fonts: &mut Fonts) {
         }
         dom.nodes[it.node].draw = cmds;
     }
+}
+
+/// Excalidraw writes `#ffffff` for a page nobody coloured: on a dark theme that is the theme's
+/// surface, not the user's choice (the same rule the board's tab follows).
+fn is_plain_white(bg: Rgba) -> bool {
+    bg.r > 240 && bg.g > 240 && bg.b > 240
+}
+
+/// The page a board is painted on: the board's own colour, unless it is the plain white that
+/// dazzles on a dark theme.
+pub(crate) fn surface(saved: Option<Rgba>, c: &[Color; 12], dark: bool) -> Color {
+    match saved {
+        Some(bg) if dark && is_plain_white(bg) => mix(c[0], c[2], 0.06),
+        Some(bg) => Color { r: bg.r, g: bg.g, b: bg.b, a: 255 },
+        None if dark => mix(c[0], c[2], 0.06),
+        None => Color::rgb(255, 255, 255),
+    }
+}
+
+/// The faint dot grid of a board surface, in scene multiples of [`GRID`], clipped to `rect`.
+/// `s` is the scale, `(ox, oy)` where scene `(0, 0)` lands: the embed's fit and the editor's
+/// camera both paint through here, so a board's surface looks the same in both.
+pub(crate) fn grid(
+    rect: Rect,
+    s: f32,
+    ox: f32,
+    oy: f32,
+    board: Color,
+    dark: bool,
+    cmds: &mut Vec<Cmd>,
+) {
+    if s <= 0.0 || rect.w <= 0.0 || rect.h <= 0.0 {
+        return;
+    }
+    let mut step = GRID as f32 * s;
+    while (rect.w / step) * (rect.h / step) > MAX_DOTS {
+        step *= 2.0;
+    }
+    if step < 6.0 {
+        return;
+    }
+    let ws = step / s;
+    let left = (rect.x - ox) / s;
+    let top = (rect.y - oy) / s;
+    let (right, bottom) = ((rect.x + rect.w - ox) / s, (rect.y + rect.h - oy) / s);
+    let radius = if step > 26.0 { 1.5 } else { 1.0 };
+    let mut items = Vec::new();
+    let mut y = (top / ws).ceil() * ws;
+    while y <= bottom {
+        let mut x = (left / ws).ceil() * ws;
+        while x <= right {
+            items.push([ox + x * s, oy + y * s, radius]);
+            x += ws;
+        }
+        y += ws;
+    }
+    let faint = if dark { Color::rgb(255, 255, 255) } else { Color::rgb(0, 0, 0) };
+    cmds.push(Cmd::Circles { items, color: mix(board, faint, if dark { 0.2 } else { 0.12 }) });
+}
+
+/// `b` blended into `a` by `t`.
+pub(crate) fn mix(a: Color, b: Color, t: f32) -> Color {
+    let m = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round() as u8;
+    Color { r: m(a.r, b.r), g: m(a.g, b.g), b: m(a.b, b.b), a: 255 }
+}
+
+/// How bright a colour is, 0..1: on a dark page the strokes are adapted.
+pub(crate) fn luma(c: Color) -> f32 {
+    (0.299 * f32::from(c.r) + 0.587 * f32::from(c.g) + 0.114 * f32::from(c.b)) / 255.0
 }
 
 /// Scene coordinates to the note's (or the board view's) pixels.

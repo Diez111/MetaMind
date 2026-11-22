@@ -2154,7 +2154,16 @@ fn youtube_card(app: &App, dom: &mut Dom, view: NodeId, link: &crate::youtube::L
 /// `![[…]]` line stays above it, so a board this build cannot read is never lost.
 fn board_embed(app: &App, dom: &mut Dom, view: NodeId, rel: &str, info: &mut ViewInfo) {
     let board = app.media.borrow_mut().board(&app.store, rel);
-    let holder = dom.add(view, El::div().class("exc-embed"));
+    // The embed is the way into the board: a press anywhere on it opens the file in its own tab,
+    // the same `open:` a link uses, with the pointer cursor and the status-bar hint that go with
+    // an action. The board is read-only here — drawing happens in the tab.
+    let holder = dom.add(
+        view,
+        El::div()
+            .class("exc-embed")
+            .attr("aria-label", "Abrir el tablero en el editor")
+            .action(format!("exc:open:{rel}")),
+    );
     let name = path::file_name(rel);
     let notice = |dom: &mut Dom, text: String| {
         dom.add(holder, El::div().class("rich-notice").text(text));
@@ -2641,6 +2650,11 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
                 // are on, and what clicking it does.
                 a.strip_prefix("settings:badge:")
                     .map(|n| format!("{n} plugins integrados activos · abre la lista de plugins"))
+            })
+            .or_else(|| {
+                // A `.excalidraw` embed in a note: a press opens the board in its own tab, which is
+                // the only place it can be drawn on.
+                a.strip_prefix("exc:open:").map(|p| format!("Abrir tablero: {p}"))
             })
             .or_else(|| (a == "mermaid:zoom").then(|| "Ampliar el diagrama a pantalla completa".to_string()))
             .or_else(|| (a == "mermaid:zoom-close").then(|| "Cerrar el diagrama (Esc)".to_string()))
