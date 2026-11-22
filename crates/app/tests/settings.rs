@@ -250,7 +250,7 @@ fn settings_search_for_tema_only_shows_appearance() {
     typed(&mut app, "tema");
     let frame = draw(&mut app);
     let actions = actions(&frame);
-    assert!(actions.contains(&"settings:cycle:theme"), "theme setting must be shown");
+    assert!(actions.contains(&"settings:menu:theme"), "theme setting must be shown");
     assert!(actions.contains(&"settings:toggle:showRibbon"));
     for other in ["settings:toggle:vimMode", "settings:toggle:aiAssistant", "settings:penable:bookmarks"] {
         assert!(!actions.contains(&other), "{other} belongs to another category");
@@ -786,7 +786,8 @@ fn appearance_is_one_measured_column_inside_a_scrolling_modal() {
         assert!((a - b).abs() <= 1.0, "a toggle is off its row: {a} vs {b}");
     }
 
-    // The category is called Apariencia, and the list's highlight keeps the column's left axis.
+    // The category is called Apariencia, and the list's highlight is a box with air around it:
+    // glued to the icon, its border cut through the glyph.
     let labels: Vec<&str> = all_with(&f, "vertical-tab-nav-label")
         .iter()
         .filter_map(|&i| f.dom.nodes[i].el.text.as_deref())
@@ -795,10 +796,9 @@ fn appearance_is_one_measured_column_inside_a_scrolling_modal() {
     let active_id = node_at(&f, &["vertical-tab-nav-item", "is-active"]).expect("the selected category").0;
     let active = f.dom.nodes[active_id].rect;
     let icon = f.dom.nodes[f.dom.nodes[active_id].children[0]].rect;
-    assert!(
-        active.x <= icon.x && icon.x - active.x <= 2.0,
-        "the highlight starts at the icon: {active:?} {icon:?}"
-    );
+    let gap = icon.x - active.x;
+    assert!(gap >= 8.0 && gap <= 14.0, "the highlight leaves room around the icon: {active:?} {icon:?}");
+    assert!(icon.x + icon.w <= active.x + active.w, "the icon stays inside its row");
 }
 
 /// Whether `id` is inside `root` in the tree.
@@ -811,4 +811,56 @@ fn is_descendant(frame: &metamind_app::Frame, id: usize, root: usize) -> bool {
         cur = frame.dom.nodes[p].parent;
     }
     false
+}
+
+#[test]
+fn the_ai_section_offers_prompt_presets_and_the_provider_models() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    app.run("settings:section:ai");
+
+    // The prompt template opens a list of presets instead of rotating them.
+    app.run("settings:menu:ai.prompt:0");
+    let frame = draw(&mut app);
+    let acts = actions(&frame);
+    assert!(
+        acts.iter().any(|a| a.starts_with("settings:pick:ai.prompt:0:")),
+        "the preset list is open: {acts:?}"
+    );
+    // Picking one writes the prompt of the profile.
+    app.run("settings:pick:ai.prompt:0:3");
+    let saved: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(d.path().join(".obsidian/app.json")).unwrap()).unwrap();
+    let first = saved
+        .get("ai.profiles")
+        .and_then(|p| p.as_array())
+        .and_then(|p| p.first())
+        .cloned()
+        .unwrap_or_default();
+    let prompt = first.get("system_prompt").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    assert!(prompt.contains("analista de mercados"), "the trading preset wrote the prompt: {prompt}");
+
+    // A listed model gets a toggle and its own default button.
+    app.ai_models.list = vec!["modelo-a".into(), "modelo-b".into()];
+    app.ai_models.profile = metamind_app::ai::LEGACY_PROFILE_NAME.to_string();
+    let frame = draw(&mut app);
+    let acts = actions(&frame);
+    assert!(acts.contains(&"settings:ai-toggle-model:0:modelo-a"), "{acts:?}");
+    assert!(acts.contains(&"settings:ai-toggle-model:0:modelo-b"));
+    assert!(
+        acts.contains(&"settings:ai-default-model:0:modelo-a"),
+        "a model that is not the default can be made one"
+    );
+
+    // Turning one off keeps the other; the list is written to the profile in the vault.
+    app.run("settings:ai-toggle-model:0:modelo-a");
+    let frame = draw(&mut app);
+    assert_eq!(texts(&frame, "setting-item-name").iter().filter(|n| **n == "modelo-a").count(), 1);
+    app.run("settings:ai-default-model:0:modelo-b");
+    let saved: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(d.path().join(".obsidian/app.json")).unwrap()).unwrap();
+    let profiles = saved.get("ai.profiles").and_then(|p| p.as_array()).cloned().unwrap_or_default();
+    let first = profiles.first().cloned().unwrap_or_default();
+    assert_eq!(first.get("model").and_then(|m| m.as_str()), Some("modelo-b"));
 }

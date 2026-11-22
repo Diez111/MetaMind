@@ -52,7 +52,10 @@ fn main() {
     // did before the damage tracker) and dirty-rect painting of the same still window.
     let full1 = bench_frames(&mut app, &mut fonts, &mut pm, 1.0, 20, true);
     let dmg1 = bench_frames(&mut app, &mut fonts, &mut pm, 1.0, 20, false);
-    println!("frame 1x    {:>7.2} ms completo · {:>7.2} ms con daño (quieto, nada que repintar)", full1, dmg1);
+    println!(
+        "frame 1x    {:>7.2} ms completo · {:>7.2} ms con daño (quieto, nada que repintar)",
+        full1, dmg1
+    );
 
     // The HiDPI bill: the same frame at 2x (a 200 % display rasters 4x the pixels).
     let mut pm2 = Pixmap::new(W * 2, H * 2).unwrap();
@@ -126,10 +129,15 @@ fn main() {
     results.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
     let total: f64 = results.iter().map(|r| r.0).sum();
     println!("\nclicks reales (hit-test + toggle + rebuild + render 1x): {} carpetas", results.len());
-    println!("promedio {:>6.2} ms · p95 {:>6.2} ms · total {:.0} ms", total / results.len() as f64, {
-        let n = results.len();
-        results[n * 95 / 100].0
-    }, total);
+    println!(
+        "promedio {:>6.2} ms · p95 {:>6.2} ms · total {:.0} ms",
+        total / results.len() as f64,
+        {
+            let n = results.len();
+            results[n * 95 / 100].0
+        },
+        total
+    );
     println!("peor 8:");
     for (t, name, _) in results.iter().take(8) {
         println!("  {:>7.2} ms  {}", t, name);
@@ -151,7 +159,12 @@ fn bench_clicks_full(app: &mut App, fonts: &mut Fonts, pm: &mut Pixmap) {
             break;
         };
         let (x, y) = (row.rect.x + 10.0, row.rect.y + row.rect.h / 2.0);
-        let name = frame.dom.action_at(x, y).and_then(|(_, a)| a.strip_prefix("toggle-folder:")).unwrap_or("?").to_string();
+        let name = frame
+            .dom
+            .action_at(x, y)
+            .and_then(|(_, a)| a.strip_prefix("toggle-folder:"))
+            .unwrap_or("?")
+            .to_string();
         let t = Instant::now();
         app.click(&frame, fonts, x, y, false);
         app.refresh_derived();
@@ -166,10 +179,15 @@ fn bench_clicks_full(app: &mut App, fonts: &mut Fonts, pm: &mut Pixmap) {
     }
     worst.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
     println!("\nmismos clicks con repintado completo: {} carpetas", worst.len());
-    println!("promedio {:>6.2} ms · p95 {:>6.2} ms · total {:.0} ms", total / worst.len() as f64, {
-        let n = worst.len();
-        worst[n * 95 / 100].0
-    }, total);
+    println!(
+        "promedio {:>6.2} ms · p95 {:>6.2} ms · total {:.0} ms",
+        total / worst.len() as f64,
+        {
+            let n = worst.len();
+            worst[n * 95 / 100].0
+        },
+        total
+    );
     println!("peor 8:");
     for (t, name) in worst.iter().take(8) {
         println!("  {:>7.2} ms  {}", t, name);
