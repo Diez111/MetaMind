@@ -17,6 +17,7 @@ pub mod graphview;
 pub mod icon;
 pub mod icons;
 pub mod instance;
+pub mod kanbanview;
 pub mod media;
 pub mod mentions;
 pub mod menu;
@@ -118,6 +119,7 @@ pub fn render_window(
     }
     view::add_graph(app, &mut dom, &info);
     canvasview::add_canvas(app, &mut dom, &info);
+    kanbanview::add_kanban(app, &mut dom, &info, fonts);
     rich::paint(&mut dom, &info.rich, &info.inline, fonts);
     excalidraw::paint(&mut dom, &info.exc, fonts, app.dark);
     excalidrawview::add_exc(app, &mut dom, &info, fonts);
@@ -293,6 +295,9 @@ impl App {
         if self.canvas_click(frame, x, y) {
             return;
         }
+        if self.kanban_click(frame, fonts, x, y) {
+            return;
+        }
         if self.exc_click(frame, x, y) {
             return;
         }
@@ -311,6 +316,9 @@ impl App {
     /// the view belongs to the block it came from. Returns whether it was a double click of ours.
     pub fn double_click(&mut self, frame: &Frame, x: f32, y: f32) -> bool {
         if self.exc_active() && self.exc_double_click(frame, x, y) {
+            return true;
+        }
+        if self.kanban_active() && self.kanban_double_click(frame, x, y) {
             return true;
         }
         let note = self.tabs.get(self.active).map(|t| t.path.clone()).unwrap_or_default();
@@ -454,6 +462,9 @@ impl App {
         if self.canvas_drag(frame, x, y) {
             return;
         }
+        if self.kanban_drag(frame, x, y) {
+            return;
+        }
         if self.exc_drag(frame, x, y) {
             return;
         }
@@ -480,6 +491,9 @@ impl App {
         self.menu = None;
         self.hover_preview = None;
         if self.exc_wheel(frame, x, y, lines, ctrl) {
+            return;
+        }
+        if self.kanban_wheel(frame, x, y, lines, ctrl) {
             return;
         }
         if self.diagram_zoom.is_some() {
@@ -567,6 +581,7 @@ impl App {
         }
         self.canvas_release();
         self.exc_release();
+        self.kanban_release();
     }
 
     /// The pointer moved with no button held. Returns true when the frame must be redrawn.
@@ -582,7 +597,8 @@ impl App {
             }
             _ => false,
         };
-        graph || changed
+        let kanban = self.kanban_hover(x, y);
+        graph || kanban || changed
     }
 }
 
