@@ -65,7 +65,7 @@ fn column_of(text: &str, col: &str) -> Vec<(bool, String)> {
         let t = line.trim();
         if let Some(rest) = t.strip_prefix("- [") {
             let done = rest.starts_with('x');
-            let text = rest.splitn(2, "] ").nth(1).unwrap_or("").to_string();
+            let text = rest.split_once("] ").map(|x| x.1).unwrap_or("").to_string();
             out.push((done, text));
         }
     }
@@ -345,4 +345,64 @@ fn a_card_dragged_within_its_column_changes_the_order_on_disk() {
     let pend = column_of(&text, "Pendiente");
     assert_eq!(pend[0].1, "Segunda @{2026-11-25} tarea con fecha #area", "{text}");
     assert_eq!(pend[1].1, "Primera tarea", "{text}");
+}
+
+#[test]
+fn a_link_inside_a_card_opens_the_note_it_names() {
+    let d = tempfile::tempdir().unwrap();
+    fs::write(
+        d.path().join("Enlaces.md"),
+        "%% kanban: settings\n{\"kanban-plugin\": \"basic\"} %%\n# Enlaces\n\n## Pendiente\n- [ ] leer [[Otra]] hoy\n",
+    )
+    .unwrap();
+    fs::write(d.path().join("Otra.md"), "# Otra\n\nnada mas\n").unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    let mut fonts = Fonts::new();
+    app.open_note("Enlaces.md");
+    let f = frame(&mut app, &mut fonts);
+    let link = app
+        .kanban_view
+        .as_mut()
+        .unwrap()
+        .link_rect(&mut fonts, 0, 0, "Otra")
+        .expect("the link of the card is laid out");
+    app.click(&f, &mut fonts, link.x + link.w / 2.0, link.y + link.h / 2.0, false);
+    assert_eq!(app.tab().map(|t| t.path.clone()).as_deref(), Some("Otra.md"), "the link opens the note");
+    assert!(!app.kanban_active(), "the note takes the pane");
+}
+
+#[test]
+fn the_column_menu_carries_the_actions_of_the_brief_and_deletes_the_column() {
+    let (d, mut app, mut fonts, f) = open_board();
+    let (x, y) = app_kanban(&app).column_anchor(1);
+    app.context_menu(&f, &mut fonts, x, y - 4.0);
+    let menu = app.menu.as_ref().expect("a column opens a menu");
+    let labels: Vec<&str> = menu.items.iter().map(|i| i.label.as_str()).collect();
+    for expected in ["Añadir tarjeta", "Renombrar columna", "Colapsar columna", "Eliminar columna"] {
+        assert!(labels.contains(&expected), "the column menu offers {expected:?}: {labels:?}");
+    }
+    app.run("kanban:column-delete:1");
+    assert!(app.notice.is_some(), "removing a column says so in the status bar");
+    let text = on_disk(&d);
+    assert!(!text.contains("## Haciendo"), "the column is gone from the file: {text}");
+    assert!(text.contains("## Pendiente") && text.contains("## Hecho"), "the others stay: {text}");
+}
+
+#[test]
+fn the_chevron_folds_a_column_without_touching_the_file() {
+    let (d, mut app, mut fonts, _f) = open_board();
+    let fold = app_kanban(&app).fold_rect(0).unwrap();
+    let (x, y) = centre(fold);
+    let f = frame(&mut app, &mut fonts);
+    app.click(&f, &mut fonts, x, y, false);
+    let f = frame(&mut app, &mut fonts);
+    assert!(app_kanban(&app).card_rect(0, 0).is_none(), "the cards of a folded column are hidden");
+    assert_eq!(app_kanban(&app).column_rect(0).unwrap().h, 34.0, "only its header stays");
+    assert_eq!(on_disk(&d), BOARD, "folding is a view state, not an edit");
+    let fold = app_kanban(&app).fold_rect(0).unwrap();
+    let (x, y) = centre(fold);
+    app.click(&f, &mut fonts, x, y, false);
+    let f = frame(&mut app, &mut fonts);
+    assert!(app_kanban(&app).card_rect(0, 0).is_some(), "unfolding brings the cards back");
+    let _ = f;
 }

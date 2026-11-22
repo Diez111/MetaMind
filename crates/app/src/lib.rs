@@ -597,7 +597,8 @@ impl App {
             }
             _ => false,
         };
-        graph || changed
+        let kanban = self.kanban_hover(x, y);
+        graph || kanban || changed
     }
 }
 

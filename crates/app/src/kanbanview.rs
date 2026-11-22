@@ -423,6 +423,20 @@ struct CardGeom {
     text: Rect,
 }
 
+/// What a pointer is over, for the highlight of the board.
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+enum Hover {
+    #[default]
+    None,
+    Card(u64),
+    /// The checkbox of a card.
+    Check(u64),
+    /// A column: its header, its empty space or its menu.
+    Column(usize),
+    /// The `+` at the foot of a column.
+    Add(usize),
+}
+
 #[derive(Clone)]
 struct ColGeom {
     /// The column: header, cards and the `+` at the foot.
@@ -467,6 +481,8 @@ pub struct KanbanView {
     /// The card just dropped, fading in while the editor's clock runs.
     pub drop: Option<u64>,
     drop_started: bool,
+    /// What the pointer is over, so the board answers before it is pressed.
+    hover: Hover,
     geom: Vec<ColGeom>,
     /// The pane's text style, kept for the hit-test of a link.
     text_style: TextStyle,
@@ -501,6 +517,7 @@ impl KanbanView {
             dragging: None,
             drop: None,
             drop_started: false,
+            hover: Hover::default(),
             geom: Vec::new(),
             text_style: TextStyle {
                 size: 13.0,
@@ -552,6 +569,31 @@ impl KanbanView {
     /// The `+` at the foot of a column.
     pub fn add_rect(&self, col: usize) -> Option<Rect> {
         self.geom.get(col).map(|g| g.add)
+    }
+
+    /// The chevron that folds a column.
+    pub fn fold_rect(&self, col: usize) -> Option<Rect> {
+        self.geom.get(col).map(|g| g.fold)
+    }
+
+    /// Where a `[[link]]` of a card sits, in window coordinates, from the last paint.
+    pub fn link_rect(
+        &mut self,
+        fonts: &mut Fonts,
+        col: usize,
+        idx: usize,
+        target: &str,
+    ) -> Option<Rect> {
+        let card = self.geom.get(col)?.cards.get(idx)?;
+        let text = self.board.card(card.id)?.text.clone();
+        let style = self.card_style.clone();
+        let spans = card_spans(&text, &chip_ranges(&text), &[Color::rgb(120, 120, 120); 12], false);
+        let (s, e) = chip_ranges(&text).into_iter().find_map(|(s, e, chip)| match chip {
+            Chip::Link(t) if t == target => Some((s, e)),
+            _ => None,
+        })?;
+        let r = fonts.range_rects(&text, &spans, &style, Some(card.text.w), s, e).first().copied()?;
+        Some(Rect::new(card.text.x + r.x, card.text.y + r.y, r.w.max(1.0), r.h))
     }
 
     /// Whether a card or a column name is being typed right now.
@@ -866,6 +908,35 @@ impl KanbanView {
         (col, idx)
     }
 
+    /// Note what the pointer is over. True when the highlight changed, so the frame is redrawn.
+    pub fn hover(&mut self, x: f32, y: f32) -> bool {
+        let over = match self.hit(x, y) {
+            Hit::Card(id) => Hover::Card(id),
+            Hit::Check(id) => Hover::Check(id),
+            Hit::AddCard(i) => Hover::Add(i),
+            Hit::ColumnMenu(i) | Hit::ColumnFold(i) | Hit::ColumnName(i) | Hit::ColumnBody(i) => {
+                Hover::Column(i)
+            }
+            Hit::Link(ref target) => self
+                .board
+                .columns
+                .iter()
+                .flat_map(|c| &c.cards)
+                .find(|card| {
+                    chip_ranges(&card.text)
+                        .into_iter()
+                        .any(|(_, _, chip)| matches!(chip, Chip::Link(t) if t == *target))
+                })
+                .map_or(Hover::None, |card| Hover::Card(card.id)),
+            Hit::None => Hover::None,
+        };
+        if self.hover == over {
+            return false;
+        }
+        self.hover = over;
+        true
+    }
+
     /// The button came up. True when a card was dropped, so the app writes the file.
     pub fn release(&mut self) -> bool {
         let dragged = self.dragging.take();
@@ -1016,6 +1087,9 @@ impl KanbanView {
             let rect_col = Rect::new(x, top, COL_W, height);
             bottom = bottom.max(top + height);
 
+            // A column the pointer is over answers: its chevron and its dots take the accent.
+            let near = matches!(self.hover, Hover::Column(j) | Hover::Add(j) if j == i);
+            let control = if near { c[2] } else { c[3] };
             cmds.push(fill(rect_col, col_bg, 10.0));
             // The header: fold chevron, name, count, menu.
             let (cx, cy) = (fold.x + fold.w / 2.0, fold.y + fold.h / 2.0);
@@ -1024,7 +1098,7 @@ impl KanbanView {
             } else {
                 vec![[cx - 5.0, cy - 2.0, cx, cy + 3.0], [cx, cy + 3.0, cx + 5.0, cy - 2.0]]
             };
-            cmds.push(Cmd::Lines { segs: chev, width: 1.6, color: c[3] });
+            cmds.push(Cmd::Lines { segs: chev, width: 1.6, color: control });
             let name = self.editing_column(i).map(str::to_string).unwrap_or_else(|| col.name.clone());
             let name_w = COL_W - 34.0 - 34.0;
             cmds.push(Cmd::Text {
@@ -1057,10 +1131,17 @@ impl KanbanView {
                     [dot.x + 6.0, dot.y, dot.w],
                     [dot.x + 12.0, dot.y, dot.w],
                 ],
-                color: c[3],
+                color: control,
             });
             if let Some(buf) = self.editing_column(i).map(str::to_string) {
-                self.caret(cmds, fold.x + fold.w + 6.0, top + 9.0, name_w, &buf, &head_style, c, fonts);
+                self.caret(
+                    cmds,
+                    Rect::new(fold.x + fold.w + 6.0, top + 9.0, name_w, head_style.line_height),
+                    &buf,
+                    &head_style,
+                    c[5],
+                    fonts,
+                );
             }
             // The cards, each one painted whole so a dropped card can fade in on its own.
             for cg in &cards {
@@ -1075,15 +1156,24 @@ impl KanbanView {
                 cmds.append(&mut own);
             }
             if !col.collapsed {
-                // The `+` at the foot of the column.
-                cmds.push(fill(add, mix(col_bg, c[5], 0.10), 6.0));
+                // The `+` at the foot of the column: it takes the accent when it is under the
+                // pointer, which is the only affordance a painted button can give before a press.
+                let over = matches!(self.hover, Hover::Add(j) if j == i);
+                cmds.push(fill(
+                    add,
+                    if over { mix(col_bg, c[5], 0.22) } else { mix(col_bg, c[5], 0.10) },
+                    6.0,
+                ));
                 cmds.push(Cmd::Text {
                     x: add.x + 10.0,
                     y: add.y + 6.0,
                     width: Some(add.w - 20.0),
                     text: "+ Añadir tarjeta".to_string(),
                     spans: Vec::new(),
-                    style: count_style.clone(),
+                    style: TextStyle {
+                        color: if over { c[2] } else { c[3] },
+                        ..count_style.clone()
+                    },
                 });
             }
             geom.push(ColGeom { rect: rect_col, head, fold, menu, add, cards });
@@ -1148,8 +1238,21 @@ impl KanbanView {
         let selected = self.selected == Some(card.id);
         let dragging = self.dragging == Some(card.id);
         let editing = self.editing_card(card.id).is_some();
-        let border = if selected || dragging { c[5] } else { c[1] };
-        let bg = if selected || dragging { mix(c[0], c[5], 0.10) } else { card_bg };
+        let hovered = matches!(self.hover, Hover::Card(id) | Hover::Check(id) if id == card.id);
+        let border = if selected || dragging {
+            c[5]
+        } else if hovered {
+            mix(c[1], c[2], 0.45)
+        } else {
+            c[1]
+        };
+        let bg = if selected || dragging {
+            mix(c[0], c[5], 0.10)
+        } else if hovered {
+            mix(c[0], c[2], 0.06)
+        } else {
+            card_bg
+        };
         let r = g.rect;
         cmds.push(fill(r, border, 7.0));
         let bw = if selected || dragging { 2.0 } else { 1.0 };
@@ -1168,7 +1271,12 @@ impl KanbanView {
                 color: c[0],
             });
         } else {
-            cmds.push(Cmd::Circles { items: vec![[mid.0, mid.1, ck.w / 2.0]], color: c[3] });
+            let ring = if matches!(self.hover, Hover::Check(id)| Hover::Card(id) if id == card.id) {
+                c[5]
+            } else {
+                c[3]
+            };
+            cmds.push(Cmd::Circles { items: vec![[mid.0, mid.1, ck.w / 2.0]], color: ring });
             cmds.push(Cmd::Circles { items: vec![[mid.0, mid.1, ck.w / 2.0 - 1.4]], color: bg });
         }
         let style = TextStyle { color: if card.done { c[3] } else { c[2] }, ..self.card_style.clone() };
@@ -1211,27 +1319,26 @@ impl KanbanView {
             });
         }
         if let Some(buf) = self.editing_card(card.id).map(str::to_string) {
-            self.caret(cmds, g.text.x, g.text.y, g.text.w, &buf, &style, c, fonts);
+            self.caret(cmds, g.text, &buf, &style, c[5], fonts);
         }
     }
 
-    /// The caret of a text being typed, at the end of what was typed and where it wrapped.
+    /// The caret of a text being typed, at the end of what was typed and where it wrapped. `box_`
+    /// is where the text starts and how wide it wraps; `accent` is the theme's cursor colour.
     fn caret(
         &self,
         cmds: &mut Vec<Cmd>,
-        x: f32,
-        y: f32,
-        w: f32,
+        box_: Rect,
         buf: &str,
         style: &TextStyle,
-        c: &[Color; 12],
+        accent: Color,
         fonts: &mut Fonts,
     ) {
-        let at = fonts.range_rects(buf, &[], style, Some(w), buf.len(), buf.len());
+        let at = fonts.range_rects(buf, &[], style, Some(box_.w), buf.len(), buf.len());
         let Some(r) = at.last() else { return };
         cmds.push(fill(
-            Rect::new(x + r.x, y + r.y, 1.5, r.h.max(style.line_height)),
-            c[5],
+            Rect::new(box_.x + r.x, box_.y + r.y, 1.5, r.h.max(style.line_height)),
+            accent,
             0.0,
         ));
     }
@@ -1581,6 +1688,16 @@ impl App {
     }
 
     /// Wheel over the board: down scrolls the cards, sideways (Shift or Ctrl) walks the columns.
+    /// Track the pointer over the board: the card, checkbox or column under it lights up. True
+    /// when that changed, so the window redraws.
+    pub fn kanban_hover(&mut self, x: f32, y: f32) -> bool {
+        if !self.kanban_active() {
+            return false;
+        }
+        let Some(v) = &mut self.kanban_view else { return false };
+        v.hover(x, y)
+    }
+
     pub fn kanban_wheel(&mut self, frame: &crate::Frame, x: f32, y: f32, lines: f32, sideways: bool) -> bool {
         let Some(rect) = self.kanban_rect(frame) else { return false };
         let Some(v) = &mut self.kanban_view else { return false };

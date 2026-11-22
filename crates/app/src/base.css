@@ -360,7 +360,13 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .kanban-view.color-4 { color: rgb(var(--canvas-color-4)) }
 .kanban-view.color-5 { color: rgb(var(--canvas-color-5)) }
 .kanban-view.color-6 { color: rgb(var(--canvas-color-6)) }
-.kanban-controls { flex-wrap: wrap }
+/* The header holds the path, both counts and three buttons. On a narrow pane it wraps instead of
+   pushing the buttons out of the window, and the path — the only part that can be long — shortens
+   with an ellipsis. The columns themselves are laid out by the paint pass (280px each, wrapped
+   cards, chips and the `+` at the foot), the way `canvasview.rs` and `excalidrawview.rs` draw
+   their boards. */
+.kanban-controls { flex-wrap: wrap; row-gap: 4px }
+.kanban-controls .graph-count { min-width: 0; overflow: hidden; text-overflow: ellipsis }
 .exc-controls .exc-fullscreen-button { border-color: var(--interactive-accent); color: var(--text-normal) }.exc-toolbar { position: absolute; left: 12px; top: 12px; display: flex; flex-direction: column; gap: 2px; padding: 4px; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
 .exc-tool.exc-fold { color: var(--text-faint) }
 .exc-tools-handle { position: absolute; left: 12px; top: 12px; display: flex; align-items: center; gap: 4px; padding: 5px 8px 5px 5px; font-size: var(--font-ui-smaller); color: var(--text-muted); background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
