@@ -79,12 +79,8 @@ fn same_folder_name_under_two_parents_sits_at_its_own_depth() {
             (3, "Analisis"),
         ]
     );
-    let ones: Vec<&str> = app
-        .tree_rows()
-        .iter()
-        .filter(|r| r.label == "1° Año")
-        .map(|r| r.path.as_str())
-        .collect();
+    let ones: Vec<&str> =
+        app.tree_rows().iter().filter(|r| r.label == "1° Año").map(|r| r.path.as_str()).collect();
     assert_eq!(ones, ["Facultad/Años/1° Año", "Facultad/Materias/1° Año"]);
 }
 
@@ -103,12 +99,8 @@ fn one_folder_spelled_two_ways_is_listed_once() {
         app.run(&format!("toggle-folder:{f}"));
     }
     let mut seen = std::collections::HashSet::new();
-    let dup: Vec<String> = app
-        .tree_rows()
-        .iter()
-        .map(|x| x.path.clone())
-        .filter(|p| !seen.insert(p.clone()))
-        .collect();
+    let dup: Vec<String> =
+        app.tree_rows().iter().map(|x| x.path.clone()).filter(|p| !seen.insert(p.clone())).collect();
     assert!(dup.is_empty(), "a path is listed twice: {dup:?}");
     let built = rows(&mut app);
     for name in ["facultad", "materias", "1° año"] {
