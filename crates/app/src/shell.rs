@@ -213,6 +213,9 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("graph:toggle-panel", "Vista de gráfico: Alternar panel de ajustes", ""),
     ("graph:animate", "Vista de gráfico: Animar disposición", ""),
     ("graph:reset-settings", "Vista de gráfico: Restaurar ajustes predeterminados", ""),
+    ("calendar:open", "Calendario: Abrir el calendario", "Ctrl+Shift+C"),
+    ("calendar:refresh", "Calendario: Actualizar ahora", ""),
+    ("calendar:open-day-note", "Calendario: Abrir la nota del día seleccionado", ""),
     ("daily-notes", "Notas diarias: Abrir la nota diaria de hoy", ""),
     ("daily-notes:goto-prev", "Notas diarias: Abrir nota diaria anterior", ""),
     ("daily-notes:goto-next", "Notas diarias: Abrir nota diaria siguiente", ""),
@@ -246,6 +249,7 @@ pub enum Panel {
     Search,
     Bookmarks,
     Tags,
+    Calendar,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -261,6 +265,8 @@ pub enum Focus {
     Editor,
     Search,
     Prompt,
+    /// The calendar pane of the left sidebar has the keys: the arrows move the selected day.
+    Calendar,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -537,6 +543,8 @@ pub struct App {
     pub video: crate::video::VideoPlayer,
     /// YouTube links played inside the application: the `yt-dlp` lookup and the run in flight.
     pub youtube: crate::youtube::Jobs,
+    /// The month of events in the left sidebar, from the iCal address and the vault.
+    pub calendar: crate::calendar::Calendar,
     /// Width and height of the workspace in the last frame drawn: the space an over-window
     /// overlay has, with the status bar already taken out of it.
     pub video_area: (f32, f32),
@@ -737,6 +745,10 @@ impl App {
             dataview: Default::default(),
             video: Default::default(),
             youtube: crate::youtube::Jobs::new(),
+            calendar: crate::calendar::Calendar::new(
+                root,
+                config.app.str("cal.ical_url").unwrap_or_default(),
+            ),
             video_area: (0.0, 0.0),
             ai: Default::default(),
             scale: 1.0,
@@ -848,6 +860,7 @@ impl App {
         if self.left_open && self.panel == Panel::Tags {
             self.tag_counts();
         }
+        self.calendar_refresh();
         if self.right_open && self.right_panel == RightPanel::Backlinks && self.tab().is_some() {
             self.refresh_linked();
             if self.show_unlinked {
@@ -868,6 +881,36 @@ impl App {
                 t.meta = Some((v, vault_core::meta::extract(&t.editor.buf.text())));
             }
         }
+    }
+
+    /// Bring the calendar up to date once per frame: finish a fetch, scan a slice of the notes
+    /// for `@{fecha}` tasks, and ask for another body when the pane is on screen and the cache is
+    /// old. Nothing here waits for the network.
+    pub fn calendar_refresh(&mut self) {
+        let root = self.store.root.clone();
+        if self.left_open && self.panel == Panel::Calendar {
+            if self.config.app.bool("cal.refresh_on_open", true) {
+                let url = self.config.app.str("cal.ical_url").unwrap_or_default().to_string();
+                self.calendar.maybe_fetch(&root, &url);
+            }
+            let revision = crate::dataview::revision(self);
+            if revision != self.calendar.revision() {
+                self.calendar.scan_vault(&self.store, revision);
+            }
+        }
+        self.calendar.tick(&root, &self.store);
+        if let Some(report) = self.calendar.take_report() {
+            self.notice = Some(match report {
+                Ok(0) => "La dirección respondió, pero no hay ningún evento".to_string(),
+                Ok(n) => format!("{n} evento{} en el calendario", if n == 1 { "" } else { "s" }),
+                Err(message) => message,
+            });
+        }
+    }
+
+    /// Milliseconds until the running calendar fetch has to be looked at again, if any.
+    pub fn calendar_due_in(&self) -> Option<u64> {
+        self.calendar.due_in()
     }
 
     /// Milliseconds until the outline/word count of the active note should be refreshed.
@@ -1660,6 +1703,7 @@ impl App {
             return;
         }
         if self.run_plugin_command(command)
+            || self.run_calendar(command)
             || self.run_panes(command)
             || self.run_templates(command)
             || self.run_workspaces(command)
@@ -2125,6 +2169,26 @@ impl App {
                 }
                 true
             }
+            // The calendar pane: the arrows move the selected day, Page Up and Down the month,
+            // Enter opens the daily note of the day on screen.
+            Focus::Calendar => {
+                match key.key.as_str() {
+                    "ArrowLeft" => self.calendar.step_day(-1),
+                    "ArrowRight" => self.calendar.step_day(1),
+                    "ArrowUp" => self.calendar.step_day(-7),
+                    "ArrowDown" => self.calendar.step_day(7),
+                    "PageUp" => self.calendar.step_month(-1),
+                    "PageDown" => self.calendar.step_month(1),
+                    "Home" => {
+                        let today = crate::calendar::Calendar::today();
+                        self.calendar.select(today);
+                    }
+                    "Enter" => self.run("calendar:open-day-note"),
+                    "Escape" => self.focus = Focus::Editor,
+                    _ => return false,
+                }
+                true
+            }
             Focus::Editor => {
                 if self.canvas_active() {
                     return self.canvas_key(&key);
@@ -2251,6 +2315,8 @@ impl App {
                 self.refresh_prompt();
             }
             Focus::Search => self.search_query.push_str(text),
+            // A letter with the calendar pane focused is not a note edit; the shortcuts still run.
+            Focus::Calendar => {}
             Focus::Editor if self.canvas_active() => self.canvas_text(text),
             Focus::Editor if self.kanban_active() => self.kanban_text(text),
             Focus::Editor if self.exc_active() => {

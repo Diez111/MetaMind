@@ -26,7 +26,7 @@ pub fn query_source(tree: &Tree, src: &str, root_start: u32) -> Option<String> {
 }
 
 /// A number that changes when the notes change; the index itself has no version.
-fn revision(app: &App) -> u64 {
+pub(crate) fn revision(app: &App) -> u64 {
     let mut h = 0xcbf2_9ce4_8422_2325u64;
     for (_, f) in app.store.index.iter() {
         for v in [f.path.len() as u64, f.mtime as u64, f.size] {

@@ -408,7 +408,7 @@ fn the_settings_sidebar_has_an_icon_for_every_category() {
         .iter()
         .filter(|n| n.el.classes.iter().any(|c| c == "vertical-tab-nav-icon"))
         .collect();
-    assert_eq!(icons.len(), 5, "every category has an icon");
+    assert_eq!(icons.len(), 6, "every category has an icon");
     // The empty square a missing glyph leaves behind is the bug this guards against.
     for icon in icons {
         let mut x0 = f32::MAX;

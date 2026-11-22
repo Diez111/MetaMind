@@ -650,6 +650,7 @@ impl App {
                 self.refresh_prompt();
             }
             Focus::Search => self.search_query.push_str(text.lines().next().unwrap_or("")),
+            Focus::Calendar => {}
             Focus::Editor if self.canvas_active() => self.canvas_text(&text),
             Focus::Editor if self.exc_active() => {
                 self.exc_text(&text);

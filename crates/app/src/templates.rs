@@ -108,8 +108,13 @@ impl App {
 
     /// Open today's daily note, creating it from the configured folder, format and template.
     pub(crate) fn open_daily_note(&mut self) {
+        self.open_daily_note_on(fsio::now_ms() / 1000);
+    }
+
+    /// Open the daily note of the day `secs` falls on, which is what the calendar pane asks for
+    /// when the selected day is not today.
+    pub(crate) fn open_daily_note_on(&mut self, secs: u64) {
         let v = read_json(self, "daily-notes.json");
-        let secs = fsio::now_ms() / 1000;
         let name = datetime::format(&non_empty(&v, "format", "YYYY-MM-DD"), secs);
         let folder = non_empty(&v, "folder", "").trim_matches('/').to_string();
         let rel = path::join(&folder, &format!("{name}.md"));
