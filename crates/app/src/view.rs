@@ -2592,6 +2592,7 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
             ("search", "global-search:open", Panel::Search),
             ("bookmark", "bookmarks:open", Panel::Bookmarks),
             ("tag", "tag-pane:open", Panel::Tags),
+            ("calendar", "calendar:open", Panel::Calendar),
         ] {
             if app.disabled_by(cmd).is_some() {
                 continue;
@@ -2603,6 +2604,7 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
             Panel::Search => "global-search:open",
             Panel::Bookmarks => "bookmarks:open",
             Panel::Tags => "tag-pane:open",
+            Panel::Calendar => "calendar:open",
         };
         if let Some(name) = app.disabled_by(cmd) {
             dom.add(left, El::div().class("pane-empty").text(format!("{name} está desactivado.")));
@@ -2612,6 +2614,7 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
                 Panel::Search => sidebar_search(app, dom, left),
                 Panel::Bookmarks => crate::panes::bookmarks(app, dom, left),
                 Panel::Tags => crate::panes::tags(app, dom, left),
+                Panel::Calendar => crate::calendar::panel(app, dom, left, viewport_h),
             }
         }
         resize_handle(app, dom, left, true);

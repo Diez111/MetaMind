@@ -147,11 +147,7 @@ fn spellcheck_marks_prose_and_fixes_from_the_menu() {
     // The pipeline default is off for this user's Spanish vault; this test explicitly turns
     // it on so the marked words and the right-click suggestions can be checked.
     fs::create_dir_all(d.path().join(".obsidian")).unwrap();
-    fs::write(
-        d.path().join(".obsidian/app.json"),
-        r#"{"spellcheck": true}"#,
-    )
-    .unwrap();
+    fs::write(d.path().join(".obsidian/app.json"), r#"{"spellcheck": true}"#).unwrap();
     fs::write(d.path().join("S.md"), "A wrod in `codde` and [[Lnik]] here.\n").unwrap();
     let mut app = App::open(d.path()).unwrap();
     app.open_note("S");

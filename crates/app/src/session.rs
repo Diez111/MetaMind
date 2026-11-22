@@ -23,6 +23,7 @@ fn panel_name(p: Panel) -> &'static str {
         Panel::Search => "search",
         Panel::Bookmarks => "bookmarks",
         Panel::Tags => "tags",
+        Panel::Calendar => "calendar",
     }
 }
 
@@ -144,6 +145,7 @@ impl App {
             Some("search") => Panel::Search,
             Some("bookmarks") => Panel::Bookmarks,
             Some("tags") => Panel::Tags,
+            Some("calendar") => Panel::Calendar,
             _ => Panel::Files,
         };
         self.right_panel = match v.get("rightPanel").and_then(Value::as_str) {

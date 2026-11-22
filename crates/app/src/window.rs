@@ -290,9 +290,8 @@ impl Win {
             .iter()
             .map(|&(id, pane)| {
                 let (tabs, active) = app.pane_tabs(pane);
-                let note = tabs
-                    .get(active)
-                    .map_or("MetaMind".to_string(), |t| format!("{} - MetaMind", t.title()));
+                let note =
+                    tabs.get(active).map_or("MetaMind".to_string(), |t| format!("{} - MetaMind", t.title()));
                 (id, note)
             })
             .collect();
@@ -874,6 +873,7 @@ impl Win {
         // The player repaints while it plays, and a `yt-dlp` run is looked at until it answers.
         let video = app.video_due_in();
         let youtube = app.youtube_due_in();
+        let calendar = app.calendar_due_in();
         let next = [
             app.derived_due_in(now),
             app.autosave_due_in(now),
@@ -882,6 +882,7 @@ impl Win {
             ai,
             video,
             youtube,
+            calendar,
         ]
         .into_iter()
         .flatten()

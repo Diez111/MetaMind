@@ -1921,6 +1921,7 @@ version = "0.6.1"
 dependencies = [
  "accesskit",
  "accesskit_winit",
+ "calendar-core",
  "canvas-core",
  "dataview-core",
  "editor-core",

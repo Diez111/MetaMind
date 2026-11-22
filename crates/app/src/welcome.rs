@@ -335,10 +335,7 @@ impl Welcome {
         for (i, (icon, title, action)) in Self::ACTIONS.iter().enumerate() {
             let row = dom.add(
                 actions,
-                El::div()
-                    .class("welcome-action")
-                    .class_if(self.sel == Some(i), "is-focused")
-                    .action(*action),
+                El::div().class("welcome-action").class_if(self.sel == Some(i), "is-focused").action(*action),
             );
             dom.add(row, icons::el(icon).class("welcome-action-icon"));
             dom.add(row, El::div().class("welcome-action-title").text(*title));

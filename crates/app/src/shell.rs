@@ -242,6 +242,7 @@ pub enum Panel {
     Search,
     Bookmarks,
     Tags,
+    Calendar,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -530,6 +531,8 @@ pub struct App {
     pub video: crate::video::VideoPlayer,
     /// YouTube links played inside the application: the `yt-dlp` lookup and the run in flight.
     pub youtube: crate::youtube::Jobs,
+    /// The month of events in the left sidebar, from the iCal address and the vault.
+    pub calendar: crate::calendar::Calendar,
     /// Width and height of the workspace in the last frame drawn: the space an over-window
     /// overlay has, with the status bar already taken out of it.
     pub video_area: (f32, f32),
@@ -728,6 +731,10 @@ impl App {
             dataview: Default::default(),
             video: Default::default(),
             youtube: crate::youtube::Jobs::new(),
+            calendar: crate::calendar::Calendar::new(
+                root,
+                config.app.str("cal.ical_url").unwrap_or_default(),
+            ),
             video_area: (0.0, 0.0),
             ai: Default::default(),
             scale: 1.0,
@@ -839,6 +846,7 @@ impl App {
         if self.left_open && self.panel == Panel::Tags {
             self.tag_counts();
         }
+        self.calendar_refresh();
         if self.right_open && self.right_panel == RightPanel::Backlinks && self.tab().is_some() {
             self.refresh_linked();
             if self.show_unlinked {
@@ -859,6 +867,29 @@ impl App {
                 t.meta = Some((v, vault_core::meta::extract(&t.editor.buf.text())));
             }
         }
+    }
+
+    /// Bring the calendar up to date once per frame: finish a fetch, scan a slice of the notes
+    /// for `@{fecha}` tasks, and ask for another body when the pane is on screen and the cache is
+    /// old. Nothing here waits for the network.
+    pub fn calendar_refresh(&mut self) {
+        let root = self.store.root.clone();
+        if self.left_open && self.panel == Panel::Calendar {
+            if self.config.app.bool("cal.refresh_on_open", true) {
+                let url = self.config.app.str("cal.ical_url").unwrap_or_default().to_string();
+                self.calendar.maybe_fetch(&root, &url);
+            }
+            let revision = crate::dataview::revision(self);
+            if revision != self.calendar.revision() {
+                self.calendar.scan_vault(&self.store, revision);
+            }
+        }
+        self.calendar.tick(&root, &self.store);
+    }
+
+    /// Milliseconds until the running calendar fetch has to be looked at again, if any.
+    pub fn calendar_due_in(&self) -> Option<u64> {
+        self.calendar.due_in()
     }
 
     /// Milliseconds until the outline/word count of the active note should be refreshed.

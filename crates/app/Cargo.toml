@@ -34,6 +34,7 @@ excalidraw-core = { path = "../excalidraw-core" }
 highlight-core = { path = "../highlight-core" }
 math-core = { path = "../math-core" }
 mermaid-core = { path = "../mermaid-core" }
+calendar-core = { path = "../calendar-core" }
 theme-engine = { path = "../theme-engine" }
 metamind-ui = { path = "../metamind-ui" }
 ext-api = { path = "../ext-api" }
