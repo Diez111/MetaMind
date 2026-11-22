@@ -890,6 +890,13 @@ impl App {
             }
         }
         self.calendar.tick(&root, &self.store);
+        if let Some(report) = self.calendar.take_report() {
+            self.notice = Some(match report {
+                Ok(0) => "La dirección respondió, pero no hay ningún evento".to_string(),
+                Ok(n) => format!("{n} evento{} en el calendario", if n == 1 { "" } else { "s" }),
+                Err(message) => message,
+            });
+        }
     }
 
     /// Milliseconds until the running calendar fetch has to be looked at again, if any.

@@ -120,6 +120,9 @@ pub struct Calendar {
     pub fetched_ms: u64,
     /// Whether a fetch is running, and for which address.
     pub fetching: bool,
+    /// A fetch was asked for by hand ("Probar"): its result is reported once as a notice.
+    announce: bool,
+    report: Option<Result<usize, String>>,
     url_hash: u64,
     google: Option<Ics>,
     files: Vec<VaultIcs>,
@@ -153,6 +156,8 @@ impl Calendar {
             error: None,
             fetched_ms: 0,
             fetching: false,
+            announce: false,
+            report: None,
             url_hash: 0,
             google: None,
             files: Vec::new(),
@@ -204,6 +209,16 @@ impl Calendar {
         self.url_hash = 0;
         self.error = None;
         self.dirty = true;
+    }
+
+    /// Have the next answer reported once, which is what the "Probar" button does.
+    pub fn announce(&mut self) {
+        self.announce = true;
+    }
+
+    /// The result of the announced fetch, once: how many events it found, or why it failed.
+    pub fn take_report(&mut self) -> Option<Result<usize, String>> {
+        self.report.take()
     }
 
     /// Ask for the body unless the cache is fresh or a fetch is already running.
@@ -276,9 +291,18 @@ impl Calendar {
                 self.fetched_ms = fsio::now_ms();
                 self.error = None;
                 self.dirty = true;
+                if std::mem::take(&mut self.announce) {
+                    let count = self.google.as_ref().map_or(0, |c| c.events.len());
+                    self.report = Some(Ok(count));
+                }
             }
             // The cached events stay on screen: an old calendar is better than an empty pane.
-            Err(message) => self.error = Some(message),
+            Err(message) => {
+                if std::mem::take(&mut self.announce) {
+                    self.report = Some(Err(message.clone()));
+                }
+                self.error = Some(message);
+            }
         }
         true
     }

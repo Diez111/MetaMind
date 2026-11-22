@@ -15,6 +15,7 @@ use vault_core::fsio::TrashMode;
 pub enum Section {
     Appearance,
     Editor,
+    Calendar,
     Ai,
     Plugins,
     Advanced,
@@ -22,7 +23,7 @@ pub enum Section {
 
 /// The settings categories, in the order they appear: (section, slug in commands, name, one-line
 /// description, icon).
-const SECTIONS: [(Section, &str, &str, &str, &str); 5] = [
+const SECTIONS: [(Section, &str, &str, &str, &str); 6] = [
     (
         Section::Appearance,
         "appearance",
@@ -36,6 +37,13 @@ const SECTIONS: [(Section, &str, &str, &str, &str); 5] = [
         "Editor",
         "Escritura, sangría, propiedades y corrección ortográfica.",
         "edit",
+    ),
+    (
+        Section::Calendar,
+        "calendar",
+        "Calendario",
+        "Suscripción iCal de Google y archivos .ics de la bóveda.",
+        "calendar",
     ),
     (Section::Ai, "ai", "IA", "Perfiles de proveedores, modelos y claves del copiloto.", "sparkles"),
     (
@@ -58,6 +66,7 @@ fn section_for_slug(slug: &str) -> Option<Section> {
     Some(match slug {
         "appearance" => Section::Appearance,
         "editor" => Section::Editor,
+        "calendar" => Section::Calendar,
         "ai" => Section::Ai,
         "plugins" | "core-plugins" => Section::Plugins,
         // The old tabs fold into Avanzado; keeping their slugs means old links still work.
@@ -234,6 +243,14 @@ use Control::{Choice, Number, Text, Toggle};
 use Section::{Advanced, Appearance, Editor};
 
 const ITEMS: &[Item] = &[
+    Item {
+        section: Section::Calendar,
+        file: File::App,
+        key: "cal.refresh_on_open",
+        name: "Refrescar al abrir la vista",
+        desc: "Consulta la dirección cuando el panel Calendario aparece. Con ETag, si nada cambió no se vuelve a bajar.",
+        control: Toggle(true),
+    },
     Item {
         section: Appearance,
         file: File::Appearance,
@@ -523,6 +540,7 @@ impl App {
             "cssTheme" | "baseFontSize" | "textFontFamily" | "accentColor" | "lineWidth"
             | "enabledCssSnippets" => self.theme = load_theme(&self.config),
             "propertiesInDocument" => self.prop_edit = None,
+            "cal.ical_url" => self.calendar.forget(),
             _ => {}
         }
     }
@@ -596,6 +614,10 @@ impl App {
         }
         if let Some((field, at)) = ai_field_key(&key) {
             self.commit_ai_field(field, at, &text);
+            return;
+        }
+        if key == "cal.ical_url" {
+            self.commit_cal_url(&text);
             return;
         }
         let Some(it) = item(&key) else { return };
@@ -880,6 +902,7 @@ impl App {
                     s.ai_edit = Some(at);
                 }
             }
+            "cal-test" => self.calendar_test(),
             "perf" => self.perf = !self.perf,
             "core" => {
                 if CORE_PLUGINS.iter().any(|c| c.0 == arg) {
@@ -907,6 +930,35 @@ impl App {
             _ => {}
         }
         true
+    }
+
+    /// Store the iCal address, refusing anything that is not an http(s) URL. The value is a
+    /// secret: it goes to `app.json` and nowhere else.
+    fn commit_cal_url(&mut self, text: &str) {
+        let url = text.trim();
+        if !url.is_empty() && !(url.starts_with("https://") || url.starts_with("http://")) {
+            self.notice = Some("La dirección iCal empieza con https://".to_string());
+            return;
+        }
+        self.save_setting(File::App, "cal.ical_url", json!(url));
+        self.notice = Some(if url.is_empty() {
+            "Se quitó la dirección del calendario".to_string()
+        } else {
+            "Dirección guardada. «Probar» la consulta ahora".to_string()
+        });
+    }
+
+    /// Ask for the calendar now, and report what comes back in a notice.
+    fn calendar_test(&mut self) {
+        let root = self.store.root.clone();
+        let url = self.config.app.str("cal.ical_url").unwrap_or_default().trim().to_string();
+        if url.is_empty() {
+            self.notice = Some("Pegá primero la dirección iCal de Google".to_string());
+            return;
+        }
+        self.calendar.announce();
+        self.calendar.refresh(&root, &url);
+        self.notice = Some("Consultando el calendario…".to_string());
     }
 
     /// Write one field of profile `at`, then save the profiles.
@@ -1523,6 +1575,7 @@ fn search_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, needle
                         + CORE_PLUGINS.iter().filter(|c| matches(needle, c.1, c.2)).count()
                 }
                 Section::Ai => usize::from(ai_matches(needle)),
+                Section::Calendar => usize::from(calendar_matches(needle)),
                 _ => ITEMS.iter().filter(|i| i.section == sec && matches(needle, i.name, i.desc)).count(),
             }
         };
@@ -1533,6 +1586,7 @@ fn search_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, needle
         section_header(dom, parent, sec);
         match sec {
             Section::Plugins => plugins_view(app, dom, parent, ui, if whole { "" } else { needle }),
+            Section::Calendar => calendar_view(app, dom, parent, ui),
             Section::Ai => ai_view(app, dom, parent, ui),
             Section::Appearance if whole => appearance_view(app, dom, parent, ui, false),
             Section::Advanced => advanced_view(app, dom, parent, ui, if whole { "" } else { needle }),
@@ -1715,6 +1769,60 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     input(dom, ctl, &format!("ai.p:timeout_s:{at}"), &p.timeout_s.to_string(), ui.edit.as_ref(), Some("30"));
 }
 
+/// Whether the settings search text names something of Ajustes → Calendario.
+fn calendar_matches(needle: &str) -> bool {
+    ["calendario", "ical", "google", "ics", "eventos", "agenda", "url", "dirección"]
+        .iter()
+        .any(|w| w.contains(needle) || needle.contains(w))
+        || category_matches(needle, Section::Calendar)
+}
+
+/// Ajustes → Calendario: the Google address, in the same masked field the API key uses, with a
+/// button that proves it works, and the one toggle the pane reads.
+fn calendar_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
+    dom.add(
+        parent,
+        El::div().class("settings-note").text(
+            "Google Calendar → Configuración → Integrar calendario → «Dirección secreta en formato iCal».",
+        ),
+    );
+    dom.add(
+        parent,
+        El::div().class("settings-note").text(
+            "Se pega una vez: MetaMind la consulta sola, sin OAuth y sin credenciales. \
+             También se leen los archivos .ics que estén en la bóveda.",
+        ),
+    );
+    let url = app.config.app.str("cal.ical_url").unwrap_or_default().trim().to_string();
+    let ctl = row(
+        dom,
+        parent,
+        "Dirección iCal de Google",
+        "Se guarda en .obsidian/app.json y no se muestra en claro. Los eventos de Google son de solo lectura.",
+    );
+    masked_input(dom, ctl, "cal.ical_url", !url.is_empty(), ui.edit.as_ref());
+    button(dom, ctl, "Probar", "settings:cal-test".into(), false);
+    let ctl = row(dom, parent, "Eventos del calendario", "Lo que la última consulta encontró, y cuándo fue.");
+    let status = match (app.calendar.fetched_ms, &app.calendar.error) {
+        (_, Some(error)) => error.clone(),
+        (0, None) if url.is_empty() => "Sin dirección configurada".to_string(),
+        (0, None) => "Todavía sin consultar".to_string(),
+        (ms, None) => {
+            let secs = ms / 1000;
+            let (_, _, _, h, m, _, _) = crate::datetime::local(secs);
+            format!("Actualizado hoy a las {h:02}:{m:02}")
+        }
+    };
+    dom.add(ctl, El::div().class("setting-value").text(status));
+    items_view(app, dom, parent, ui, Section::Calendar, "", false);
+    dom.add(
+        parent,
+        El::div().class("settings-note").text(
+            "MetaMind nunca escribe en Google: con la dirección iCal el calendario es de solo lectura.",
+        ),
+    );
+}
+
 /// The settings window, drawn over everything else. The status bar is painted over the bottom
 /// edge of the window, so the panel carries that height as a bottom margin: it ends up centered
 /// on what the reader sees, while the veil behind it still covers the whole window.
@@ -1795,6 +1903,7 @@ pub fn modal(app: &App, dom: &mut Dom) {
         match ui.section {
             Section::Appearance => appearance_view(app, dom, content, ui, true),
             Section::Editor => items_view(app, dom, content, ui, Section::Editor, "", false),
+            Section::Calendar => calendar_view(app, dom, content, ui),
             Section::Ai => ai_view(app, dom, content, ui),
             Section::Plugins => plugins_view(app, dom, content, ui, ""),
             Section::Advanced => advanced_view(app, dom, content, ui, ""),
