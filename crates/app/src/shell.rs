@@ -587,8 +587,9 @@ pub struct App {
 /// Sort key for explorer order: at each level folders come before files, and names compare
 /// case-insensitively. Byte-wise comparison of the keys gives the order.
 /// A path lowercased the way the explorer groups folders: `Materias` and `materias` are one
-/// folder there, so both name the same branch.
-fn folded_path(p: &str) -> String {
+/// folder there, so both name the same branch. `App.expanded` stores paths already folded,
+/// so a lookup is one hash and never a walk over the set.
+pub(crate) fn folded_path(p: &str) -> String {
     p.chars().flat_map(char::to_lowercase).collect()
 }
 
@@ -867,11 +868,10 @@ impl App {
         stale.then(|| (t.last_edit_ms + META_DEBOUNCE_MS).saturating_sub(now_ms))
     }
 
-    /// Whether folder `path` is open, folded the way the tree folds names: a branch spelled two
-    /// ways counts as one folder.
+    /// Whether folder `path` is open. `expanded` keeps its keys folded (see [`folded_path`]),
+    /// so this is one hash lookup, not a scan that lowercases every entry.
     pub fn folder_open(&self, path: &str) -> bool {
-        let key = folded_path(path);
-        self.expanded.iter().any(|e| folded_path(e) == key)
+        self.expanded.contains(&folded_path(path))
     }
 
     pub fn tree_rows(&self) -> &[TreeRow] {
@@ -1574,10 +1574,8 @@ impl App {
         }
         if let Some(folder) = command.strip_prefix("toggle-folder:") {
             let key = folded_path(folder);
-            if self.folder_open(&key) {
-                self.expanded.retain(|e| folded_path(e) != key);
-            } else {
-                self.expanded.insert(folder.to_string());
+            if !self.expanded.remove(&key) {
+                self.expanded.insert(key);
             }
             self.tree = None;
             return;
@@ -1739,6 +1737,7 @@ impl App {
                             .chain((!dir.is_empty()).then(|| dir.to_string()))
                             .collect::<Vec<_>>()
                     })
+                    .map(|d| folded_path(&d))
                     .collect();
                 if self.expanded.is_empty() {
                     self.expanded = folders;

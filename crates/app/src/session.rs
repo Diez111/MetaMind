@@ -162,7 +162,7 @@ impl App {
         // back, and only while "recordar carpetas expandidas" is on.
         if self.remember_expanded() {
             if let Some(c) = v.get("expanded").and_then(Value::as_array) {
-                self.expanded = c.iter().filter_map(Value::as_str).map(str::to_string).collect();
+                self.expanded = c.iter().filter_map(Value::as_str).map(crate::shell::folded_path).collect();
                 self.tree = None;
             }
         }

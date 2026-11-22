@@ -160,7 +160,7 @@ impl App {
         } else if let Some(dir) = command.strip_prefix("bookmarks:reveal:") {
             let mut p = dir;
             while !p.is_empty() {
-                self.expanded.insert(p.to_string());
+                self.expanded.insert(crate::shell::folded_path(p));
                 p = path::parent(p);
             }
             self.tree = None;

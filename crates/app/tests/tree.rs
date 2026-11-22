@@ -29,14 +29,16 @@ fn rows(app: &mut App) -> Vec<(usize, String)> {
     app.tree_rows().iter().map(|r| (r.depth, r.label.clone())).collect()
 }
 
+/// Opens the folders the way a click does, so the test never depends on how the open set is
+/// spelled inside.
 fn open_all(app: &mut App) {
     for f in ["Facultad", "Facultad/Años", "Facultad/Materias"] {
-        app.expanded.insert(f.to_string());
+        app.run(&format!("toggle-folder:{f}"));
     }
     for y in ["1° Año", "2° Año", "3° Año", "4° Año"] {
-        app.expanded.insert(format!("Facultad/Años/{y}"));
+        app.run(&format!("toggle-folder:Facultad/Años/{y}"));
     }
-    app.expanded.insert("Facultad/Materias/1° Año".into());
+    app.run("toggle-folder:Facultad/Materias/1° Año");
 }
 
 fn labels(rows: &[(usize, String)]) -> Vec<(usize, &str)> {
@@ -95,8 +97,10 @@ fn one_folder_spelled_two_ways_is_listed_once() {
     w(r, "Facultad/Materias/1° Año/Algebra.md", "a\n");
     w(r, "facultad/materias/1° año/Fisica.md", "f\n");
     let mut app = App::open(r).unwrap();
+    // Opened by its capitalized spelling; the walk folds case, so the lowercase copy of the same
+    // branch shares the open folders with it.
     for f in ["Facultad", "Facultad/Materias", "Facultad/Materias/1° Año"] {
-        app.expanded.insert(f.to_string());
+        app.run(&format!("toggle-folder:{f}"));
     }
     let mut seen = std::collections::HashSet::new();
     let dup: Vec<String> = app
@@ -127,15 +131,15 @@ fn sidebars_and_open_folders_survive_a_restart() {
     app.run("toggle-folder:Facultad");
     app.run("toggle-folder:Facultad/Materias");
     app.run("toggle-folder:Facultad/Materias/1° Año");
-    assert!(app.expanded.contains("Facultad/Materias"));
+    assert!(app.folder_open("Facultad/Materias"));
     app.save_all();
 
     let mut app = App::open(d.path()).unwrap();
     app.restore_session();
     assert_eq!((app.left_w, app.right_w), (320.0, 412.0), "sidebar widths are remembered");
     assert!(app.right_open);
-    assert!(app.expanded.contains("Facultad/Materias"), "open folders are remembered");
-    assert!(app.expanded.contains("Facultad"));
+    assert!(app.folder_open("Facultad/Materias"), "open folders are remembered");
+    assert!(app.folder_open("Facultad"));
     let shown = rows(&mut app);
     let open = labels(&shown);
     assert!(open.contains(&(2, "1° Año")), "the remembered folder comes back open: {open:?}");
@@ -154,14 +158,14 @@ fn setting_off_always_starts_folded_and_saves_nothing() {
     assert!(!app.remember_expanded(), "the setting is off in app.json");
 
     app.run("toggle-folder:Facultad");
-    assert!(app.expanded.contains("Facultad"));
+    assert!(app.folder_open("Facultad"));
     app.save_all();
     let saved = fs::read_to_string(d.path().join(".obsidian/metamind-session.json")).unwrap();
     assert!(!saved.contains("expanded"), "nothing is recorded while the setting is off: {saved}");
 
     let mut app = App::open(d.path()).unwrap();
     app.restore_session();
-    assert!(app.expanded.is_empty());
+    assert!(!app.folder_open("Facultad"), "the setting off starts with the tree folded");
     assert_eq!(labels(&rows(&mut app)), [(0, "Facultad")]);
 }
 
