@@ -1053,7 +1053,7 @@ fn ai_sheet(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
     // The sheet takes its height from the window the same way the workspace does: the engine does
     // not resolve `position: relative` on an ancestor, so an absolute child with `bottom: 0` would
     // stretch past the note and under the bottom navigation.
-    let body_h = (app.window_h - STATUS_BAR_H - if app.compact { NAV_H } else { 0.0 }).max(0.0);
+    let body_h = (app.window_h - if app.compact { NAV_H } else { 0.0 }).max(0.0);
     let sheet = dom.add(
         parent,
         El::div()
@@ -2877,7 +2877,8 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
     if compact && app.ai_sheet() {
         ai_sheet(app, dom, ws, info);
     }
-    let status = dom.add(0, El::div().class("status-bar"));
+    // The status bar gives up its line in a compact window: the navigation is the footer there.
+    let status = dom.add(0, El::div().class("status-bar").class_if(app.compact, "is-hidden"));
     // What the element under the pointer does, with its hotkey. Rows whose label had to be
     // shortened (the explorer, the tabs) are named in full here: the status bar is this app's
     // tooltip, and a floating one would cover the row it describes.
@@ -3238,7 +3239,7 @@ type NavRow = (&'static str, &'static str, &'static str);
 /// The ⋮ menu, over the window: what the ribbon and the palettes offered, in one list that reads
 /// in a phone-sized window.
 fn more_sheet(app: &App, dom: &mut Dom) {
-    let body_h = (app.window_h - STATUS_BAR_H - NAV_H).max(0.0);
+    let body_h = (app.window_h - NAV_H).max(0.0);
     let sheet = dom.add(
         0,
         El::div()
@@ -3295,7 +3296,7 @@ fn more_sheet(app: &App, dom: &mut Dom) {
 /// with the accent on the one in force and an indicator that slides from the old one to the new.
 fn bottom_nav(app: &App, dom: &mut Dom) {
     let bar = dom
-        .add(0, El::div().class("bottom-nav").style(&format!("bottom: {STATUS_BAR_H}px; height: {NAV_H}px")));
+        .add(0, El::div().class("bottom-nav").style(&format!("bottom: 0; height: {NAV_H}px")));
     let agent = if app.compact && app.right_open { app.right_panel == RightPanel::Ai } else { false };
     let settings = app.settings.is_some();
     let items: [(&str, &str, &str, bool); 5] = [
@@ -3346,8 +3347,11 @@ pub fn build(app: &App, viewport_h: f32, solo: Option<usize>) -> (Dom, ViewInfo)
     dom.nodes[0].el.classes.push(if app.dark { "theme-dark" } else { "theme-light" }.to_string());
     // A window of its own shows the pane alone, with no status bar under it.
     // A compact window also keeps the bottom navigation out of the note's area.
+    // A compact window has one footer, not two: the bottom navigation takes the edge and the
+    // status bar gives up its 27 px, which a phone-sized screen cannot spare.
     let nav_h = if app.compact && solo.is_none() { NAV_H } else { 0.0 };
-    let body_h = if solo.is_some() { viewport_h } else { (viewport_h - STATUS_BAR_H - nav_h).max(0.0) };
+    let footer = if nav_h > 0.0 { nav_h } else { STATUS_BAR_H };
+    let body_h = if solo.is_some() { viewport_h } else { (viewport_h - footer).max(0.0) };
     // The bottom navigation belongs to the window, not to a pane: a pop-out shows a pane alone.
     let with_nav = app.compact && solo.is_none();
     // `flex-grow` in the sheet would let the workspace take the whole window back, over the

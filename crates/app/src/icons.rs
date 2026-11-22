@@ -1104,7 +1104,9 @@ pub fn paint(dom: &mut Dom) {
             .collect();
         let mut cmds = Vec::new();
         if !segs.is_empty() {
-            cmds.push(Cmd::Lines { segs, width: STROKE * k, color });
+            // A small icon gets a floor under the stroke: at 18 px the lucide weight lands on a
+            // 1.5 px hairline, and every glyph of a menu then reads thin and broken.
+            cmds.push(Cmd::Lines { segs, width: (STROKE * k).max(1.7), color });
         }
         if !shape.dots.is_empty() {
             let items = shape.dots.iter().map(|d| [ox + d[0] * k, oy + d[1] * k, d[2] * k]).collect();

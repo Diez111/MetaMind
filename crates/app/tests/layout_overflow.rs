@@ -636,10 +636,8 @@ fn the_copilot_sheet_slides_in_and_reduced_motion_skips_it() {
     app.run("ai:open");
     let now = frame(&mut app, &mut fonts, 360, 640);
     assert!(!app.anims.active(), "reduced motion starts no clock");
-    let (sheet, ws) = (
-        classed(&now, "ai-sheet").expect("the sheet"),
-        classed(&now, "workspace").expect("the workspace"),
-    );
+    let (sheet, ws) =
+        (classed(&now, "ai-sheet").expect("the sheet"), classed(&now, "workspace").expect("the workspace"));
     assert!((now.dom.nodes[sheet].rect.x - now.dom.nodes[ws].rect.x).abs() < 1.0);
 }
 
@@ -669,10 +667,7 @@ fn the_bottom_navigation_belongs_to_a_compact_window() {
     let items = all(&f, "bottom-nav-item");
     assert_eq!(items.len(), 6, "five destinations and the menu");
     let more = f.dom.nodes[items[5]].rect;
-    assert!(
-        (more.x + more.w - 360.0).abs() < 1.0,
-        "the menu sits at the bottom right corner: {more:?}"
-    );
+    assert!((more.x + more.w - 360.0).abs() < 1.0, "the menu sits at the bottom right corner: {more:?}");
     app.run("more:open");
     let f = frame(&mut app, &mut fonts, 360, 640);
     let menu = *all(&f, "more-sheet").first().expect("the menu opens over the note");

@@ -96,7 +96,7 @@ body {
 .side-dock-ribbon-spacer { flex-grow: 1 }
 .nav-buttons-container { display: flex; justify-content: center; gap: 4px; padding: 6px 8px }
 .tree-item-self.is-unresolved { color: var(--text-faint) }
-.workspace-ribbon.is-hidden, .view-header.is-hidden { display: none }
+.workspace-ribbon.is-hidden, .view-header.is-hidden, .status-bar.is-hidden { display: none }
 .graph-input.backlinks-filter { margin: 0 8px 6px 8px; flex-grow: 0 }
 .search-result-file-match.is-wrapped { white-space: normal }
 .sidebar-tab-header { display: flex; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--background-modifier-border) }
@@ -227,10 +227,10 @@ body {
 .media-card-secondary:hover { color: var(--text-accent); background-color: transparent }
 .media-card-action.is-busy { color: var(--text-muted); border-style: dashed }
 .media-card-note { margin-top: 3px; color: var(--text-faint); font-size: 0.8em; white-space: normal }
-.empty-state { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px }
+.empty-state { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 16px }
 /* The welcome card asks for 380 px but takes what the pane has: in a narrow window a fixed
    card pushed its rows, and their hotkeys, past the right edge. */
-.empty-state-container { width: 100%; max-width: 380px; min-width: 0; display: flex; flex-direction: column; align-items: center }
+.empty-state-container { width: 100%; max-width: 380px; min-width: 0; padding: 0 8px; display: flex; flex-direction: column; align-items: center }
 .empty-state-logo { width: 72px; height: 72px; margin-bottom: 14px }
 .empty-state-title { font-size: 20px; font-weight: 600; color: var(--text-normal); text-align: center }
 .empty-state-subtitle { color: var(--text-muted); margin: 6px 0 16px 0; text-align: center }
@@ -438,7 +438,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .modal-container { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center; background-color: var(--background-modifier-cover, rgba(0, 0, 0, 0.72)) }
 .modal.mod-settings { width: 900px; height: 620px; display: flex; flex-direction: column; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow: hidden }
 .settings-topbar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; flex-shrink: 0; background-color: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border) }
-.settings-topbar-title { font-size: 15px; font-weight: 600; color: var(--text-normal); min-width: 62px }
+.settings-topbar-title { flex-shrink: 0; white-space: nowrap; font-size: 15px; font-weight: 600; color: var(--text-normal); min-width: 62px }
 .settings-topbar-hint { color: var(--text-faint); font-size: var(--font-ui-smaller); white-space: nowrap; flex-shrink: 0; margin-left: auto; padding-left: 8px }
 .settings-topbar-close { width: 24px; height: 24px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-s); color: var(--text-muted); cursor: pointer }
 .settings-topbar-close:hover { background-color: var(--background-modifier-hover); color: var(--text-normal) }
@@ -621,7 +621,9 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .metadata-add-button { color: var(--text-faint); padding: 6px 0 2px 0; font-size: 0.8em }
 .metadata-add-button:hover { color: var(--text-normal) }
 .welcome { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px; background-color: var(--background-secondary) }
-.welcome-card { width: 560px; display: flex; flex-direction: column; padding: 40px 40px 32px 40px; background-color: var(--background-primary); border: 1px solid var(--rs-rule-strong); border-radius: 14px; box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22) }
+/* The welcome card asks for 560 px and takes what the window has: a fixed card in a phone-sized
+   window had its rows starting at the very edge and its right side cut. */
+.welcome-card { width: 100%; max-width: 560px; min-width: 0; display: flex; flex-direction: column; padding: 40px 40px 32px 40px; background-color: var(--background-primary); border: 1px solid var(--rs-rule-strong); border-radius: 14px; box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22) }
 .welcome-card.mod-browser { height: 500px; padding: 28px 32px 24px 32px }
 .welcome-card.mod-scroll { height: 660px }
 .welcome-brand { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; margin-bottom: 26px }
@@ -927,10 +929,10 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
    its icon and its name, and an indicator that slides to the one in force. It only exists below
    the shell's breakpoint, so the desktop layout is untouched. */
 .bottom-nav { position: absolute; left: 0; right: 0; display: flex; align-items: stretch; background-color: var(--background-secondary); border-top: 1px solid var(--background-modifier-border) }
-.bottom-nav-item { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding-bottom: 4px; color: var(--text-muted); cursor: pointer }
+.bottom-nav-item { flex-grow: 1; flex-basis: 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding-bottom: 4px; color: var(--text-muted); cursor: pointer }
 .bottom-nav-item:hover { color: var(--text-normal) }
 .bottom-nav-item.is-active { color: var(--text-accent) }
-.bottom-nav-icon { width: 18px; height: 18px; flex-shrink: 0 }
+.bottom-nav-icon { width: 20px; height: 20px; flex-shrink: 0 }
 /* The label takes the slot's width: a child of a centred column flex with only a max-width
    measured to zero and painted nothing. */
 .bottom-nav-label { width: 100%; text-align: center; font-size: 10px; line-height: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }

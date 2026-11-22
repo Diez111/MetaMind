@@ -2337,10 +2337,13 @@ pub fn modal(app: &App, dom: &mut Dom) {
     let Some(ui) = &app.settings else { return };
     let t = app.anims.t("settings");
     let backdrop = El::div().class("modal-container mod-dim").action("settings:close");
-    let mut style = format!("margin-bottom: {:.0}px; ", crate::view::STATUS_BAR_H);
+    // The panel ends where the window's footer begins: the navigation in a compact window, the
+    // status bar otherwise.
+    let footer = if app.compact { crate::view::NAV_H } else { crate::view::STATUS_BAR_H };
+    let mut style = format!("margin-bottom: {footer:.0}px; ");
     // The panel asks for 620 px, which is more than a small window has: it takes the height the
     // window can give, so it never sticks out of the top with its bar cut.
-    let room = (app.window_h - crate::view::STATUS_BAR_H - 24.0).max(320.0);
+    let room = (app.window_h - footer - 16.0).max(320.0);
     style.push_str(&format!("height: {:.0}px; ", room.min(620.0)));
     if t < 1.0 {
         style.push_str(&format!("margin-top: {:.1}px; ", 14.0 * (1.0 - t)));
