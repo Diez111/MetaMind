@@ -258,6 +258,7 @@ fn views() -> Vec<(&'static str, Vec<&'static str>)> {
         ("buscar", vec!["global-search:open"]),
         ("buscar-opciones", vec!["global-search:open"]),
         ("marcadores", vec!["bookmarks:open"]),
+        ("calendario", vec!["calendar:open"]),
         ("etiquetas", vec!["tag-pane:open"]),
         ("retroenlaces", vec!["backlinks:open"]),
         ("salientes", vec!["outgoing-links:open"]),

@@ -2776,12 +2776,11 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
     let right_w = app.anims.toward("right", app.right_open);
     // The width the user dragged stays the target: opening and closing scale it.
     let left_want = app.left_w.clamp(crate::shell::SIDE_W_MIN, crate::shell::SIDE_W_MAX) * left_w.min(1.0);
-    let right_want =
-        app.right_w.clamp(crate::shell::SIDE_W_MIN, crate::shell::SIDE_W_MAX) * right_w.min(1.0);
-    let (left_col, right_col) = if compact { (0.0, 0.0) } else { side_widths(avail, (left_want, right_want)) };
+    let right_want = app.right_w.clamp(crate::shell::SIDE_W_MIN, crate::shell::SIDE_W_MAX) * right_w.min(1.0);
+    let (left_col, right_col) =
+        if compact { (0.0, 0.0) } else { side_widths(avail, (left_want, right_want)) };
     if left_w > 0.01 && !compact {
-        let el =
-            El::div().class("workspace-split mod-left-split").style(&format!("width: {left_col:.1}px"));
+        let el = El::div().class("workspace-split mod-left-split").style(&format!("width: {left_col:.1}px"));
         let left = dom.add(ws, el);
         left_sidebar(app, dom, left, viewport_h);
         resize_handle(app, dom, left, true);
@@ -2810,10 +2809,9 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
             left_sidebar(app, dom, left, viewport_h);
         }
         if right_w > 0.01 {
-            let el = El::div().class("workspace-split mod-right-split is-floating").style(&format!(
-                "top: 0; bottom: 0; right: 0; width: {:.1}px",
-                float_w(avail, right_want)
-            ));
+            let el = El::div()
+                .class("workspace-split mod-right-split is-floating")
+                .style(&format!("top: 0; bottom: 0; right: 0; width: {:.1}px", float_w(avail, right_want)));
             let right = dom.add(ws, el);
             right_sidebar(app, dom, right, info);
         }
@@ -3007,11 +3005,7 @@ fn fold_settings(app: &App, dom: &mut Dom) {
     if app.window_w >= SETTINGS_W + 24.0 {
         return;
     }
-    let Some(n) = dom
-        .nodes
-        .iter_mut()
-        .find(|n| n.el.classes.iter().any(|c| c == "mod-settings"))
-    else {
+    let Some(n) = dom.nodes.iter_mut().find(|n| n.el.classes.iter().any(|c| c == "mod-settings")) else {
         return;
     };
     n.el.classes.push("is-compact".to_string());
@@ -3043,7 +3037,8 @@ fn overlays(app: &App, dom: &mut Dom, workspace: Option<NodeId>, viewport_h: f32
         // edges and takes the room between them.
         let narrow = app.window_w < crate::shell::COMPACT_W;
         let style = |top: f32, opacity: f32| {
-            let mut s = if narrow { "left: 12px; right: 12px; width: auto; ".to_string() } else { String::new() };
+            let mut s =
+                if narrow { "left: 12px; right: 12px; width: auto; ".to_string() } else { String::new() };
             s.push_str(&format!("top: {top:.1}px; opacity: {opacity:.2}"));
             s
         };

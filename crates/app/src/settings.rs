@@ -1199,7 +1199,19 @@ impl App {
                     }
                     return;
                 }
-                let Some(options) = choice_options(arg) else { return };
+                let options = if arg.starts_with("ai.model:") {
+                    // The models the provider answered for this profile: (id, id).
+                    let list: Vec<(String, String)> =
+                        self.ai_models.list.iter().map(|m| (m.clone(), m.clone())).collect();
+                    if list.is_empty() {
+                        self.notice = Some("Consultá los modelos del proveedor primero".to_string());
+                        return;
+                    }
+                    list
+                } else {
+                    let Some(options) = choice_options(arg) else { return };
+                    options
+                };
                 // It opens on the row the value in force is on.
                 let cur = item(arg).and_then(|it| self.setting_file(it.file).str(it.key).map(str::to_string));
                 let at = cur.and_then(|c| options.iter().position(|(v, _)| *v == c)).unwrap_or(0);
@@ -1247,6 +1259,15 @@ impl App {
             }
             return;
         }
+        if let Some(at) = key.strip_prefix("ai.model:").and_then(|a| a.parse::<usize>().ok()) {
+            let mut cfg = AiConfig::from_config(&self.config);
+            if at < cfg.profiles.len() && !value.trim().is_empty() {
+                cfg.profiles[at].model = value.trim().to_string();
+                self.set_ai_config(&cfg);
+                self.notice = Some(format!("Modelo: {value}"));
+            }
+            return;
+        }
         if let Some(at) = key.strip_prefix("ai.preset:").and_then(|a| a.parse::<usize>().ok()) {
             let Ok(index) = value.parse::<usize>() else { return };
             let Some(preset) = crate::ai::Preset::ALL.get(index).copied() else { return };
@@ -1254,6 +1275,9 @@ impl App {
             if at < cfg.profiles.len() && preset != crate::ai::Preset::Custom {
                 cfg.profiles[at].base_url = preset.base_url().to_string();
                 cfg.profiles[at].model = preset.model().to_string();
+                // The list belonged to the provider that was picked before: asking this one is
+                // the only way to know what it serves.
+                self.ai_models = Default::default();
                 self.set_ai_config(&cfg);
             }
             return;
@@ -1491,7 +1515,8 @@ fn dropdown(dom: &mut Dom, ctl: NodeId, ui: &SettingsUi, key: &str, label: &str,
     // sits inside the row's name-and-control line, so the row is two levels up.
     let main = dom.nodes[ctl].parent.unwrap_or(ctl);
     let row = dom.nodes[main].parent.unwrap_or(main);
-    let menu = dom.add(row, El::div().class("setting-menu").attr("role", "listbox"));
+    let wrap = dom.add(row, El::div().class("setting-menu-wrap"));
+    let menu = dom.add(wrap, El::div().class("setting-menu").attr("role", "listbox"));
     for (i, (value, text)) in m.options.iter().enumerate() {
         dom.add(
             menu,
@@ -2153,6 +2178,12 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     );
     let ctl = row(dom, parent, "Modelo", "Nombre del modelo tal como lo espera el proveedor.");
     input(dom, ctl, &format!("ai.p:model:{at}"), &p.model, ui.edit.as_ref(), Some("deepseek-v4.1-flash"));
+    // What the provider says it serves right now, when it has been asked: the model comes from
+    // this list instead of being typed from memory.
+    if app.ai_models.profile == p.name && !app.ai_models.list.is_empty() {
+        let ctl = row(dom, parent, "Elegir del proveedor", "Los modelos que la API respondió hace un momento.");
+        dropdown(dom, ctl, ui, &format!("ai.model:{at}"), &p.model, &p.model);
+    }
     // What the provider says it serves, asked for on demand: the list is the source of truth for
     // the spelling of a model, which is where a hand-written name usually goes wrong.
     let listing = app.ai_models.pending_for(&p.name);

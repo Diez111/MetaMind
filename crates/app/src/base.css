@@ -787,16 +787,18 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .ai-send.is-busy { opacity: 0.5 }
 
 /* ---- Calendar pane (left sidebar) ---- */
-.calendar-nav { display: flex; align-items: center; gap: 2px; padding: 0 8px 4px 8px }
+.calendar-nav { display: flex; align-items: center; gap: 2px; padding: 2px 8px 6px 8px }
 .calendar-nav-title { flex-grow: 1; min-width: 0; color: var(--text-normal); font-size: var(--font-ui-small); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center }
 .calendar-today { padding: 2px 6px; border-radius: var(--radius-s); color: var(--text-muted); font-size: var(--font-ui-smaller); white-space: nowrap }
 .calendar-today:hover { background-color: var(--background-modifier-hover); color: var(--text-normal) }
 .calendar-error { margin: 0 8px 4px 8px; padding: 4px 6px; border-radius: var(--radius-s); background-color: var(--rs-band); color: var(--rs-warning); font-size: var(--font-ui-smaller) }
 .calendar-weekdays { display: flex; gap: 1px; padding: 0 8px 2px 8px }
 .calendar-weekday { flex-grow: 1; flex-basis: 0; color: var(--text-faint); font-size: 10px; text-align: center }
-.calendar-grid { display: flex; flex-direction: column; gap: 1px; padding: 0 8px 6px 8px; min-height: 126px }
-.calendar-row { display: flex; gap: 1px; flex-grow: 1 }
-.calendar-cell { flex-grow: 1; flex-basis: 0; min-width: 0; min-height: 21px; padding: 2px 3px; border-radius: var(--radius-s); background-color: var(--rs-band); color: var(--text-muted) }
+.calendar-grid { display: flex; flex-direction: column; gap: 2px; padding: 0 8px 6px 8px; min-height: 126px }
+/* A row is a row of cells, not a band that stretches to fill the panel: the days keep the
+   height of a day and the grid leaves the rest of the space below them. */
+.calendar-row { display: flex; gap: 2px; flex-grow: 0 }
+.calendar-cell { flex-grow: 1; flex-basis: 0; min-width: 0; min-height: 24px; padding: 3px 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border: 1px solid var(--background-modifier-border); border-radius: 6px; background-color: var(--rs-band); color: var(--text-muted) }
 .calendar-cell:hover { background-color: var(--background-modifier-hover) }
 .calendar-cell.is-other-month { color: var(--text-faint); background-color: transparent }
 .calendar-cell.is-today { background-color: var(--background-modifier-active-hover); color: var(--text-normal) }
@@ -811,7 +813,8 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .calendar-more { color: var(--text-faint); font-size: 9px; line-height: 9px }
 .calendar-day-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px 4px 12px; border-top: 1px solid var(--background-modifier-border) }
 .calendar-day-title { flex-grow: 1; min-width: 0; color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-.calendar-day-open { display: flex; align-items: center; gap: 3px; color: var(--text-accent); font-size: var(--font-ui-smaller); white-space: nowrap }
+/* The button keeps its width: squeezed, its icon used to sit on top of its own label. */
+.calendar-day-open { display: flex; align-items: center; gap: 4px; flex-shrink: 0; color: var(--text-accent); font-size: var(--font-ui-smaller); white-space: nowrap }
 .calendar-day-open:hover { text-decoration: underline }
 .calendar-day-open .svg-icon { width: 12px; height: 12px }
 .calendar-day-list { padding: 0 8px 8px 8px; flex-grow: 1 }
@@ -888,3 +891,9 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .modal.mod-settings .settings-body,
 .modal.mod-settings .vertical-tab-content-container,
 .modal.mod-settings .vertical-tab-content { min-width: 0 }
+
+/* A dropdown list hangs under its own control, aligned to the column's right edge: it is the
+   answer to the field the reader just pressed, not a list floating under the label. */
+.setting-menu-wrap { display: flex; justify-content: flex-end; width: 100% }
+.calendar-day-open-icon { width: 12px; height: 12px; flex-shrink: 0 }
+.calendar-day-open-label { white-space: nowrap }

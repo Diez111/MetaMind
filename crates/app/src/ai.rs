@@ -188,6 +188,8 @@ pub const SUMMARIZE_NOTE_PROMPT: &str = "Resume la nota abierta: la idea central
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Preset {
     DeepSeek,
+    /// The OpenCode Go subscription: one OpenAI-compatible endpoint in front of several models.
+    OpenCodeGo,
     OpenAi,
     OpenRouter,
     Groq,
@@ -198,12 +200,20 @@ pub enum Preset {
 
 impl Preset {
     /// The presets in the order the settings dropdown walks them.
-    pub const ALL: [Preset; 6] =
-        [Preset::DeepSeek, Preset::OpenAi, Preset::OpenRouter, Preset::Groq, Preset::Ollama, Preset::Custom];
+    pub const ALL: [Preset; 7] = [
+        Preset::DeepSeek,
+        Preset::OpenCodeGo,
+        Preset::OpenAi,
+        Preset::OpenRouter,
+        Preset::Groq,
+        Preset::Ollama,
+        Preset::Custom,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             Preset::DeepSeek => "DeepSeek",
+            Preset::OpenCodeGo => "OpenCode Go",
             Preset::OpenAi => "OpenAI",
             Preset::OpenRouter => "OpenRouter",
             Preset::Groq => "Groq",
@@ -216,6 +226,8 @@ impl Preset {
     pub fn base_url(self) -> &'static str {
         match self {
             Preset::DeepSeek => "https://api.deepseek.com",
+            // What the OpenCode Go subscription answers on, as its own catalog declares it.
+            Preset::OpenCodeGo => "https://opencode.ai/inference/go/openai/v1",
             Preset::OpenAi => "https://api.openai.com",
             Preset::OpenRouter => "https://openrouter.ai/api/v1",
             Preset::Groq => "https://api.groq.com/openai/v1",
@@ -228,6 +240,7 @@ impl Preset {
     pub fn model(self) -> &'static str {
         match self {
             Preset::DeepSeek => DEFAULT_MODEL,
+            Preset::OpenCodeGo => DEFAULT_MODEL,
             Preset::OpenAi => "gpt-4o-mini",
             Preset::OpenRouter => "openai/gpt-4o-mini",
             Preset::Groq => "llama-3.3-70b-versatile",
@@ -1201,10 +1214,14 @@ mod tests {
         assert_eq!(p.base_url, "http://localhost:11434/v1", "Personalizado keeps what is there");
         assert_eq!(Preset::of_base_url("https://openrouter.ai/api/v1/"), Preset::OpenRouter);
         assert_eq!(Preset::of_base_url("http://127.0.0.1:8080"), Preset::Custom);
-        assert_eq!(Preset::DeepSeek.next(), Preset::OpenAi);
+        assert_eq!(Preset::DeepSeek.next(), Preset::OpenCodeGo);
+        assert_eq!(Preset::of_base_url("https://opencode.ai/inference/go/openai/v1"), Preset::OpenCodeGo);
         assert_eq!(Preset::Custom.next(), Preset::DeepSeek);
         let labels: Vec<_> = Preset::ALL.iter().map(|p| p.label()).collect();
-        assert_eq!(labels, ["DeepSeek", "OpenAI", "OpenRouter", "Groq", "Ollama local", "Personalizado"]);
+        assert_eq!(
+            labels,
+            ["DeepSeek", "OpenCode Go", "OpenAI", "OpenRouter", "Groq", "Ollama local", "Personalizado"]
+        );
     }
 
     #[test]
