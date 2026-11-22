@@ -59,7 +59,11 @@ pub struct Seen {
     pub notice: Option<String>,
     pub left: bool,
     pub right: bool,
-    pub view: String,
+    /// The popovers that come and go with the pointer and the keyboard.
+    pub hover: bool,
+    pub suggest: bool,
+    /// The tab with the focus, as (pane, index): the mark under it slides from the old one.
+    pub tab: (usize, usize),
 }
 
 /// How long a notice stays before it fades away by itself.
@@ -122,13 +126,9 @@ impl crate::App {
             notice: self.notice.clone(),
             left: self.left_open,
             right: self.right_open,
-            view: if self.show_graph {
-                "graph:".to_string()
-            } else if self.canvas_active() {
-                "canvas:".to_string()
-            } else {
-                self.tab().map(|t| t.path.clone()).unwrap_or_default()
-            },
+            hover: self.hover_preview.is_some(),
+            suggest: self.suggest.is_some(),
+            tab: (self.pane, self.active),
         };
         let Some(old) = self.seen.replace(now.clone()) else { return };
         if now.prompt && !old.prompt {
@@ -152,8 +152,22 @@ impl crate::App {
         if now.right != old.right {
             self.anims.start("right", SLOW_MS);
         }
-        if now.view != old.view {
-            self.anims.start("view", FAST_MS);
+        if now.hover && !old.hover {
+            self.anims.start("hover", FAST_MS);
+            // A new preview starts at the top of its own note, not where the last one was left.
+            self.scrolls.remove("hover-popover");
+        }
+        if now.suggest && !old.suggest {
+            self.anims.start("suggest", FAST_MS);
+        }
+        if now.tab != old.tab {
+            // The mark under the tab bar travels from the tab that had the focus to the one that
+            // took it; a tab that closed under the mark leaves it in place.
+            self.tab_from = (now.tab.1 < self.tabs.len()).then_some(old.tab);
+            self.anims.start("tab", FAST_MS);
+        }
+        if self.anims.t("tab") >= 1.0 {
+            self.tab_from = None;
         }
     }
 

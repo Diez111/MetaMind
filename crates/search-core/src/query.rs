@@ -231,7 +231,9 @@ impl<'a> P<'a> {
             }
         }
         for (name, op) in OPS {
-            if r.len() >= name.len() && r[..name.len()].eq_ignore_ascii_case(name) {
+            // `get` instead of a byte slice: the head of a word with an accent in it can end in the
+            // middle of a character, and a query is not a reason to panic.
+            if r.get(..name.len()).is_some_and(|head| head.eq_ignore_ascii_case(name)) {
                 self.i += name.len();
                 if self.rest().is_empty() || self.rest().starts_with(char::is_whitespace) {
                     // `tag:` with nothing after it matches everything, so typing stays responsive.
@@ -296,6 +298,17 @@ mod tests {
         assert_eq!(parse("ORANGE").unwrap(), t("ORANGE"));
         assert_eq!(parse("a - b").unwrap(), And(vec![t("a"), t("-"), t("b")]));
         assert_eq!(parse("").unwrap(), And(vec![]));
+    }
+
+    /// A word with a multi-byte character in the place an operator name would end used to slice
+    /// the query in the middle of that character and panic: typing "larguísima" closed the app.
+    #[test]
+    fn accented_words_are_terms() {
+        assert_eq!(parse("larguísima").unwrap(), t("larguísima"));
+        assert_eq!(parse("canción día").unwrap(), And(vec![t("canción"), t("día")]));
+        for q in ["íííí", "año", "á", "tag:canción", "-ñ", "ñandú OR día"] {
+            assert!(parse(q).is_ok(), "{q:?} parses");
+        }
     }
 
     #[test]

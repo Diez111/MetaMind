@@ -131,7 +131,10 @@ body {
 .bookmark .tree-item-flair { opacity: 0 }
 .bookmark:hover .tree-item-flair { opacity: 1 }
 .tree-item-self.is-group { color: var(--text-normal); font-weight: 600 }
-.pane-empty { padding: 12px; color: var(--text-faint); font-size: var(--font-ui-small) }
+/* An empty pane says so: a faint icon and one line, so a panel with nothing in it reads as a
+   state and not as a pane that failed to draw. */
+.pane-empty { display: flex; align-items: center; gap: 7px; padding: 12px; color: var(--text-faint); font-size: var(--font-ui-small); line-height: 1.45 }
+.pane-empty .svg-icon { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.75 }
 .nav-file-title.is-active { background-color: var(--background-modifier-active-hover); color: var(--text-normal) }
 .nav-folder-title.is-being-dragged-over, .nav-files-container.is-being-dragged-over { background-color: var(--background-modifier-active-hover) }
 .workspace-tab-header-container { display: flex; background-color: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border); height: 34px; overflow: hidden; padding: 6px 8px 0 8px; gap: 2px }
@@ -237,19 +240,35 @@ body {
 .status-bar-spinner { width: 10px; text-align: center; font-family: monospace; color: var(--interactive-accent) }
 .status-bar-busy-label { color: var(--text-muted) }
 .prompt { position: absolute; top: 80px; width: 560px; max-height: 420px; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); display: flex; flex-direction: column; overflow: hidden }
-.prompt-input-container { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--background-modifier-border); color: var(--text-faint) }
+/* The field of the palette is the ringed box at its top: the prompt always has the keyboard, so
+   it says so the same way the other fields do. */
+.prompt-input-container { display: flex; align-items: center; gap: 10px; margin: 8px 8px 0 8px; padding: 9px 12px; border: 2px solid var(--interactive-accent); border-radius: var(--radius-m); color: var(--text-faint); flex-shrink: 0 }
 .prompt-input { font-size: 16px; color: var(--text-normal); white-space: nowrap; flex-grow: 1; overflow: hidden }
-.prompt-results { padding: 6px; overflow: hidden }
+/* The results are one list in a box that can be shorter than the list: it scrolls, and the
+   keyboard keeps the selected row inside it. */
+.prompt-results { padding: 6px; overflow-y: auto }
 .suggestion-item { padding: 6px 10px; border-radius: var(--radius-s); display: flex; justify-content: space-between; white-space: nowrap; color: var(--text-normal) }
 .suggestion-item.is-selected, .suggestion-item:hover { background-color: var(--background-modifier-hover) }
+/* A command with a name longer than the box ends in an ellipsis; the hotkey on the right keeps
+   its own room instead of being pushed out. */
+.suggestion-title { min-width: 0; overflow: hidden; text-overflow: ellipsis }
+.suggestion-aux { flex-shrink: 0 }
 .suggestion-aux, .suggestion-note { color: var(--text-faint); font-size: var(--font-ui-smaller); white-space: nowrap }
 .search-input-container { margin: 0 12px 8px 12px; padding: 5px 8px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); background-color: var(--background-primary); color: var(--text-normal); white-space: nowrap; overflow: hidden }
+
 .search-options { margin: 0 12px 8px 12px; padding: 4px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background-color: var(--background-primary); display: flex; flex-direction: column }
 .search-options-title { padding: 4px 10px; color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: 600 }
 .search-options .suggestion-item { gap: 12px; overflow: hidden }
+/* The list of operators has to fit a 250 px sidebar: the operator keeps its name and the
+   description takes what is left, shortened with an ellipsis instead of running under the
+   panel's edge. */
+.search-options .suggestion-title { flex-shrink: 0 }
+.search-options .suggestion-aux { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis }
 .graph-control-section-body .search-options { margin: 4px 0 8px 0 }
-.search-result-file-title { padding: 4px 8px; color: var(--text-normal); font-weight: 600; white-space: nowrap; overflow: hidden }
-.search-result-file-match { padding: 2px 8px 2px 18px; color: var(--text-muted); font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden }
+.search-result-file-title { padding: 4px 8px; color: var(--text-normal); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+/* A snippet in a 250 px sidebar is one line: the rest of it ends in an ellipsis, and the whole
+   line is there to open the note. */
+.search-result-file-match { padding: 2px 8px 2px 18px; color: var(--text-muted); font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .pane-section { padding: 0 8px 8px 8px; overflow: hidden }
 .ime-preedit { position: absolute; background-color: var(--background-primary); color: var(--text-normal); white-space: nowrap; overflow: hidden }
 .editor-suggest { position: absolute; display: flex; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow: hidden }
@@ -257,15 +276,17 @@ body {
 .editor-suggest .suggestion-item { height: 30px; gap: 12px; overflow: hidden }
 .editor-suggest-preview { padding: 10px 12px; border-left: 1px solid var(--background-modifier-border); background-color: var(--background-secondary); overflow: hidden }
 .editor-suggest-preview-line { color: var(--text-muted); font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden }
-.hover-popover { position: absolute; display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow: hidden }
-.hover-popover-title { font-weight: 600; color: var(--text-normal); white-space: nowrap; overflow: hidden }
+/* The preview of a note under the pointer: a box with a ceiling, and the rest of the note is a
+   turn of the wheel away instead of cut at the edge of the box. */
+.hover-popover { position: absolute; display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow-y: auto }
+.hover-popover-title { font-weight: 600; color: var(--text-normal); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .hover-popover-empty { color: var(--text-muted); font-size: var(--font-ui-small) }
 .menu { position: absolute; background-color: #262626; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); padding: 4px; display: flex; flex-direction: column; overflow: hidden }
 .menu-item { height: 28px; padding: 0 10px; border-radius: var(--radius-s); display: flex; align-items: center; gap: 10px; white-space: nowrap; color: var(--text-normal) }
 .menu-item.is-selected, .menu-item:hover { background-color: var(--background-modifier-hover) }
 .menu-item .svg-icon { color: var(--text-muted) }
 .menu-item.is-warning, .menu-item.is-warning .svg-icon { color: var(--text-error) }
-.menu-item-title { flex-grow: 1; overflow: hidden }
+.menu-item-title { flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis }
 .menu-item-hotkey { color: var(--text-faint); font-size: var(--font-ui-smaller) }
 .menu-separator { height: 1px; margin: 4px 6px; background-color: var(--background-modifier-border) }
 .notice { position: absolute; bottom: 46px; top: auto; right: 16px; width: 420px; max-width: 420px; display: flex; align-items: flex-start; gap: 10px; background-color: var(--rs-toast); border: 1px solid var(--rs-rule-strong); border-left: 3px solid var(--rs-warning); border-radius: var(--radius-m); padding: 10px 12px; color: var(--text-normal); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35) }
@@ -763,3 +784,13 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .calendar-detail-more, .calendar-detail-open { color: var(--text-accent); font-size: var(--font-ui-smaller) }
 .calendar-detail-source { display: flex; align-items: center; gap: 4px; margin-top: 2px }
 .calendar-readonly { margin-top: 4px; color: var(--text-faint); font-size: 10px; white-space: normal }
+
+/* One ring for every field that takes typing: the accent border, two pixels, on the box the text
+   sits in. The search pane, the settings inputs, the graph's filter, the AI box, a property value
+   and the vault path all answer the same way when they have the keyboard. It lives at the end of
+   the sheet on purpose: it is the last word on the border of a field, so nothing above it can
+   leave one control with a thinner ring than its neighbour. */
+.search-input-container.is-editing, .graph-input.is-editing, .backlinks-filter.is-editing, .ai-input.is-editing { border: 2px solid var(--interactive-accent); padding: 4px 7px }
+.setting-input:focus, .setting-input.is-editing, .setting-hotkey.is-capturing { border: 2px solid var(--interactive-accent); padding: 3px 9px }
+.welcome-input { border: 2px solid var(--interactive-accent); padding: 5px 9px }
+.metadata-input.is-editing { border: 2px solid var(--interactive-accent); padding: 1px 5px }

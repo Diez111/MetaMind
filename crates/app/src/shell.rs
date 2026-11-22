@@ -298,6 +298,9 @@ pub struct Prompt {
     pub query: String,
     pub selected: usize,
     pub items: Vec<PromptItem>,
+    /// The row the list has to bring into view on the next layout: set when the selection moves,
+    /// so the wheel keeps whatever the reader scrolled to and the keyboard always shows its row.
+    pub scroll_to: Option<usize>,
 }
 
 /// One row of the file explorer.
@@ -539,6 +542,8 @@ pub struct App {
     /// Where the suggestion closed with Escape stays closed until the cursor leaves it.
     pub(crate) suggest_dismissed: Option<usize>,
     pub anims: crate::anim::Anims,
+    /// Where the tab indicator comes from while it slides to the tab that just took the focus.
+    pub tab_from: Option<(usize, usize)>,
     /// The in-app video player, while a note's video card is playing.
     pub video: crate::video::VideoPlayer,
     /// YouTube links played inside the application: the `yt-dlp` lookup and the run in flight.
@@ -818,6 +823,7 @@ impl App {
             hover_preview: None,
             suggest_dismissed: None,
             anims: Default::default(),
+            tab_from: None,
             seen: None,
             notice_since: None,
             update: crate::update::State::Idle,
@@ -1439,6 +1445,7 @@ impl App {
         if let Some(p) = &mut self.prompt {
             p.items = items;
             p.selected = p.selected.min(p.items.len().saturating_sub(1));
+            p.scroll_to = Some(p.selected);
         }
     }
 
@@ -1475,6 +1482,7 @@ impl App {
             query: String::new(),
             selected: 0,
             items: Vec::new(),
+            scroll_to: Some(0),
         });
         self.focus = Focus::Prompt;
         self.refresh_prompt();
@@ -2142,8 +2150,14 @@ impl App {
                 let Some(p) = &mut self.prompt else { return false };
                 match key.key.as_str() {
                     "Escape" => self.close_prompt(),
-                    "ArrowDown" => p.selected = (p.selected + 1).min(p.items.len().saturating_sub(1)),
-                    "ArrowUp" => p.selected = p.selected.saturating_sub(1),
+                    "ArrowDown" => {
+                        p.selected = (p.selected + 1).min(p.items.len().saturating_sub(1));
+                        p.scroll_to = Some(p.selected);
+                    }
+                    "ArrowUp" => {
+                        p.selected = p.selected.saturating_sub(1);
+                        p.scroll_to = Some(p.selected);
+                    }
                     "Backspace" => {
                         p.query.pop();
                         p.selected = 0;

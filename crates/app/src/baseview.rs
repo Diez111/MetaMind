@@ -335,6 +335,12 @@ pub fn pane(v: &BaseView, dom: &mut Dom, parent: NodeId) {
     dom.add(header, El::div().class("graph-count bases-count").text(count));
     let view = &base.views[v.view.min(base.views.len() - 1)];
     let shown = &items[..items.len().min(MAX_SHOWN)];
+    if shown.is_empty() {
+        // A base whose filter matched nothing says so once, instead of drawing an empty table
+        // (or a kanban board with no columns) and leaving the reader to guess.
+        bases_empty(dom, content, "La base no tiene resultados con estos filtros.");
+        return;
+    }
     if view.kind == ViewKind::Kanban {
         kanban(base, view, cols, shown, dom, content);
     } else {
@@ -346,6 +352,14 @@ pub fn pane(v: &BaseView, dom: &mut Dom, parent: NodeId) {
             El::div().class("bases-more").text(format!("{} más sin mostrar", items.len() - MAX_SHOWN)),
         );
     }
+}
+
+/// The one line a base without results shows: the same empty pane the sidebars use, so a view
+/// with nothing in it reads as a state of the base and not as a failed render.
+fn bases_empty(dom: &mut Dom, content: NodeId, text: &str) {
+    let row = dom.add(content, El::div().class("pane-empty"));
+    dom.add(row, crate::icons::el("list"));
+    dom.add(row, El::div().class("pane-empty-text").text(text.to_string()));
 }
 
 fn groups(base: &Base, view: &View, cols: &[String], shown: &[Item], dom: &mut Dom, content: NodeId) {

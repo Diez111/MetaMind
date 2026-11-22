@@ -1152,7 +1152,8 @@ fn input(
     let editing = edit.filter(|e| e.0 == key);
     let placeholder = placeholder.filter(|p| !p.is_empty() && shown.trim().is_empty() && editing.is_none());
     let text = match (editing, placeholder) {
-        (Some(e), _) => format!("{}▏", e.1),
+        // A long value keeps the end it is being typed into, and the caret with it.
+        (Some(e), _) => crate::view::with_caret(&e.1, 24),
         (None, Some(p)) => p.to_string(),
         (None, None) => shown.to_string(),
     };
