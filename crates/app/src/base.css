@@ -444,7 +444,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .settings-body { display: flex; flex-grow: 1; overflow: hidden }
 .vertical-tab-header { width: 212px; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; background-color: var(--background-secondary); border-right: 1px solid var(--background-modifier-border) }
 .vertical-tab-header-group-title { color: var(--text-faint); font-size: var(--font-ui-smaller); padding: 4px 10px 6px 10px; font-weight: 600 }
-.vertical-tab-nav-item { display: flex; align-items: center; gap: 9px; margin: 0 10px; padding: 7px 0; border: 1px solid transparent; border-radius: var(--radius-s); color: var(--text-muted); font-size: 14px; cursor: pointer }
+.vertical-tab-nav-item { display: flex; align-items: center; gap: 10px; margin: 0 6px; padding: 7px 10px; border: 1px solid transparent; border-radius: var(--radius-s); color: var(--text-muted); font-size: 14px; cursor: pointer }
 .vertical-tab-nav-item:hover { background-color: var(--background-modifier-hover); color: var(--text-normal) }
 .vertical-tab-nav-item.is-active { background-color: var(--background-modifier-active-hover); color: var(--text-normal) }
 .vertical-tab-nav-item:focus, .vertical-tab-nav-item.is-focused { border-color: var(--interactive-accent); color: var(--text-normal) }
@@ -491,6 +491,19 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .setting-item-control > .setting-button { width: auto }
 .setting-item-control > .theme-swatches { margin-right: 0 }
 .setting-input.is-editing, .setting-hotkey.is-capturing { border-color: var(--interactive-accent); background-color: var(--background-primary) }
+/* A selection in a field is not painted character by character (the field is one text node); the
+   border and the tint say that the next key replaces the whole value. */
+.setting-input.is-selecting { border-color: var(--interactive-accent); background-color: var(--background-modifier-active-hover) }
+/* A dropdown never grows past its column: a long value ends in an ellipsis and its full text is
+   the tooltip, instead of running under the label column. */
+.setting-item-control > .dropdown { overflow: hidden; text-overflow: ellipsis; min-width: 0 }
+.setting-item-control > .dropdown.is-open { border-color: var(--interactive-accent); background-color: var(--background-primary) }
+.setting-menu { width: 288px; margin-top: 8px; display: flex; flex-direction: column; gap: 2px; padding: 4px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m, 8px); background-color: var(--background-secondary); }
+/* The open list is the last line of its row, so the rows below move down and nothing is ever
+   painted over the list. */
+.setting-menu-item { padding: 6px 10px; border-radius: var(--radius-s); color: var(--text-normal); font-size: 13px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer }
+.setting-menu-item:hover, .setting-menu-item.is-active { background-color: var(--background-modifier-hover) }
+.setting-menu-item.is-checked { color: var(--text-accent); font-weight: 600 }
 /* An empty field shows the value that applies while it is empty, in the faint colour a
    placeholder uses, so it never reads as a broken control. */
 .setting-input.is-placeholder { color: var(--text-faint) }

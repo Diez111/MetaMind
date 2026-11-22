@@ -160,9 +160,9 @@ pub(crate) const CORE_PLUGINS: &[(&str, &str, &str, &[&str])] = &[
 
 pub struct SettingsUi {
     pub section: Section,
-    /// The text field being edited: (setting key, text so far). Plugin settings use
-    /// `@<plugin id>:<key>` here.
-    pub edit: Option<(String, String)>,
+    /// The text field being edited, with its caret and selection. Plugin settings use
+    /// `@<plugin id>:<key>` as the key.
+    pub edit: Option<FieldEdit>,
     /// The command whose hotkey is waiting for a key press.
     pub capture: Option<String>,
     pub filter: String,
@@ -176,6 +176,138 @@ pub struct SettingsUi {
     pub nav: Option<usize>,
     /// The profile whose form Ajustes → IA shows; `None` means the active one.
     pub ai_edit: Option<usize>,
+    /// The open dropdown: which control it belongs to, its options and the highlighted one.
+    pub menu: Option<SettingsMenu>,
+}
+
+/// A dropdown that is open: the control it belongs to, the options it offers (`value`, `label`)
+/// and the row the keyboard is on.
+#[derive(Clone, Debug)]
+pub struct SettingsMenu {
+    pub key: String,
+    pub options: Vec<(String, String)>,
+    pub at: usize,
+}
+
+/// A settings field with the keyboard: the text, the caret and the selection anchor, all as
+/// character indices so a multi-byte character is one step and never splits in half.
+#[derive(Clone, Debug)]
+pub struct FieldEdit {
+    pub key: String,
+    pub buf: String,
+    /// Caret position, in characters.
+    pub caret: usize,
+    /// Where a selection started; `None` while it is collapsed.
+    pub anchor: Option<usize>,
+}
+
+impl FieldEdit {
+    /// Editing `key` from the text it opens with, caret at the end.
+    pub fn new(key: impl Into<String>, buf: impl Into<String>) -> FieldEdit {
+        let buf = buf.into();
+        FieldEdit { key: key.into(), caret: buf.chars().count(), buf, anchor: None }
+    }
+
+    fn chars(&self) -> Vec<char> {
+        self.buf.chars().collect()
+    }
+
+    /// The selected range, low to high, or `None` while the caret is collapsed.
+    pub fn selection(&self) -> Option<(usize, usize)> {
+        let anchor = self.anchor?;
+        (anchor != self.caret).then(|| (anchor.min(self.caret), anchor.max(self.caret)))
+    }
+
+    /// Writes `text` over the selection, or at the caret, and leaves the caret after it.
+    pub fn insert(&mut self, text: &str) {
+        let mut chars = self.chars();
+        let (start, end) = self.selection().unwrap_or((self.caret, self.caret));
+        let start = start.min(chars.len());
+        let end = end.min(chars.len());
+        chars.splice(start..end.max(start), text.chars());
+        self.caret = start + text.chars().count();
+        self.anchor = None;
+        self.buf = chars.into_iter().collect();
+    }
+
+    /// Removes the selection, or the character before the caret.
+    pub fn backspace(&mut self) {
+        let mut chars = self.chars();
+        if let Some((start, end)) = self.selection() {
+            let start = start.min(chars.len());
+            chars.drain(start..end.min(chars.len()));
+            self.caret = start;
+        } else if self.caret > 0 {
+            let at = (self.caret - 1).min(chars.len().saturating_sub(1));
+            chars.remove(at);
+            self.caret = at;
+        }
+        self.anchor = None;
+        self.buf = chars.into_iter().collect();
+    }
+
+    /// Removes the selection, or the character under the caret.
+    pub fn delete(&mut self) {
+        let mut chars = self.chars();
+        if let Some((start, end)) = self.selection() {
+            let start = start.min(chars.len());
+            chars.drain(start..end.min(chars.len()));
+            self.caret = start;
+        } else if self.caret < chars.len() {
+            chars.remove(self.caret);
+        }
+        self.anchor = None;
+        self.buf = chars.into_iter().collect();
+    }
+
+    /// Removes everything and leaves the caret at the start.
+    pub fn clear(&mut self) {
+        self.buf.clear();
+        self.caret = 0;
+        self.anchor = None;
+    }
+
+    /// Moves the caret. `extend` is Shift: it drags the selection instead of dropping it.
+    pub fn move_caret(&mut self, to: usize, extend: bool) {
+        let len = self.buf.chars().count();
+        let to = to.min(len);
+        if extend {
+            if self.anchor.is_none() {
+                self.anchor = Some(self.caret);
+            }
+        } else {
+            self.anchor = None;
+        }
+        self.caret = to;
+    }
+
+    /// The visible window of the field: an ellipsis on the side that is out of view and a caret
+    /// bar where the caret is. `max` is how many characters fit.
+    pub fn view(&self, max: usize) -> String {
+        let chars = self.chars();
+        let len = chars.len();
+        let caret = self.caret.min(len);
+        // The caret sits before the character it points at, so the window leaves it room.
+        let start = if caret + 1 > max { caret + 1 - max } else { 0 };
+        let end = (start + max).min(len);
+        let mut out = String::new();
+        if start > 0 {
+            out.push('\u{2026}');
+        }
+        for (i, c) in chars.iter().enumerate().take(end).skip(start) {
+            if i == caret {
+                out.push('\u{258f}');
+            }
+            out.push(*c);
+        }
+        if caret >= end {
+            out.push('\u{258f}');
+        }
+        if end < len {
+            out.push('\u{2026}');
+        }
+        out
+    }
 }
 
 impl SettingsUi {
@@ -191,6 +323,7 @@ impl SettingsUi {
             plugin: None,
             nav: None,
             ai_edit: None,
+            menu: None,
         };
         s.scan(app);
         s
@@ -596,7 +729,9 @@ impl App {
     }
 
     fn commit_setting_edit(&mut self) {
-        let Some((key, text)) = self.settings.as_mut().and_then(|s| s.edit.take()) else { return };
+        let Some(field) = self.settings.as_mut().and_then(|s| s.edit.take()) else { return };
+        let key = field.key.clone();
+        let text = field.buf.clone();
         if key == "hk-filter" || key == "search" {
             if let Some(s) = &mut self.settings {
                 if key == "search" {
@@ -670,6 +805,12 @@ impl App {
         if !keeps_edit {
             self.commit_setting_edit();
         }
+        // Any other action closes an open dropdown: the click landed elsewhere.
+        if !matches!(op, "menu" | "pick" | "menu-move") {
+            if let Some(s) = &mut self.settings {
+                s.menu = None;
+            }
+        }
         match op {
             "close" => self.settings = None,
             "section" | "badge" => {
@@ -708,6 +849,9 @@ impl App {
                     self.save_setting(it.file, it.key, json!(!now));
                 }
             }
+            "menu" | "menu-move" | "pick" => {
+                self.menu_action(op, arg);
+            }
             "cycle" => {
                 if let Some((it, Choice(default, opts))) = item(arg).map(|i| (i, &i.control)) {
                     let cur = self.setting_file(it.file).str(it.key).unwrap_or(default).to_string();
@@ -745,7 +889,7 @@ impl App {
                     }
                 };
                 if let Some(s) = &mut self.settings {
-                    s.edit = Some((arg.to_string(), text));
+                    s.edit = Some(FieldEdit::new(arg, text));
                 }
             }
             "plugin" => {
@@ -1009,8 +1153,91 @@ impl App {
         self.set_ai_config(&cfg);
     }
 
+    /// Opens, closes, walks and answers the dropdown of Ajustes. `op` is `menu`, `menu-move` or
+    /// `pick`, with the key, the row step or the `<key>:<row>` of the pick in `arg`.
+    fn menu_action(&mut self, op: &str, arg: &str) {
+        match op {
+            "menu" => {
+                let open = self.settings.as_ref().and_then(|s| s.menu.as_ref()).map(|m| m.key.clone());
+                if open.as_deref() == Some(arg) {
+                    if let Some(s) = &mut self.settings {
+                        s.menu = None;
+                    }
+                    return;
+                }
+                let Some(options) = choice_options(arg) else { return };
+                // It opens on the row the value in force is on.
+                let cur = item(arg).and_then(|it| self.setting_file(it.file).str(it.key).map(str::to_string));
+                let at = cur.and_then(|c| options.iter().position(|(v, _)| *v == c)).unwrap_or(0);
+                if let Some(s) = &mut self.settings {
+                    s.menu = Some(SettingsMenu { key: arg.to_string(), options, at });
+                }
+            }
+            "menu-move" => {
+                let step: isize = arg.parse().unwrap_or(1);
+                if let Some(m) = self.settings.as_mut().and_then(|s| s.menu.as_mut()) {
+                    let n = m.options.len() as isize;
+                    if n > 0 {
+                        m.at = (m.at as isize + step).rem_euclid(n) as usize;
+                    }
+                }
+            }
+            _ => {
+                let picked = arg.rsplit_once(':').and_then(|(key, i)| {
+                    let i: usize = i.parse().ok()?;
+                    let m = self.settings.as_ref()?.menu.as_ref()?;
+                    let value = m.options.get(i)?.0.clone();
+                    Some((key.to_string(), value))
+                });
+                if let Some((key, value)) = picked {
+                    self.apply_choice(&key, &value);
+                }
+                if let Some(s) = &mut self.settings {
+                    s.menu = None;
+                }
+            }
+        }
+    }
+
+    /// Writes what a dropdown picked: a settings choice, or the preset of an AI profile, which
+    /// fills the URL and a model that provider usually serves.
+    fn apply_choice(&mut self, key: &str, value: &str) {
+        if let Some(at) = key.strip_prefix("ai.preset:").and_then(|a| a.parse::<usize>().ok()) {
+            let Ok(index) = value.parse::<usize>() else { return };
+            let Some(preset) = crate::ai::Preset::ALL.get(index).copied() else { return };
+            let mut cfg = AiConfig::from_config(&self.config);
+            if at < cfg.profiles.len() && preset != crate::ai::Preset::Custom {
+                cfg.profiles[at].base_url = preset.base_url().to_string();
+                cfg.profiles[at].model = preset.model().to_string();
+                self.set_ai_config(&cfg);
+            }
+            return;
+        }
+        if let Some((it, Choice(_, opts))) = item(key).map(|i| (i, &i.control)) {
+            if opts.iter().any(|o| o.0 == value) {
+                self.save_setting(it.file, it.key, json!(value));
+            }
+        }
+    }
+
     fn edit_key(&self) -> Option<&str> {
-        self.settings.as_ref()?.edit.as_ref().map(|e| e.0.as_str())
+        self.settings.as_ref()?.edit.as_ref().map(|e| e.key.as_str())
+    }
+
+    /// One key press while a control of Ajustes is being edited: the caret, the selection and the
+    /// clipboard. Returns whether the key was used, which is always here.
+    fn settings_field_key(&mut self, key: &Key) -> bool {
+        let Some(e) = self.settings.as_mut().and_then(|s| s.edit.as_mut()) else { return true };
+        let notice = if key.ctrl && !key.alt {
+            field_clipboard(e, &key.key)
+        } else {
+            field_caret(e, key);
+            None
+        };
+        if let Some(n) = notice {
+            self.notice = Some(n);
+        }
+        true
     }
 
     /// Key press while a property or a settings control has the keyboard. `None` lets the
@@ -1027,6 +1254,28 @@ impl App {
         }
         if let Some(r) = self.ai_key(key) {
             return Some(r);
+        }
+        // An open dropdown takes the arrows, Enter and Escape before the categories do.
+        let menu = self.settings.as_ref().and_then(|s| s.menu.as_ref()).map(|m| (m.key.clone(), m.at));
+        if let Some((mkey, at)) = menu {
+            match key.key.as_str() {
+                step @ ("ArrowDown" | "ArrowUp") => {
+                    let d = if step == "ArrowDown" { 1 } else { -1 };
+                    self.run_settings(&format!("settings:menu-move:{d}"));
+                    return Some(true);
+                }
+                "Enter" => {
+                    self.run_settings(&format!("settings:pick:{mkey}:{at}"));
+                    return Some(true);
+                }
+                "Escape" => {
+                    if let Some(s) = &mut self.settings {
+                        s.menu = None;
+                    }
+                    return Some(true);
+                }
+                _ => {}
+            }
         }
         let s = self.settings.as_mut()?;
         let plain = !key.ctrl && !key.alt && !key.shift;
@@ -1047,16 +1296,22 @@ impl App {
             }
             return Some(true);
         }
-        if let Some((_, buf)) = &mut s.edit {
+        // A field with the keyboard: the caret moves and the clipboard reaches it. Every key is
+        // answered here, so no shortcut fires halfway through typing (Ctrl+V used to paste into
+        // the note behind the panel). Enter commits and Escape abandons before the buffer is
+        // borrowed, because both end the edit.
+        if s.edit.is_some() {
             match key.key.as_str() {
-                "Escape" => s.edit = None,
-                "Enter" | "Tab" => self.commit_setting_edit(),
-                "Backspace" => {
-                    buf.pop();
+                "Escape" if !key.ctrl && !key.alt => {
+                    self.settings.as_mut().map(|s| s.edit = None);
+                    return Some(true);
                 }
-                _ => {}
+                "Enter" | "Tab" if !key.ctrl && !key.alt => {
+                    self.commit_setting_edit();
+                    return Some(true);
+                }
+                _ => return Some(self.settings_field_key(key)),
             }
-            return Some(true);
         }
         // Keyboard navigation: arrows and Tab move the focus ring through the categories.
         if !key.ctrl && !key.alt {
@@ -1092,8 +1347,8 @@ impl App {
             return true;
         }
         let Some(s) = &mut self.settings else { return false };
-        if let Some((_, buf)) = &mut s.edit {
-            buf.push_str(text);
+        if let Some(e) = &mut s.edit {
+            e.insert(text);
         }
         true
     }
@@ -1101,6 +1356,59 @@ impl App {
 
 fn vault_core_num(n: f64) -> String {
     md_engine::frontmatter::fmt_number(n)
+}
+
+/// What a dropdown offers: the options of a settings choice, or the provider presets of an AI
+/// profile (their index is the value, so picking one fills the URL and a model).
+fn choice_options(key: &str) -> Option<Vec<(String, String)>> {
+    if key.starts_with("ai.preset:") {
+        return Some(
+            crate::ai::Preset::ALL
+                .iter()
+                .enumerate()
+                .map(|(i, p)| (i.to_string(), p.label().to_string()))
+                .collect(),
+        );
+    }
+    let Choice(_, opts) = item(key)?.control else { return None };
+    Some(opts.iter().map(|(v, l)| ((*v).to_string(), (*l).to_string())).collect())
+}
+
+/// The dropdown of a settings row: the value in force and, when it is open, the list to pick
+/// from. The list is laid over the rows, anchored to the control, so opening it moves nothing.
+fn dropdown(dom: &mut Dom, ctl: NodeId, ui: &SettingsUi, key: &str, label: &str, current: &str) {
+    let open = ui.menu.as_ref().filter(|m| m.key == key);
+    dom.add(
+        ctl,
+        El::div()
+            .class("dropdown")
+            .class_if(open.is_some(), "is-open")
+            .attr("title", label)
+            .attr("aria-haspopup", "listbox")
+            .attr("aria-expanded", if open.is_some() { "true" } else { "false" })
+            .text(format!("{label} ▾"))
+            .action(format!("settings:menu:{key}")),
+    );
+    let Some(m) = open else { return };
+    // The list hangs from the row, not from the 216 px control column: it gets the room it needs
+    // and grows the row instead of floating over the next one (the renderer paints in DOM order
+    // and has no z-index, so a floating list would be painted under the row below). The control
+    // sits inside the row's name-and-control line, so the row is two levels up.
+    let main = dom.nodes[ctl].parent.unwrap_or(ctl);
+    let row = dom.nodes[main].parent.unwrap_or(main);
+    let menu = dom.add(row, El::div().class("setting-menu").attr("role", "listbox"));
+    for (i, (value, text)) in m.options.iter().enumerate() {
+        dom.add(
+            menu,
+            El::div()
+                .class("setting-menu-item")
+                .class_if(i == m.at, "is-active")
+                .class_if(value == current, "is-checked")
+                .attr("role", "option")
+                .text(text.clone())
+                .action(format!("settings:pick:{key}:{i}")),
+        );
+    }
 }
 
 /// A setting row: the name and its description in the label column, the control beside them.
@@ -1146,14 +1454,14 @@ fn input(
     ctl: NodeId,
     key: &str,
     shown: &str,
-    edit: Option<&(String, String)>,
+    edit: Option<&FieldEdit>,
     placeholder: Option<&str>,
 ) -> NodeId {
-    let editing = edit.filter(|e| e.0 == key);
+    let editing = edit.filter(|e| e.key == key);
     let placeholder = placeholder.filter(|p| !p.is_empty() && shown.trim().is_empty() && editing.is_none());
     let text = match (editing, placeholder) {
-        // A long value keeps the end it is being typed into, and the caret with it.
-        (Some(e), _) => crate::view::with_caret(&e.1, 24),
+        // The field shows the text around the caret, with the caret in it.
+        (Some(e), _) => e.view(24),
         (None, Some(p)) => p.to_string(),
         (None, None) => shown.to_string(),
     };
@@ -1162,6 +1470,7 @@ fn input(
         El::div()
             .class("setting-input")
             .class_if(editing.is_some(), "is-editing")
+            .class_if(editing.is_some_and(|e| e.selection().is_some()), "is-selecting")
             .class_if(placeholder.is_some(), "is-placeholder")
             .text(text)
             .action(format!("settings:edit:{key}")),
@@ -1253,22 +1562,16 @@ fn items_view(
         match &it.control {
             Toggle(d) => toggle(dom, ctl, file.bool(it.key, *d), format!("settings:toggle:{}", it.key)),
             Choice(d, opts) => {
-                let cur = file.str(it.key).unwrap_or(d);
-                let label = opts.iter().find(|o| o.0 == cur).map_or(cur, |o| o.1);
+                let cur = file.str(it.key).unwrap_or(d).to_string();
+                let label = opts.iter().find(|o| o.0 == cur).map_or(cur.as_str(), |o| o.1).to_string();
                 // The scheme picks itself from three previews; the dropdown that says its name is
                 // the same control twice. It stays for a row of search results, which has no room
                 // for the previews.
                 if it.key == "theme" && previews {
-                    theme_swatches(dom, ctl, cur);
+                    theme_swatches(dom, ctl, &cur);
                     continue;
                 }
-                dom.add(
-                    ctl,
-                    El::div()
-                        .class("dropdown")
-                        .text(format!("{label} ▾"))
-                        .action(format!("settings:cycle:{}", it.key)),
-                );
+                dropdown(dom, ctl, ui, it.key, &label, &cur);
             }
             Text => {
                 input(
@@ -1677,10 +1980,19 @@ fn ai_matches(needle: &str) -> bool {
 
 /// A text control whose contents are never painted: a row of dots when a value is set, and one
 /// dot per character while it is being edited.
-fn masked_input(dom: &mut Dom, ctl: NodeId, key: &str, set: bool, edit: Option<&(String, String)>) -> NodeId {
-    let editing = edit.filter(|e| e.0 == key);
+fn masked_input(dom: &mut Dom, ctl: NodeId, key: &str, set: bool, edit: Option<&FieldEdit>) -> NodeId {
+    let editing = edit.filter(|e| e.key == key);
+    // Never the text itself: one dot per character with the caret among them, so a pasted key
+    // still reads as one value of the right length.
     let text = match editing {
-        Some(e) => format!("{}▏", "•".repeat(e.1.chars().count().clamp(1, 24))),
+        Some(e) => {
+            let n = e.buf.chars().count().clamp(1, 24);
+            let caret = e.caret.min(n);
+            let mut dots = "•".repeat(caret);
+            dots.push('\u{258f}');
+            dots.push_str(&"•".repeat(n - caret));
+            dots
+        }
         None if set => "••••••••".to_string(),
         None => "Sin clave".to_string(),
     };
@@ -1734,13 +2046,7 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
         "Proveedor",
         "Elegir un preset completa la URL y un modelo típico; «Personalizado» deja los tuyos.",
     );
-    dom.add(
-        ctl,
-        El::div()
-            .class("dropdown")
-            .text(format!("{} ▾", p.preset().label()))
-            .action(format!("settings:ai-preset:{at}")),
-    );
+    dropdown(dom, ctl, ui, &format!("ai.preset:{at}"), p.preset().label(), p.preset().label());
     let ctl = row(dom, parent, "URL base", "Origen de la API, con o sin su /v1.");
     input(
         dom,
@@ -1843,7 +2149,7 @@ pub fn modal(app: &App, dom: &mut Dom) {
     dom.add(bar, El::div().class("settings-topbar-title").text("Ajustes"));
     let search_box = dom.add(bar, El::div().class("settings-search"));
     dom.add(search_box, icons::el("search").class("settings-search-icon"));
-    let search = ui.edit.as_ref().filter(|e| e.0 == "search").map_or(ui.search.as_str(), |e| e.1.as_str());
+    let search = ui.edit.as_ref().filter(|e| e.key == "search").map_or(ui.search.as_str(), |e| e.buf.as_str());
     input(dom, search_box, "search", search, ui.edit.as_ref(), Some("Buscar ajustes…"));
     // The hint only says how to close: Ctrl+, is what opens this window, and it is in the
     // command list and the ribbon already.
@@ -1897,7 +2203,13 @@ pub fn modal(app: &App, dom: &mut Dom) {
     } else if !(ui.section == Section::Plugins && ui.plugin.is_some()) {
         section_header(dom, container, ui.section);
     }
-    let content = dom.add(container, El::div().class("vertical-tab-content").id("settings-content"));
+    let content = dom.add(
+        container,
+        El::div()
+            .class("vertical-tab-content")
+            .class_if(ui.menu.is_some(), "has-menu")
+            .id("settings-content"),
+    );
     if !needle.is_empty() {
         search_view(app, dom, content, ui, &needle);
     } else {
@@ -1911,6 +2223,97 @@ pub fn modal(app: &App, dom: &mut Dom) {
         }
     }
     let _ = TrashMode::Vault;
+}
+
+/// Select all, copy, cut, paste and the word-wise deletes of a field being edited. Returns the
+/// notice to show when the clipboard is out of reach.
+fn field_clipboard(e: &mut FieldEdit, key: &str) -> Option<String> {
+    let word = key.to_lowercase();
+    match word.as_str() {
+        // Select all, so the next thing typed or pasted replaces the field.
+        "a" => {
+            e.anchor = Some(0);
+            e.caret = e.buf.chars().count();
+        }
+        "c" | "x" => {
+            let n = e.buf.chars().count();
+            let range = e.selection().or_else(|| (n > 0).then_some((0, n)));
+            if let Some((a, b)) = range {
+                let text: String = e.chars()[a..b].iter().collect();
+                if let Err(err) = crate::clipboard::set(&text) {
+                    return Some(format!("No se pudo copiar: {err}"));
+                }
+                // Cutting empties what it copies, which is how a whole key gets replaced.
+                if word == "x" {
+                    e.anchor = Some(a);
+                    e.caret = b;
+                    e.backspace();
+                }
+            }
+        }
+        "v" => {
+            return match crate::clipboard::get_paste() {
+                Ok(crate::clipboard::Paste::Text(t)) => {
+                    e.insert(&t);
+                    None
+                }
+                Ok(_) => Some("El portapapeles no tiene texto".to_string()),
+                Err(err) => Some(format!("No se pudo leer el portapapeles: {err}")),
+            }
+        }
+        // Ctrl+Backspace erases the word before the caret, Ctrl+Delete the one after.
+        "backspace" | "delete" => {
+            let left = word == "backspace";
+            let chars = e.chars();
+            let mut at = e.caret.min(chars.len());
+            if left {
+                while at > 0 && chars[at - 1].is_whitespace() {
+                    at -= 1;
+                }
+                while at > 0 && !chars[at - 1].is_whitespace() {
+                    at -= 1;
+                }
+                e.anchor = Some(at);
+                e.caret = e.caret.min(chars.len());
+            } else {
+                while at < chars.len() && chars[at].is_whitespace() {
+                    at += 1;
+                }
+                while at < chars.len() && !chars[at].is_whitespace() {
+                    at += 1;
+                }
+                e.anchor = Some(e.caret.min(chars.len()));
+                e.caret = at;
+            }
+            e.backspace();
+        }
+        _ => {}
+    }
+    None
+}
+
+/// The caret keys of a field: the arrows, Home, End and the two deletes, dragging the selection
+/// along while Shift is down.
+fn field_caret(e: &mut FieldEdit, key: &Key) {
+    match key.key.as_str() {
+        "Backspace" => e.backspace(),
+        "Delete" => e.delete(),
+        "ArrowLeft" => {
+            let to = e.selection().map_or(e.caret.saturating_sub(1), |(a, _)| a);
+            e.move_caret(to, key.shift);
+        }
+        "ArrowRight" => {
+            let len = e.buf.chars().count();
+            let at = e.selection().map_or(e.caret + 1, |(_, b)| b);
+            e.move_caret(at.min(len), key.shift);
+        }
+        "Home" => e.move_caret(0, key.shift),
+        "End" => {
+            let len = e.buf.chars().count();
+            e.move_caret(len, key.shift);
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]
@@ -1931,5 +2334,63 @@ mod tests {
         keys.sort_unstable();
         keys.dedup();
         assert_eq!(keys.len(), ITEMS.len());
+    }
+
+    #[test]
+    fn field_editing_moves_the_caret_and_replaces_the_selection() {
+        let mut e = FieldEdit::new("k", "abc");
+        assert_eq!(e.caret, 3);
+        e.insert("d");
+        assert_eq!(e.buf, "abcd");
+        e.backspace();
+        assert_eq!(e.buf, "abc");
+        e.move_caret(1, false);
+        e.insert("X");
+        assert_eq!(e.buf, "aXbc");
+        // Select all and type over it: the whole field goes.
+        e.anchor = Some(0);
+        e.caret = e.buf.chars().count();
+        assert_eq!(e.selection(), Some((0, 4)));
+        e.insert("z");
+        assert_eq!((e.buf.as_str(), e.caret), ("z", 1));
+        // A multi-byte character is one step and never splits in half.
+        let mut e = FieldEdit::new("k", "año");
+        e.move_caret(1, false);
+        e.backspace();
+        assert_eq!(e.buf, "ño");
+        e.delete();
+        assert_eq!(e.buf, "o");
+    }
+
+    #[test]
+    fn field_view_keeps_the_caret_visible() {
+        let mut e = FieldEdit::new("k", "0123456789");
+        assert!(e.view(4).ends_with('\u{258f}'), "{} ", e.view(4));
+        e.move_caret(0, false);
+        let start = e.view(4);
+        assert!(start.starts_with('\u{258f}'), "{start}");
+        e.move_caret(5, false);
+        let mid = e.view(4);
+        assert!(mid.contains('\u{258f}') && mid.starts_with('\u{2026}'), "{mid}");
+    }
+
+    #[test]
+    fn field_select_all_marks_the_whole_value() {
+        let mut e = FieldEdit::new("k", "sk-live-1234");
+        assert_eq!(field_clipboard(&mut e, "a"), None);
+        assert_eq!(e.selection(), Some((0, 12)));
+        // Typing over a selection replaces it, which is how a key is swapped.
+        e.insert("nueva");
+        assert_eq!((e.buf.as_str(), e.caret), ("nueva", 5));
+    }
+
+    #[test]
+    fn shifting_the_caret_selects() {
+        let mut e = FieldEdit::new("k", "hello");
+        e.move_caret(2, true);
+        assert_eq!(e.selection(), Some((2, 5)));
+        e.move_caret(1, false);
+        assert_eq!(e.selection(), None);
+        assert_eq!(e.caret, 1);
     }
 }

@@ -19,7 +19,7 @@ use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event::{ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key as WKey, ModifiersState, NamedKey};
-use winit::window::{CursorIcon, Icon, Theme, Window, WindowId};
+use winit::window::{CursorIcon, Icon, Theme, Window, WindowAttributes, WindowId};
 
 enum UserEvent {
     /// Changed paths from a vault watcher, tagged with the generation of the vault it watches.
@@ -92,6 +92,31 @@ struct Pop {
     ime_area: Option<metamind_ui::Rect>,
 }
 
+/// The application id: the file name of the desktop entry without `.desktop`
+/// (`packaging/metamind.desktop`). Wayland's `app_id` (and X11's `WM_CLASS`) is how COSMIC, GNOME
+/// and KDE tie a window to its entry, so its icon reaches the dock. Without it the dock shows a
+/// generic icon for the running app.
+pub const APP_ID: &str = "metamind";
+
+/// Names a window after its desktop entry. winit stores the name in one attribute that both its
+/// Wayland and X11 backends read, so one call covers every Linux and BSD window.
+#[cfg(all(
+    unix,
+    not(any(target_vendor = "apple", target_os = "android", target_os = "emscripten", target_os = "redox"))
+))]
+fn with_app_id(attrs: WindowAttributes) -> WindowAttributes {
+    use winit::platform::wayland::WindowAttributesExtWayland;
+    attrs.with_name(APP_ID, APP_ID)
+}
+
+#[cfg(not(all(
+    unix,
+    not(any(target_vendor = "apple", target_os = "android", target_os = "emscripten", target_os = "redox"))
+)))]
+fn with_app_id(attrs: WindowAttributes) -> WindowAttributes {
+    attrs
+}
+
 fn new_window(
     el: &ActiveEventLoop,
     title: &str,
@@ -104,6 +129,7 @@ fn new_window(
         .with_window_icon(icon)
         .with_inner_size(size)
         .with_visible(visible);
+    let attrs = with_app_id(attrs);
     let window = el.create_window(attrs).map_err(|e| format!("no se pudo crear una ventana: {e}"))?;
     window.set_ime_allowed(true);
     Ok(Arc::new(window))
