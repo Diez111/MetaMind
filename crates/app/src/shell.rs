@@ -1045,6 +1045,13 @@ impl App {
         self.show_graph = false;
         self.show_canvas = false;
         self.show_base = false;
+        // Leaving the board for a note writes it, the same as closing its tab.
+        if self.show_exc {
+            if let Some(v) = &mut self.exc_view {
+                v.commit_edit();
+            }
+            self.exc_save();
+        }
         self.show_exc = false;
         self.exc_fullscreen = false;
         self.plugins.push(ext_api::Event::FileOpen { path: rel.clone() });
@@ -1553,6 +1560,11 @@ impl App {
                 self.active = i;
                 self.show_graph = false;
                 self.show_canvas = false;
+                // Giving the pane back to a note writes the board first.
+                if let Some(v) = &mut self.exc_view {
+                    v.commit_edit();
+                }
+                self.exc_save();
                 self.show_exc = false;
                 self.exc_fullscreen = false;
                 self.show_base = false;
@@ -1764,6 +1776,11 @@ impl App {
                 self.show_canvas = false
             }
             "workspace:next-tab" | "workspace:previous-tab" if self.exc_active() => {
+                // Turning the page writes the board and leaves its tab in the bar, one press away.
+                if let Some(v) = &mut self.exc_view {
+                    v.commit_edit();
+                }
+                self.exc_save();
                 self.show_exc = false;
                 self.exc_fullscreen = false;
             }
@@ -1898,6 +1915,11 @@ impl App {
                 self.quit = true;
             }
             _ => {
+                // Over a board, Ctrl+Z and Ctrl+Shift+Z are the board's own history, not the
+                // note's: the pane shows the board, so the keys have to act on it.
+                if self.exc_active() && self.run_exc_editor(command) {
+                    return;
+                }
                 if self.run_graph(command)
                     || self.run_canvas(command)
                     || self.run_base(command)

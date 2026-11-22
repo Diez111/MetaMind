@@ -194,7 +194,8 @@ body {
 .image-embed { margin: 4px 0 14px 0 }
 /* A board drawn in place of its `![[…]]` embed: the picture is painted by the app, this is the
    row it gets. The board keeps its own page colour, so it reads as a sheet on either theme. */
-.exc-embed { margin: 4px 0 14px 0 }
+.exc-embed { margin: 4px 0 14px 0; border-radius: var(--radius-m) }
+.exc-embed:hover { box-shadow: 0 0 0 1px var(--interactive-accent) }
 .exc-board { width: 100% }
 .markdown-embed { margin: 0 0 14px 0; border-left: 2px solid var(--interactive-accent); padding: 6px 16px; background-color: var(--rs-card); border-radius: var(--radius-s) }
 .markdown-embed-title { font-weight: 600; color: var(--text-normal); font-size: var(--font-text-size); margin-bottom: 4px }
@@ -342,6 +343,10 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .exc-view.color-6 { color: rgb(var(--canvas-color-6)) }
 .exc-controls .exc-fullscreen-button { border-color: var(--interactive-accent); color: var(--text-normal) }
 .exc-toolbar { position: absolute; left: 12px; top: 12px; display: flex; flex-direction: column; gap: 2px; padding: 4px; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
+.exc-tool.exc-fold { color: var(--text-faint) }
+.exc-tools-handle { position: absolute; left: 12px; top: 12px; display: flex; align-items: center; gap: 4px; padding: 5px 8px 5px 5px; font-size: var(--font-ui-smaller); color: var(--text-muted); background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
+.exc-tools-handle:hover { color: var(--text-normal); background-color: var(--background-modifier-hover) }
+.exc-tools-label { white-space: nowrap }
 .exc-tool { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-s); color: var(--text-muted) }
 .exc-tool:hover { background-color: var(--background-modifier-hover); color: var(--text-normal) }
 .exc-tool.is-active { background-color: var(--interactive-accent); color: var(--text-on-accent) }
@@ -356,6 +361,9 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .exc-zoombar { position: absolute; left: 12px; bottom: 12px; display: flex; align-items: center; gap: 2px; padding: 3px; font-size: var(--font-ui-smaller); color: var(--text-muted); background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m) }
 .exc-zoom { min-width: 26px; height: 24px; padding: 0 6px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-s) }
 .exc-zoom:hover { background-color: var(--background-modifier-hover); color: var(--text-normal) }
+.exc-zoom.is-off { opacity: 0.4 }
+.exc-fullscreen-exit { position: absolute; right: 12px; top: 12px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
+.exc-fullscreen-exit:hover { color: var(--text-normal); background-color: var(--background-modifier-hover) }
 .exc-zoom-label { white-space: nowrap }
 .exc-zoom-level { min-width: 44px; padding: 0 6px; text-align: right; color: var(--text-faint) }
 .modal.mod-exc { display: flex; padding: 0; overflow: hidden; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5) }
