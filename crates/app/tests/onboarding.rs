@@ -104,11 +104,12 @@ fn collapse_all_and_vault_switch_request() {
     let mut fonts = Fonts::new();
     let mut pm = Pixmap::new(800, 600).unwrap();
     render(&mut app, &mut fonts, &mut pm, 1.0);
+    // The tree starts with every folder folded, so the first use of the command opens them.
     let rows = app.tree_rows().len();
     app.run("file-explorer:collapse-all");
     render(&mut app, &mut fonts, &mut pm, 1.0);
-    assert!(app.tree_rows().len() < rows);
-    assert!(app.collapsed.contains("dir") && app.collapsed.contains("dir/sub"));
+    assert!(app.tree_rows().len() > rows);
+    assert!(app.expanded.contains("dir") && app.expanded.contains("dir/sub"));
     app.run("file-explorer:collapse-all");
     render(&mut app, &mut fonts, &mut pm, 1.0);
     assert_eq!(app.tree_rows().len(), rows);

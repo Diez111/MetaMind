@@ -2325,6 +2325,18 @@ fn stack(
     }
 }
 
+/// The 6px strip on the inner edge of a sidebar that drags it wider or narrower. It is drawn
+/// over the panel, so the rows underneath keep their full width, and it only shows on hover.
+fn resize_handle(app: &App, dom: &mut Dom, side: NodeId, left: bool) {
+    let dragging = app.side_drag.is_some_and(|d| d.left == left);
+    let el = El::div()
+        .class("sidebar-resize-handle")
+        .class(if left { "mod-left" } else { "mod-right" })
+        .class_if(dragging, "is-dragging")
+        .action(if left { "side-resize:left" } else { "side-resize:right" });
+    dom.add(side, el);
+}
+
 /// The main window: ribbon, sidebars, the split panes and the status bar.
 fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewInfo, viewport_h: f32) {
     let show_ribbon = app.config.appearance.bool("showRibbon", true);
@@ -2365,11 +2377,12 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
         ribbon_action(dom, icon, cmd, active);
     }
     let left_w = app.anims.toward("left", app.left_open);
+    let left_px = app.left_w.clamp(crate::shell::SIDE_W_MIN, crate::shell::SIDE_W_MAX);
     if left_w > 0.01 {
-        let mut el = El::div().class("workspace-split mod-left-split");
-        if left_w < 1.0 {
-            el = el.style(&format!("width: {:.1}px", 250.0 * left_w));
-        }
+        // The width the user dragged stays the target: opening and closing scale it.
+        let el = El::div()
+            .class("workspace-split mod-left-split")
+            .style(&format!("width: {:.1}px", left_px * left_w));
         let left = dom.add(ws, el);
         let head = dom.add(left, El::div().class("sidebar-tab-header"));
         for (icon, cmd, panel) in [
@@ -2399,23 +2412,27 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
                 Panel::Tags => crate::panes::tags(app, dom, left),
             }
         }
+        resize_handle(app, dom, left, true);
     }
     let root = dom.add(ws, El::div().class("workspace-split mod-root"));
     let right_w = app.anims.toward("right", app.right_open);
-    let side = |w: f32| if w > 0.01 { 250.0 * w.min(1.0) } else { 0.0 };
+    let right_px = app.right_w.clamp(crate::shell::SIDE_W_MIN, crate::shell::SIDE_W_MAX);
+    let side = |px: f32, w: f32| if w > 0.01 { px * w.min(1.0) } else { 0.0 };
     let ribbon_w = if show_ribbon { 44.0 } else { 0.0 };
-    let width = app.window_w - ribbon_w - side(left_w) - side(right_w);
+    let width = app.window_w - ribbon_w - side(left_px, left_w) - side(right_px, right_w);
     split_layout(app, dom, root, &app.layout, &mut Vec::new(), pal, info, viewport_h, width);
     if right_w > 0.01 {
-        let mut el = El::div().class("workspace-split mod-right-split");
-        if right_w < 1.0 {
-            el = el.style(&format!("width: {:.1}px", 250.0 * right_w));
-        }
+        let el = El::div()
+            .class("workspace-split mod-right-split")
+            .style(&format!("width: {:.1}px", right_px * right_w));
         let right = dom.add(ws, el);
         right_sidebar(app, dom, right, info);
+        resize_handle(app, dom, right, false);
     }
     let status = dom.add(0, El::div().class("status-bar"));
-    // What the element under the pointer does, with its hotkey.
+    // What the element under the pointer does, with its hotkey. Rows whose label had to be
+    // shortened (the explorer, the tabs) are named in full here: the status bar is this app's
+    // tooltip, and a floating one would cover the row it describes.
     let hint = app.hover_action.as_deref().and_then(|a| {
         let name = crate::shell::COMMANDS
             .iter()
@@ -2427,7 +2444,18 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
             })
             .or_else(|| a.strip_prefix("toggle-pin:").map(|_| "Desanclar pestaña".to_string()))
             .or_else(|| (a == "mermaid:zoom").then(|| "Ampliar el diagrama a pantalla completa".to_string()))
-            .or_else(|| (a == "mermaid:zoom-close").then(|| "Cerrar el diagrama (Esc)".to_string()))?;
+            .or_else(|| (a == "mermaid:zoom-close").then(|| "Cerrar el diagrama (Esc)".to_string()))
+            .or_else(|| a.strip_prefix("toggle-folder:").map(|p| format!("Carpeta: {p}")))
+            .or_else(|| a.strip_prefix("open:").map(|p| format!("Abrir {p}")))
+            .or_else(|| {
+                let i = a.strip_prefix("tab:")?.parse::<usize>().ok()?;
+                app.tabs.get(i).map(|t| format!("Pestaña: {}", t.path))
+            })
+            .or_else(|| {
+                let side = a.strip_prefix("side-resize:")?;
+                let px = if side == "left" { app.left_w } else { app.right_w };
+                Some(format!("Arrastra para cambiar el ancho ({px:.0} px)"))
+            })?;
         let key = app.hotkey_for(a);
         Some(if key.is_empty() { name } else { format!("{name}  ({key})") })
     });

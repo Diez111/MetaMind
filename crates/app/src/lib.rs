@@ -218,6 +218,12 @@ impl App {
                 let r = frame.dom.nodes[node].rect;
                 return self.sort_menu(r.x, r.y + r.h);
             }
+            if let Some(side) = action.strip_prefix("side-resize:") {
+                let left = side == "left";
+                let width = if left { self.left_w } else { self.right_w };
+                self.side_drag = Some(shell::SideDrag { left, start_x: x, width });
+                return;
+            }
             if let Some((k, path)) = action.strip_prefix("pane-resize:").and_then(|a| a.split_once(':')) {
                 let path = path.split('.').filter_map(|i| i.parse().ok()).collect();
                 let parent = frame.dom.nodes[node].parent;
@@ -378,6 +384,9 @@ impl App {
         if self.pane_drag.is_some() {
             return self.pane_drag_to(x, y);
         }
+        if self.side_drag.is_some() {
+            return self.side_drag_to(x);
+        }
         if self.explorer_drag.is_some() {
             return self.explorer_drag_to(frame, x, y);
         }
@@ -466,6 +475,9 @@ impl App {
         if self.pane_drag.take().is_some() {
             return;
         }
+        if self.side_drag.take().is_some() {
+            return;
+        }
         if let Some(d) = self.explorer_drag.take() {
             match (d.moving, d.target) {
                 (false, _) => self.run(&d.action),
@@ -501,6 +513,20 @@ impl App {
 }
 
 impl App {
+    /// Track a sidebar edge drag: the sidebar grows or shrinks by how far the pointer moved from
+    /// where it was grabbed, within the limits a sidebar has.
+    pub(crate) fn side_drag_to(&mut self, x: f32) {
+        let Some(d) = self.side_drag else { return };
+        let delta = x - d.start_x;
+        let w = if d.left { d.width + delta } else { d.width - delta };
+        let w = w.clamp(shell::SIDE_W_MIN, shell::SIDE_W_MAX);
+        if d.left {
+            self.left_w = w;
+        } else {
+            self.right_w = w;
+        }
+    }
+
     /// Track an explorer drag: past a few pixels it becomes a move, aimed at the folder
     /// under the pointer, the folder of the file under it, or the root on empty space.
     fn explorer_drag_to(&mut self, frame: &Frame, x: f32, y: f32) {

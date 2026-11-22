@@ -306,9 +306,23 @@ pub struct ExplorerDrag {
     pub target: Option<String>,
 }
 
+/// A press on the inner edge of a sidebar, which drags that sidebar wider or narrower.
+#[derive(Clone, Copy, Debug)]
+pub struct SideDrag {
+    /// The left sidebar is the one being dragged.
+    pub left: bool,
+    pub start_x: f32,
+    /// Width the sidebar had when it was grabbed.
+    pub width: f32,
+}
+
 pub const TREE_ROW_HEIGHT: f32 = 26.0;
 /// Pixels the editor scrolls per wheel line (a wheel notch is three).
 pub const SCROLL_LINE: f32 = 40.0;
+/// Limits of a sidebar's width, as the drag handle enforces them.
+pub const SIDE_W_DEFAULT: f32 = 250.0;
+pub const SIDE_W_MIN: f32 = 180.0;
+pub const SIDE_W_MAX: f32 = 600.0;
 const META_DEBOUNCE_MS: u64 = 400;
 
 pub struct Tab {
@@ -443,9 +457,16 @@ pub struct App {
     pub(crate) mirrored: Option<(String, u64)>,
     pub left_open: bool,
     pub right_open: bool,
+    /// Width of each sidebar in pixels, while it is open.
+    pub left_w: f32,
+    pub right_w: f32,
+    /// The sidebar edge being dragged, if any.
+    pub side_drag: Option<SideDrag>,
     pub panel: Panel,
     pub focus: Focus,
-    pub collapsed: HashSet<String>,
+    /// Folders the explorer shows open. Everything else is collapsed, which is how the tree
+    /// starts: the set is the exception, so an empty one means a fully folded tree.
+    pub expanded: HashSet<String>,
     pub prompt: Option<Prompt>,
     pub search_query: String,
     pub search_results: Vec<SearchResult>,
@@ -548,6 +569,12 @@ pub struct App {
 
 /// Sort key for explorer order: at each level folders come before files, and names compare
 /// case-insensitively. Byte-wise comparison of the keys gives the order.
+/// A path lowercased the way the explorer groups folders: `Materias` and `materias` are one
+/// folder there, so both name the same branch.
+fn folded_path(p: &str) -> String {
+    p.chars().flat_map(char::to_lowercase).collect()
+}
+
 fn tree_key(p: &str) -> String {
     let mut key = String::with_capacity(p.len() + 8);
     let mut segs = p.split('/').peekable();
@@ -706,9 +733,12 @@ impl App {
             mirrored: None,
             left_open: true,
             right_open: false,
+            left_w: SIDE_W_DEFAULT,
+            right_w: SIDE_W_DEFAULT,
+            side_drag: None,
             panel: Panel::Files,
             focus: Focus::Editor,
-            collapsed: HashSet::new(),
+            expanded: HashSet::new(),
             prompt: None,
             search_query: String::new(),
             search_results: Vec::new(),
@@ -815,6 +845,13 @@ impl App {
         stale.then(|| (t.last_edit_ms + META_DEBOUNCE_MS).saturating_sub(now_ms))
     }
 
+    /// Whether folder `path` is open, folded the way the tree folds names: a branch spelled two
+    /// ways counts as one folder.
+    pub fn folder_open(&self, path: &str) -> bool {
+        let key = folded_path(path);
+        self.expanded.iter().any(|e| folded_path(e) == key)
+    }
+
     pub fn tree_rows(&self) -> &[TreeRow] {
         self.tree.as_deref().unwrap_or(&[])
     }
@@ -868,24 +905,30 @@ impl App {
         }
         let paths: Vec<(&str, FileKind)> = keyed.into_iter().map(|k| (k.3, k.4)).collect();
         let mut rows = Vec::with_capacity(paths.len() + 64);
+        // The folders already shown for the branch being walked, folded the way the sort key is:
+        // two spellings of one folder (`Materias` and `materias`, which a case-sensitive disk
+        // allows) share the branch, so the second one never lists its ancestors again.
         let mut open_dirs: Vec<String> = Vec::new();
         for (p, kind) in paths {
             let dir = path::parent(p);
             let segs: Vec<&str> = dir.split('/').filter(|s| !s.is_empty()).collect();
             let mut acc = String::new();
+            let mut folded = String::new();
             let mut hidden = false;
             for (depth, seg) in segs.iter().enumerate() {
                 if !acc.is_empty() {
                     acc.push('/');
+                    folded.push('/');
                 }
                 acc.push_str(seg);
+                folded.extend(seg.chars().flat_map(char::to_lowercase));
                 if hidden {
                     break;
                 }
-                let collapsed = self.collapsed.contains(&acc);
-                if open_dirs.get(depth).map(String::as_str) != Some(acc.as_str()) {
+                let collapsed = !self.folder_open(&folded);
+                if open_dirs.get(depth).map(String::as_str) != Some(folded.as_str()) {
                     open_dirs.truncate(depth);
-                    open_dirs.push(acc.clone());
+                    open_dirs.push(folded.clone());
                     rows.push(TreeRow {
                         depth,
                         label: seg.to_string(),
@@ -1443,8 +1486,11 @@ if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
             return self.close_tab(i);
         }
         if let Some(folder) = command.strip_prefix("toggle-folder:") {
-            if !self.collapsed.remove(folder) {
-                self.collapsed.insert(folder.to_string());
+            let key = folded_path(folder);
+            if self.folder_open(&key) {
+                self.expanded.retain(|e| folded_path(e) != key);
+            } else {
+                self.expanded.insert(folder.to_string());
             }
             self.tree = None;
             return;
@@ -1598,10 +1644,10 @@ if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
                             .collect::<Vec<_>>()
                     })
                     .collect();
-                if folders.iter().all(|f| self.collapsed.contains(f)) {
-                    self.collapsed.clear();
+                if self.expanded.is_empty() {
+                    self.expanded = folders;
                 } else {
-                    self.collapsed = folders;
+                    self.expanded.clear();
                 }
             }
             "app:check-for-updates" => {

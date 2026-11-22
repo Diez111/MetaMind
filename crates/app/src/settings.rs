@@ -396,6 +396,14 @@ const ITEMS: &[Item] = &[
     Item {
         section: Advanced,
         file: File::App,
+        key: "rememberExpandedFolders",
+        name: "Archivos: recordar carpetas expandidas",
+        desc: "Al abrir la bóveda, el explorador restaura las carpetas que dejaste abiertas. Apagado, arranca siempre con todas contraídas y no las guarda.",
+        control: Toggle(true),
+    },
+    Item {
+        section: Advanced,
+        file: File::App,
         key: "newFileLocation",
         name: "Ubicación de las notas nuevas",
         desc: "Dónde guarda el archivo la orden «Crear nota».",
