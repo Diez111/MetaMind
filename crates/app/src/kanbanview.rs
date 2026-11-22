@@ -100,7 +100,7 @@ pub fn is_board_path(p: &str) -> bool {
 
 /// Whether what a file holds is a board: a note with the plugin's settings block at the top.
 pub fn is_board_text(text: &str) -> bool {
-    text.lines().take(8).any(|l| is_settings_start(l))
+    text.lines().take(8).any(is_settings_start)
 }
 
 fn is_settings_start(line: &str) -> bool {
@@ -533,6 +533,32 @@ impl KanbanView {
             .unwrap_or((self.rect.x + EDGE, self.rect.y + EDGE))
     }
 
+    /// The column as the last paint laid it out, in window coordinates. A test (or the menu) can
+    /// ask where a card ended up without knowing how the board is laid out.
+    pub fn column_rect(&self, i: usize) -> Option<Rect> {
+        self.geom.get(i).map(|g| g.rect)
+    }
+
+    /// The card at (column, index) as the last paint laid it out, in window coordinates.
+    pub fn card_rect(&self, col: usize, idx: usize) -> Option<Rect> {
+        self.geom.get(col)?.cards.get(idx).map(|c| c.rect)
+    }
+
+    /// The checkbox of the card at (column, index).
+    pub fn check_rect(&self, col: usize, idx: usize) -> Option<Rect> {
+        self.geom.get(col)?.cards.get(idx).map(|c| c.check)
+    }
+
+    /// The `+` at the foot of a column.
+    pub fn add_rect(&self, col: usize) -> Option<Rect> {
+        self.geom.get(col).map(|g| g.add)
+    }
+
+    /// Whether a card or a column name is being typed right now.
+    pub fn is_editing(&self) -> bool {
+        self.editing.is_some()
+    }
+
     /// The column under a point, from the last paint.
     pub fn column_at(&self, x: f32, y: f32) -> Option<usize> {
         self.geom.iter().position(|g| x >= g.rect.x && x < g.rect.x + g.rect.w && y >= g.head.y)
@@ -610,8 +636,14 @@ impl KanbanView {
             self.stop_edit();
         }
         let name = self.board.columns.get(i).map(|c| c.name.clone()).unwrap_or_default();
-        let target = if fresh { Edit::NewColumn(i) } else { Edit::Column(i) };
-        self.editing = Some(Editing { target, buf: name });
+        // A column that was just made starts with its placeholder name in the header, not in the
+        // box: the first key typed is the first letter of its name.
+        let (target, buf) = if fresh {
+            (Edit::NewColumn(i), String::new())
+        } else {
+            (Edit::Column(i), name)
+        };
+        self.editing = Some(Editing { target, buf });
         self.selected = None;
     }
 
@@ -1502,7 +1534,12 @@ impl App {
             Hit::ColumnMenu(i) => Some(v.column_anchor(*i)),
             _ => None,
         };
-        self.kanban_save();
+        // A press that starts typing is not a command to save: writing now would commit the box
+        // the press just opened. Everything else writes at once.
+        let typing = v.is_editing();
+        if !typing {
+            self.kanban_save();
+        }
         match hit {
             Hit::ColumnMenu(i) => {
                 let (mx, my) = anchor.unwrap_or((x, y));
