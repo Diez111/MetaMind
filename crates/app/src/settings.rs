@@ -1036,7 +1036,9 @@ impl App {
                 }
             }
             "ai-default-model" => {
-                if let Some((at, model)) = arg.split_once(':').and_then(|(a, m)| Some((a.parse::<usize>().ok()?, m))) {
+                if let Some((at, model)) =
+                    arg.split_once(':').and_then(|(a, m)| Some((a.parse::<usize>().ok()?, m)))
+                {
                     let mut cfg = AiConfig::from_config(&self.config);
                     if at < cfg.profiles.len() {
                         cfg.profiles[at].model = model.to_string();
