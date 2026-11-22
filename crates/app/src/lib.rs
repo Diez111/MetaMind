@@ -382,9 +382,9 @@ impl App {
     }
 
     /// Ask the decoder for a frame that fits the box the overlay really has: the workspace of the
-    /// last frame (the status bar is already out of it), less the modal's padding, the margin
-    /// around it, the control row and the hint. A frame sized to the window instead is what used
-    /// to push the controls past the bottom edge of the modal.
+    /// last frame (the status bar is already out of it), less the air the card keeps around
+    /// itself and its control row. A frame sized to the window instead is what used to push the
+    /// controls past the bottom edge of the modal.
     pub fn fit_video_overlay(&mut self) {
         let scale = if self.scale > 0.0 { self.scale } else { 1.0 };
         let cap = if self.video_fullscreen {

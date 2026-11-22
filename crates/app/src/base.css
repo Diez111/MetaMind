@@ -603,20 +603,27 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 /* Video player widget: one card with the radii of the app, one row of controls with a single
    rhythm, and one marker on the track (a bar sitting on the join, not a thumb plus a line).
    The track is a 24 px tall row with a 6 px bar in it: the bar is what reads as the progress, the
-   row is what the pointer can hit, so the knob can stay small without being hard to grab. */
-.video-player { margin: 8px 0 16px 0; max-width: 640px; overflow: hidden; background-color: #1a1a1a; border: 1px solid #3a3a3a; border-radius: var(--radius-m); box-shadow: 0 4px 16px rgba(0,0,0,0.4); flex-shrink: 0 }
+   row is what the pointer can hit, so the knob can stay small without being hard to grab.
+   The row has one height and one gap: the speed pill and the three square buttons are the same
+   26 px box with the same air between them, and the gap is a variable of the card so the whole
+   rhythm is tuned in one place. */
+.video-player { --video-gap: 12px; --video-row-h: 26px; margin: 8px 0 16px 0; max-width: 640px; overflow: hidden; background-color: #1a1a1a; border: 1px solid #3a3a3a; border-radius: var(--radius-m); box-shadow: 0 4px 16px rgba(0,0,0,0.4); flex-shrink: 0 }
 .video-player-stage { display: flex; justify-content: center; background-color: #000; overflow: hidden }
 .video-player-frame { display: flex; align-items: center; justify-content: center; background-color: #000; overflow: hidden; cursor: pointer }
 .video-player-loading { margin-left: 8px; color: var(--text-muted); font-size: var(--font-ui-smaller) }
-.video-player-controls { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background-color: #2a2a2a; border-top: 1px solid #3a3a3a }
+.video-player-controls { display: flex; align-items: center; gap: var(--video-gap); padding: 8px 14px; background-color: #2a2a2a; border-top: 1px solid #3a3a3a }
 /* Every control is the same box, so the bar reads as one row instead of five sizes. The icon is
    drawn at 18 px inside it: a stroke and a half of a pixel is as thin as Lucide's 2/24 gets
    before a play triangle turns into a smudge at this size. */
-.video-player-btn { width: 32px; height: 26px; color: #e8e8e8; border-radius: var(--radius-s) }
+.video-player-btn { width: 32px; height: var(--video-row-h); color: #e8e8e8; border-radius: var(--radius-s) }
 .video-player-btn .svg-icon { width: 18px; height: 18px }
 .video-player-btn:hover { background-color: #3d3d3d; color: #ffffff }
 .video-player-btn.is-active { background-color: #3d3d3d; color: #ffffff }
-.video-player-pill { width: auto; min-width: 40px; justify-content: center; padding: 0 8px; border: 1px solid #4a4a4a; background-color: #333333; color: #e8e8e8; font-size: var(--font-ui-smaller); white-space: nowrap; font-variant-numeric: tabular-nums }
+/* The speed control is a button like the others with a word in it: the same 26 px box, the same
+   border and the same air, and the label centred in both directions. The engine paints text at
+   the top of the content box, so the balance is made with padding: 3 px above and 1 px below the
+   18 px line is 4 px of air on each side of the glyph. */
+.video-player-pill { width: auto; min-width: 40px; height: var(--video-row-h); padding: 3px 10px 1px 10px; border: 1px solid #4a4a4a; background-color: #333333; color: #e8e8e8; font-size: var(--font-ui-smaller); white-space: nowrap; text-align: center; font-variant-numeric: tabular-nums }
 .video-player-pill:hover { background-color: #464646; color: #ffffff }
 .video-player-speed { min-width: 46px }
 .video-player-time { margin: 0; color: #c8c8c8; font-size: var(--font-ui-smaller); white-space: nowrap; font-variant-numeric: tabular-nums; min-width: 84px; text-align: center }
@@ -629,14 +636,17 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .video-player:hover .video-player-thumb { background-color: #ffffff; box-shadow: 0 0 0 2px #3d3d3d }
 .video-player.is-loading .video-player-frame { background-color: var(--rs-card) }
 /* A diagram or the player opened over the window: the backdrop dims the app and the box holds
-   what was opened, centered, with a line saying how to get out. Neither the box nor the card in
-   it has a fixed size: both are laid out from the picture they hold, so nothing is cut off. */
+   what was opened, centered. Neither the box nor the card in it has a fixed size: both are laid
+   out from the picture they hold, so nothing is cut off. */
 .modal.mod-diagram, .modal.mod-video { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 18px; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5); overflow: hidden }
-/* The card keeps the size the view computed for it: a percentage here resolves against nothing
-   in this engine (it parses as a length of zero), which is what collapsed the card in the
-   overlay. The box around it is sized from the same number instead. */
-.modal.mod-video .video-player { margin: 0 }
-.video-fullscreen-hint { margin-top: 2px }
+/* The player over the window is the workspace: the box takes every pixel of it and draws nothing
+   of its own — the scrim behind shows around the card, so the app reads as dimmed instead of
+   competing — and the card is centred in it. The card keeps the size the view computed for it:
+   a percentage here resolves against nothing in this engine (it parses as a length of zero),
+   which is what collapsed the card in the overlay. Its `max-width` is the note column's, so it
+   is lifted here; kept, it clipped a wide film to 640 px and the picture lost its right edge. */
+.modal.mod-video { padding: 0; border: none; background-color: transparent; box-shadow: none }
+.modal.mod-video .video-player { margin: 0; max-width: none }
 .diagram-zoom-hint { color: var(--text-faint); font-size: var(--font-ui-smaller); white-space: nowrap; flex-shrink: 0; text-align: center }
 .diagram-zoom { border-radius: var(--radius-s) }
 .diagram-zoom-source { align-items: flex-start; justify-content: flex-start; padding: 14px 16px; margin: 0; font-family: monospace; font-size: 13px; line-height: 1.6; color: var(--code-normal); background-color: var(--code-background); white-space: pre-wrap; text-align: left }

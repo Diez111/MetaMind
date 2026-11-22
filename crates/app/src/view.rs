@@ -2056,7 +2056,7 @@ fn embeds(
         } else if crate::video::is_video(rel) && app.video.is_open() && app.video.path() == rel {
             // While the player is full screen it lives in the overlay, not in the note.
             if !app.video_fullscreen {
-                crate::video::widget(app, dom, view, None);
+                crate::video::widget(app, dom, view, crate::video::EMBED_SPACE);
             }
         } else {
             // Video, audio and anything else this build does not decode: a card that names the
@@ -2106,7 +2106,7 @@ fn youtube_card(app: &App, dom: &mut Dom, view: NodeId, link: &crate::youtube::L
     if app.video.is_open() && app.video.path() == link.url {
         // While the player is over the window it lives there, not in the note.
         if !app.video_fullscreen {
-            crate::video::widget(app, dom, view, None);
+            crate::video::widget(app, dom, view, crate::video::EMBED_SPACE);
         }
         return;
     }
@@ -2724,14 +2724,17 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
     );
 }
 
-/// The player over the window, in the box the workspace has: the same card as in the note, asked
-/// to decode a frame that fills it. A click on the frame plays or pauses it; a click anywhere
-/// outside the card, or Escape, goes back to the player in its note.
+/// The player over the window, in the box the workspace has: the same card as in the note, fitted
+/// to the whole workspace. The scrim takes every pixel between the tab bar and the status bar, so
+/// the player reads as full screen instead of as a modal on top of the note, and the card is
+/// centred in it, as wide as its picture and never wider than the scrim. A click on the frame
+/// plays or pauses it; a click anywhere outside the card, or Escape, goes back to the player in
+/// its note.
 ///
 /// The dim layer is a child of the workspace and not of the window, so the status bar keeps its
-/// own height instead of being covered (or borrowed) by the overlay, and the card is laid out
-/// from its picture instead of from a size guessed here: a fixed box is what used to cut the
-/// controls off the bottom.
+/// own height instead of being covered (or borrowed) by the overlay, and the picture is fitted to
+/// the space the layout really gave the workspace: a size guessed here is what used to cut the
+/// controls off the bottom and is what cropped the picture to the shape of the box.
 fn video_fullscreen(app: &App, dom: &mut Dom, parent: NodeId) {
     if !app.video_fullscreen || !app.video.is_open() {
         return;
@@ -2740,22 +2743,18 @@ fn video_fullscreen(app: &App, dom: &mut Dom, parent: NodeId) {
         parent,
         El::div().class("modal-container mod-dim video-fullscreen").action("video:fullscreen-close"),
     );
-    // The box is as wide as the card it holds, taken from the space the overlay really has: the
-    // modal's padding and the margin around it are what the note's numbers do not know about.
+    // The box the card is centred in is the workspace itself. It is set in pixels from the last
+    // layout because a percentage here resolves against nothing in this engine.
     let area = if app.video_area.0 > 0.0 && app.video_area.1 > 0.0 {
         app.video_area
     } else {
         (app.window_w.max(320.0), app.window_h.max(240.0))
     };
-    let max_w = area.0 - 2.0 * (crate::video::OVERLAY_MARGIN + crate::video::OVERLAY_PAD);
-    let modal = dom.add(backdrop, El::div().class("modal mod-video"));
-    crate::video::widget(app, dom, modal, Some(max_w.max(160.0)));
-    dom.add(
-        modal,
-        El::div()
-            .class("diagram-zoom-hint video-fullscreen-hint")
-            .text("Clic en el cuadro para pausar · Esc o clic fuera para volver a la nota"),
+    let modal = dom.add(
+        backdrop,
+        El::div().class("modal mod-video").style(&format!("width: {:.0}px; height: {:.0}px", area.0, area.1)),
     );
+    crate::video::widget(app, dom, modal, crate::video::overlay_space(area));
 }
 
 /// A Mermaid diagram opened full screen by a click on its block: the window behind it dims and

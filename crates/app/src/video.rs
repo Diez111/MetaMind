@@ -728,6 +728,16 @@ impl VideoPlayer {
         self.size
     }
 
+    /// The size the file says it has. The widget fits the picture by this number and not by the
+    /// frame it decodes to: the decode is a quality choice, the shape of the film is not.
+    pub fn source_size(&self) -> (u32, u32) {
+        if self.info.width > 0 && self.info.height > 0 {
+            (self.info.width, self.info.height)
+        } else {
+            self.size
+        }
+    }
+
     pub fn duration(&self) -> f64 {
         self.info.duration
     }
@@ -1028,50 +1038,78 @@ impl VideoPlayer {
 /// row's 8 px of padding and its 1 px rule, which is what `.video-player-controls` asks for.
 pub const CONTROLS_H: f32 = 43.0;
 
-/// The padding of the over-window modal, on each side, and the margin the dim layer leaves around
-/// it. The frame the overlay decodes has to leave both out, or the card outgrows the box holding
-/// it and its controls are cut by the bottom edge.
-pub const OVERLAY_PAD: f32 = 18.0;
-pub const OVERLAY_MARGIN: f32 = 20.0;
-/// One line of hint under the card in the overlay.
-pub const OVERLAY_HINT: f32 = 24.0;
+/// The 1 px `.video-player` draws on each side (base.css). `width` in this engine is the border
+/// box, so the card's width has to include it or the picture hangs a pixel past its own edge.
+pub const CARD_BORDER: f32 = 1.0;
 
-/// The frame size the over-window player can decode at, in device pixels: the card's controls,
-/// the modal's padding, the margin around it and its hint line taken out of the space the
-/// workspace gives the overlay.
+/// The air the over-window player keeps between its card and the edge of the workspace.
+pub const OVERLAY_MARGIN: f32 = 20.0;
+
+/// The room the player card asks for in a note: the reading column, which is `--file-line-width`
+/// (700) less the 28 px of padding each side, capped at the 640 px `.video-player` asks for; and a
+/// height a tall clip cannot pass, so a portrait video is letterboxed in the note instead of
+/// pushing the paragraph under it off screen.
+pub const EMBED_SPACE: (f32, f32) = (640.0, 480.0);
+
+/// The box the player card may use over the window, in logical pixels: the workspace less the air
+/// the card keeps around itself.
+pub fn overlay_space(area: (f32, f32)) -> (f32, f32) {
+    let air = 2.0 * OVERLAY_MARGIN;
+    ((area.0 - air).max(160.0), (area.1 - air).max(160.0))
+}
+
+/// The room the picture itself has inside the card's box: the border and the control row are not
+/// the picture's, and a picture measured against the whole card comes out a row too tall.
+fn picture_space(space: (f32, f32)) -> (f32, f32) {
+    ((space.0 - 2.0 * CARD_BORDER).max(1.0), (space.1 - CONTROLS_H - 2.0 * CARD_BORDER).max(1.0))
+}
+
+/// The frame size the over-window player can decode at, in device pixels: the same room the
+/// picture is drawn in, so the decoder never hands back a frame wider than the row under it.
 pub fn overlay_cap(area: (f32, f32), scale: f32) -> (u32, u32) {
     let scale = if scale > 0.0 { scale } else { 1.0 };
-    let chrome = 2.0 * (OVERLAY_MARGIN + OVERLAY_PAD);
-    let w = (area.0 - chrome).max(120.0);
-    let h = (area.1 - chrome - CONTROLS_H - OVERLAY_HINT).max(90.0);
+    let (w, h) = picture_space(overlay_space(area));
     ((w * scale) as u32, (h * scale) as u32)
 }
 
-/// The width of the player card for a frame `w` device pixels wide at `scale`: the picture as it
-/// is, and never narrower than the control row needs. The overlay asks for the same number so its
-/// box and the card inside it can never disagree.
-pub fn card_width(frame_w: u32, scale: f32) -> f32 {
+/// The size, in logical pixels, the picture is drawn at: the largest box with the file's own
+/// aspect that fits `space`, never larger than the file's pixels at this scale, and never
+/// cropped. Whatever the space has left over is letterbox: the stage fills it with black and the
+/// picture is centred in it.
+///
+/// This is the fix for the reported bug. The frame used to be sized from the decoded pixels and
+/// then clamped by the card's `max-width`, so a landscape slide in a portrait box lost its edges —
+/// the title, the page counter and the arrow of the axis were all outside the box. Fitting by
+/// `min(space / source)` on both sides keeps every edge of the picture inside the box at any size.
+pub fn picture_size(src: (u32, u32), space: (f32, f32), scale: f32) -> (f32, f32) {
     let scale = if scale > 0.0 { scale } else { 1.0 };
-    let fw = if frame_w > 0 { frame_w as f32 / scale } else { 640.0 };
-    fw.max(MIN_CARD_W)
+    let (sw, sh) = (src.0.max(1) as f32 / scale, src.1.max(1) as f32 / scale);
+    let (bw, bh) = (space.0.max(1.0), space.1.max(1.0));
+    let k = (bw / sw).min(bh / sh).min(1.0);
+    // Truncated, never rounded up: a picture that names a pixel it does not have is a pixel the
+    // card would have to clip.
+    (((sw * k) as u32) as f32, ((sh * k) as u32) as f32)
+}
+
+/// The width of the player card for a picture `w` logical pixels wide: the border it draws around
+/// the picture, and never narrower than the control row needs. The controls are exactly as wide as
+/// the film, which is what the second reported bug was about.
+fn card_width(w: f32) -> f32 {
+    (w + 2.0 * CARD_BORDER).max(MIN_CARD_W)
 }
 
 /// The player widget that replaces a video's card: the frame, the controls and the track. The
-/// frame plays and pauses on a click, as a video anywhere else does. `max_w` is the widest the
-/// card may be, which is what the over-window view uses to stay inside its box.
-pub fn widget(app: &crate::App, dom: &mut Dom, view: NodeId, max_w: Option<f32>) -> NodeId {
+/// frame plays and pauses on a click, as a video anywhere else does. `space` is the room the card
+/// has, in logical pixels and control row included: the note passes [`EMBED_SPACE`] and the
+/// overlay the box the workspace leaves it, so the picture is fitted to where it is really drawn.
+pub fn widget(app: &crate::App, dom: &mut Dom, view: NodeId, space: (f32, f32)) -> NodeId {
     let v = &app.video;
     let scale = if app.scale > 0.0 { app.scale } else { 1.0 };
-    let (w, h) = v.size();
-    // The player lives in the note's render; when the video card is visible
-    // the player is already open (it was opened by `video:open`).
-    let fw = if w > 0 { w as f32 / scale } else { 640.0 };
-    let fh = if h > 0 { h as f32 / scale } else { 360.0 };
     let loading = *v.state() == State::Loading;
-    // The card is as wide as the picture it holds: in the note it is one block of the column, and
-    // over the window it is centred instead of stretching to the whole screen. It is never wider
-    // than the box it is drawn in.
-    let wide = max_w.map_or_else(|| card_width(w, scale), |max| card_width(w, scale).min(max.max(160.0)));
+    // The picture keeps the file's own shape, fitted into the room the caller gave it: the card is
+    // as wide as that picture, so the control row under it measures exactly as wide as the film.
+    let (fw, fh) = picture_size(v.source_size(), picture_space(space), scale);
+    let wide = card_width(fw).min(space.0);
     let card = dom.add(
         view,
         El::div()
@@ -1360,23 +1398,76 @@ mod tests {
         }
     }
 
-    /// `overlay_cap` leaves out everything the overlay draws around the picture: the same
-    /// arithmetic is what keeps the controls inside the box.
+    /// `overlay_cap` leaves out everything the overlay draws around the picture: the air the card
+    /// keeps around itself, its border and the control row. The same arithmetic is what keeps the
+    /// controls inside the box and the picture inside its card.
     #[test]
-    fn the_overlay_cap_leaves_the_controls_and_the_padding_out() {
+    fn the_overlay_cap_leaves_the_controls_and_the_margin_out() {
         let (w, h) = overlay_cap((1100.0, 700.0), 1.0);
-        let chrome = 2.0 * (OVERLAY_MARGIN + OVERLAY_PAD);
-        assert_eq!(w as f32, 1100.0 - chrome);
-        assert_eq!(h as f32, 700.0 - chrome - CONTROLS_H - OVERLAY_HINT);
-        // The whole card, controls included, fits the box the overlay is given.
-        let card_h = h as f32 + CONTROLS_H + 2.0 * OVERLAY_PAD;
-        assert!(card_h + 2.0 * OVERLAY_MARGIN <= 700.0, "the card is {card_h}px tall");
+        let air = 2.0 * OVERLAY_MARGIN;
+        assert_eq!(w as f32, 1100.0 - air - 2.0 * CARD_BORDER);
+        assert_eq!(h as f32, 700.0 - air - 2.0 * CARD_BORDER - CONTROLS_H);
+        // The whole card, controls included, fits the box the workspace is, with its air around it.
+        let card_h = h as f32 + CONTROLS_H + 2.0 * CARD_BORDER;
+        assert_eq!(card_h, 700.0 - air, "the card is {card_h}px tall");
         // At 2x the device pixels are what grows, never the logical box.
         let (dw, dh) = overlay_cap((1100.0, 700.0), 2.0);
         assert_eq!((dw, dh), (w * 2, h * 2));
         // A window too small for the arithmetic still asks for something playable.
         let (sw, sh) = overlay_cap((0.0, 0.0), 1.0);
         assert!(sw >= 120 && sh >= 90, "{sw}x{sh}");
+    }
+
+    /// The bug the user photographed: a slide is 16:9 and the overlay box was portrait, so the
+    /// picture was drawn at the box's shape and its edges were cut — the title, the page counter
+    /// and the arrow of the axis were all off screen. Fitting by the file's aspect keeps the whole
+    /// picture in any box, and leaves the difference as letterbox.
+    #[test]
+    fn the_picture_keeps_its_aspect_in_any_box() {
+        // 2:1 into a square box: the width is the limit, the height comes from the aspect.
+        let (w, h) = picture_size((1280, 640), (800.0, 800.0), 1.0);
+        assert_eq!((w, h), (800.0, 400.0));
+        assert!((w / h - 2.0).abs() < 1e-6);
+        // 16:9 into a portrait box (what the overlay used to be measured as): still 16:9, and the
+        // whole picture fits the box instead of filling it and losing the sides.
+        let (w, h) = picture_size((1920, 1080), (639.0, 856.0), 1.0);
+        assert!((w / h - 16.0 / 9.0).abs() < 0.01, "{w}x{h}");
+        assert!(w <= 639.0 && h <= 856.0, "{w}x{h} does not fit the box");
+        assert_eq!(h, 359.0, "the height is what runs out in a portrait box");
+        // A tall clip in a wide box is bounded by the height, never stretched to the width.
+        let (w, h) = picture_size((1080, 1920), (1200.0, 600.0), 1.0);
+        assert_eq!(h, 600.0);
+        assert!((w / h - 9.0 / 16.0).abs() < 0.01, "{w}x{h}");
+        // Never upscaled past the file's own pixels.
+        assert_eq!(picture_size((320, 180), (1200.0, 700.0), 1.0), (320.0, 180.0));
+        // A HiDPI window scales in device pixels, not in the logical box.
+        assert_eq!(picture_size((1920, 1080), (960.0, 540.0), 2.0), (960.0, 540.0));
+        // Whatever the box and the source, the drawn picture stays inside the box and keeps the
+        // shape, to within the pixel the truncation costs.
+        for src in [(160, 120), (1920, 1080), (1080, 1920), (640, 360), (1440, 1080)] {
+            for space in [(640.0, 480.0), (639.0, 856.0), (1200.0, 300.0), (320.0, 240.0)] {
+                let (w, h) = picture_size(src, space, 1.0);
+                assert!(w <= space.0 && h <= space.1, "{src:?} in {space:?} is {w}x{h}");
+                let want = src.0 as f32 / src.1 as f32;
+                assert!((w - want * h).abs() <= 1.0, "{src:?} in {space:?} is {w}x{h}");
+            }
+        }
+        // A box too small to hold the shape still keeps the whole picture in it.
+        let (w, h) = picture_size((1920, 1080), (2.0, 2.0), 1.0);
+        assert!(w <= 2.0 && h <= 2.0, "{w}x{h}");
+    }
+
+    /// The card is as wide as its picture, plus the border it draws: the control row under a film
+    /// measures exactly as wide as the film, which is the alignment bug of the capture.
+    #[test]
+    fn the_card_measures_the_picture_plus_its_border() {
+        assert_eq!(card_width(640.0), 642.0);
+        assert_eq!(card_width(1200.0), 1202.0);
+        // A picture narrower than the controls still gets a card the row can live in.
+        assert_eq!(card_width(120.0), MIN_CARD_W);
+        // What the note asks for is a card inside the reading column.
+        let (w, _) = picture_size((1920, 1080), picture_space(EMBED_SPACE), 1.0);
+        assert!(card_width(w) <= EMBED_SPACE.0, "the note card is {} px wide", card_width(w));
     }
 
     #[test]
