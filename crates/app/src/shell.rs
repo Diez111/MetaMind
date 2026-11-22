@@ -139,6 +139,7 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("outgoing-links:open", "Enlaces salientes: Mostrar enlaces salientes", ""),
     ("outline:open", "Esquema: Mostrar esquema", ""),
     ("ai:open", "Copiloto de IA: Mostrar panel", "Ctrl+Shift+A"),
+    ("ai:close", "Copiloto de IA: Cerrar panel", ""),
     ("markdown:toggle-preview", "Alternar vista de lectura", "Ctrl+E"),
     ("editor:toggle-source", "Alternar vista previa en vivo / código fuente", ""),
     ("editor:toggle-bold", "Alternar negrita", "Ctrl+B"),
@@ -791,6 +792,12 @@ impl App {
                 self.left_open = false;
             }
         }
+    }
+
+    /// The copilot covers the workspace as a sheet when the window is too narrow to give it a
+    /// column: only a compact window does that, and only while the right sidebar shows it.
+    pub fn ai_sheet(&self) -> bool {
+        self.compact && self.right_open && self.right_panel == RightPanel::Ai
     }
 
     pub fn open(root: &Path) -> io::Result<App> {
@@ -2044,6 +2051,12 @@ impl App {
                     self.ai.scroll_to_end = true;
                 }
             }
+            // The way out of the copilot sheet: the panel closes and the sidebar stops taking
+            // the keyboard, so the note gets both back.
+            "ai:close" => {
+                self.right_open = false;
+                self.ai.editing = false;
+            }
             "ai:focus-input" => {
                 self.ai.editing = true;
             }
@@ -2246,6 +2259,12 @@ impl App {
         // The same for a video shown over the window: Escape gives the note its player back.
         if self.video_fullscreen && key.key == "Escape" {
             self.set_video_fullscreen(false);
+            return true;
+        }
+        // The copilot sheet covers the workspace: Escape gives the note back. The input takes the
+        // first press to stop editing, so this one is the second, or one with no field in front.
+        if self.ai_sheet() && key.key == "Escape" {
+            self.run("ai:close");
             return true;
         }
         // Only set while the editor has focus; see `after_editor_input`.
@@ -2451,6 +2470,12 @@ impl App {
             Focus::Search => self.search_query.push_str(text),
             // A letter with the calendar pane focused is not a note edit; the shortcuts still run.
             Focus::Calendar => {}
+            // The sheet covers the note: a printable key belongs to the question, never to a note
+            // the reader cannot see. Typing into it is also what puts the caret back in the field.
+            Focus::Editor if self.ai_sheet() => {
+                self.ai.editing = true;
+                self.ai.input.push_str(text);
+            }
             Focus::Editor if self.canvas_active() => self.canvas_text(text),
             Focus::Editor if self.kanban_active() => self.kanban_text(text),
             Focus::Editor if self.exc_active() => {

@@ -1040,13 +1040,48 @@ fn ai_panel(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
     dom.nodes[b].el.attrs.push(("aria-label".into(), "Borrar la conversación".into()));
     let b = icon_button(dom, bar, "settings", "ai:settings", false);
     dom.nodes[b].el.attrs.push(("aria-label".into(), "Ajustes de la IA".into()));
-    let quick = dom.add(panel, El::div().class("ai-quick"));
+    ai_body(app, dom, panel, info);
+}
+
+/// The copilot as a sheet over the workspace, for a compact window that has no column to give it:
+/// a header of its own names the panel and the model in use and carries the way out, and the body
+/// is the conversation the sidebar shows.
+fn ai_sheet(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
+    // The sheet comes in from the right, on its own clock and the same curve as the sidebars. A
+    // reader who asked for reduced motion never starts it, so the first frame is the last one.
+    let off = (1.0 - app.anims.t("ai-sheet")) * app.window_w.max(1.0);
+    let sheet = dom.add(
+        parent,
+        El::div().class("ai-sheet").style(&format!("left: {off:.1}px; right: {:.1}px", -off)),
+    );
+    let head = dom.add(sheet, El::div().class("ai-sheet-header"));
+    let mark = dom.add(head, El::div().class("ai-sheet-mark"));
+    dom.add(mark, icons::el("ai"));
+    dom.add(head, El::div().class("ai-sheet-title").text("Copiloto"));
+    let cfg = crate::ai::AiConfig::from_config(&app.config);
+    let profile = cfg.active_profile();
+    let label = format!("{} · {}", profile.name, profile.model);
+    // The model is the part that gives way: the title and the close button keep their room, so
+    // at 360 px the profile ends in an ellipsis instead of pushing the way out of the sheet.
+    let model = dom.add(head, El::div().class("ai-sheet-model").text(label.clone()));
+    dom.nodes[model].el.attrs.push(("aria-label".into(), format!("Perfil de IA: {label}")));
+    let close = dom.add(head, El::div().class("ai-sheet-close").action("ai:close"));
+    dom.nodes[close].el.attrs.push(("aria-label".into(), "Cerrar el copiloto".into()));
+    dom.add(close, icons::el("x"));
+    ai_body(app, dom, sheet, info);
+}
+
+/// What both shapes of the copilot share: the quick actions, the conversation and the input.
+/// `parent` is the flex column of the sidebar panel or of the sheet, so the input lands on the
+/// last line of either one and never over the status bar.
+fn ai_body(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
+    let quick = dom.add(parent, El::div().class("ai-quick"));
     for (label, action) in
         [("Explicar selección", "ai:explain-selection"), ("Resumir nota", "ai:summarize-note")]
     {
         dom.add(quick, El::div().class("ai-quick-button").text(label).action(action));
     }
-    let list = dom.add(panel, El::div().class("ai-messages").id("ai-messages"));
+    let list = dom.add(parent, El::div().class("ai-messages").id("ai-messages"));
     if app.ai.messages.is_empty() {
         empty_pane(dom, list, "ai", "Pregunta sobre la nota abierta. Las fórmulas se escriben con $...$.");
     }
@@ -1064,7 +1099,7 @@ fn ai_panel(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
     if let Some(e) = &app.ai.error {
         dom.add(list, El::div().class("ai-error").text(e.clone()));
     }
-    let input = dom.add(panel, El::div().class("ai-input-container"));
+    let input = dom.add(parent, El::div().class("ai-input-container"));
     let empty = app.ai.input.is_empty();
     let text = if empty && !app.ai.editing {
         "Pregunta sobre la nota…".to_string()
@@ -2808,7 +2843,7 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
             let left = dom.add(ws, el);
             left_sidebar(app, dom, left, viewport_h);
         }
-        if right_w > 0.01 {
+        if right_w > 0.01 && app.right_panel != RightPanel::Ai {
             let el = El::div()
                 .class("workspace-split mod-right-split is-floating")
                 .style(&format!("top: 0; bottom: 0; right: 0; width: {:.1}px", float_w(avail, right_want)));
@@ -2821,6 +2856,12 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
         let right = dom.add(ws, el);
         right_sidebar(app, dom, right, info);
         resize_handle(app, dom, right, false);
+    }
+    // The copilot takes no column and no 260 px band either: in a compact window it covers the
+    // workspace. It goes last, so it is painted over the note and over a floating sidebar; the
+    // status bar is a child of the window, out of the sheet's reach.
+    if compact && app.ai_sheet() {
+        ai_sheet(app, dom, ws, info);
     }
     let status = dom.add(0, El::div().class("status-bar"));
     // What the element under the pointer does, with its hotkey. Rows whose label had to be

@@ -12,8 +12,8 @@
 //!
 //! Content a scroller pushed out of sight is not a defect: the check asks whether a node that is
 //! visible is cut, not whether a long note is longer than its pane.
-use metamind_app::shell::ViewMode;
-use metamind_app::{render, App, Frame};
+use metamind_app::shell::{RightPanel, ViewMode};
+use metamind_app::{render, App, Frame, Key};
 use metamind_ui::{Dom, Fonts, Pixmap};
 use std::fs;
 
@@ -275,6 +275,8 @@ fn views() -> Vec<(&'static str, Vec<&'static str>)> {
         ("salientes", vec!["outgoing-links:open"]),
         ("esquema", vec!["outline:open"]),
         ("ia", vec!["ai:open"]),
+        // The copilot in a compact window: the same command, and the sheet it opens there.
+        ("ia-hoja", vec!["ai:open"]),
         ("grafico", vec!["graph:open"]),
         ("ajustes", vec!["app:open-settings"]),
         ("ajustes-editor", vec!["app:open-settings", "settings:section:editor"]),
@@ -362,6 +364,21 @@ fn no_text_is_cut_and_nothing_leaves_the_window() {
         app.open_note("Sin enlaces.md");
         app.run("backlinks:open");
         check(&mut app, &mut fonts, "retroenlaces-vacio", w, h, &mut failures);
+        // The copilot with a conversation in it and a profile name too long for a phone: in a
+        // compact window the sheet shortens the model instead of pushing the way out of the
+        // header, and the input keeps its line above the status bar.
+        let mut app = open(&d);
+        app.run("ai:open");
+        let mut cfg = metamind_app::ai::AiConfig::from_config(&app.config);
+        cfg.profiles[0].model = "un-modelo-con-un-nombre-imposible-de-largo-para-un-telefono".into();
+        app.config.app.set(metamind_app::ai::KEY_PROFILES, cfg.to_json()["profiles"].clone());
+        app.ai.messages.push(metamind_app::ai::Message::user("¿Qué dice la nota sobre los enlaces?"));
+        app.ai.messages.push(metamind_app::ai::Message::assistant(
+            "Dice que [[A]] enlaza a [[B]] y que los enlaces que no resuelven quedan pendientes. "
+                .repeat(3)
+                .trim(),
+        ));
+        check(&mut app, &mut fonts, "ia-hoja-conversacion", w, h, &mut failures);
         // A query longer than its field: the caret is where the typing is, so the field shows the
         // end of the text and an ellipsis for the start, and nothing runs past the box.
         let mut app = open(&d);
@@ -478,4 +495,146 @@ fn sidebars_slide_and_reduced_motion_skips_it() {
     assert!(!app.anims.active(), "reduced motion starts no clocks");
     assert!((width_of(&now, "mod-left-split") - want_l).abs() < 1.0);
     assert!((width_of(&now, "mod-right-split") - want_r).abs() < 1.0);
+}
+
+/// The first node wearing `class`, in document order.
+fn classed(f: &Frame, class: &str) -> Option<usize> {
+    f.dom.nodes.iter().position(|n| n.el.classes.iter().any(|c| c == class))
+}
+
+/// The copilot in a compact window is a sheet over the workspace: no column is taken from the
+/// note, the header keeps its way out inside the window, and the input ends above the status
+/// bar. A wide window keeps the column it always had.
+#[test]
+fn the_copilot_sheet_covers_the_workspace_in_a_compact_window() {
+    let d = vault();
+    let mut fonts = Fonts::new();
+    let mut app = open(&d);
+    // The first frame is where the window learns it is compact.
+    let _ = frame(&mut app, &mut fonts, 360, 640);
+    app.run("ai:open");
+    let f = frame(&mut app, &mut fonts, 360, 640);
+    assert!(app.right_open);
+    assert_eq!(app.right_panel, RightPanel::Ai);
+    assert_eq!(width_of(&f, "mod-right-split"), 0.0, "no column is reserved for the copilot");
+    let sheet = classed(&f, "ai-sheet").expect("the copilot is a sheet in a compact window");
+    let root = classed(&f, "mod-root").expect("the note");
+    assert!(root < sheet, "the sheet is added after the note, so it is painted over it");
+    let ws = classed(&f, "workspace").expect("the workspace");
+    let (s, w) = (f.dom.nodes[sheet].rect, f.dom.nodes[ws].rect);
+    assert!((s.x - w.x).abs() < 1.0 && (s.w - w.w).abs() < 1.0, "the sheet covers the workspace: {s:?}");
+    assert!((s.y - w.y).abs() < 1.0 && (s.h - w.h).abs() < 1.0, "and ends where it does: {s:?}");
+    // The way out is inside the window, whatever the profile is called.
+    let close = f.dom.nodes[classed(&f, "ai-sheet-close").expect("the close button")].rect;
+    assert!(close.x >= 0.0 && close.x + close.w <= 360.0, "the close button stays visible: {close:?}");
+    // The input sits on the last line of the sheet and never over the status bar.
+    let field = f.dom.nodes[classed(&f, "ai-input-container").expect("the input")].rect;
+    assert!(field.y > w.y, "the input is at the bottom of the sheet: {field:?}");
+    assert!(field.y + field.h <= w.y + w.h + 0.5, "the input ends above the status bar: {field:?}");
+    assert!(f.dom.by_id("ai-messages").is_some(), "the conversation is the panel's own");
+    // A press on the blank space of the sheet belongs to the panel: the note behind it keeps its
+    // caret where it was, instead of taking a click nobody aimed at it.
+    let at = (s.x + s.w / 2.0, s.y + s.h / 2.0);
+    let mut hit = f.dom.hit(at.0, at.1);
+    let mut over_sheet = false;
+    while let Some(i) = hit {
+        if i == sheet {
+            over_sheet = true;
+            break;
+        }
+        hit = f.dom.nodes[i].parent;
+    }
+    assert!(over_sheet, "the sheet is what the pointer finds over the note");
+    let caret = app.tab().unwrap().editor.buf.sels[0];
+    app.click(&f, &mut fonts, at.0, field.y - 30.0, false);
+    assert_eq!(app.tab().unwrap().editor.buf.sels[0], caret, "the hidden note keeps its caret");
+    // The keys go to the question as well, and not to the note the sheet hides.
+    let note = app.tab().unwrap().editor.buf.text();
+    app.text_input("x");
+    assert!(app.ai.input.ends_with('x'), "typing reaches the question: {:?}", app.ai.input);
+    assert_eq!(app.tab().unwrap().editor.buf.text(), note, "the hidden note keeps its text");
+    let before = app.right_open;
+    app.click(&f, &mut fonts, close.x + close.w / 2.0, close.y + close.h / 2.0, false);
+    assert!(before && !app.right_open, "the close button runs ai:close");
+    let after = frame(&mut app, &mut fonts, 360, 640);
+    assert!(classed(&after, "ai-sheet").is_none(), "the sheet goes with the panel");
+
+    // Escape is the keyboard's way out: the input takes the first press, the sheet goes on the
+    // second, and the note keeps the text it had.
+    app.run("ai:open");
+    let f = frame(&mut app, &mut fonts, 360, 640);
+    let field = f.dom.nodes[classed(&f, "ai-input").expect("the field")].rect;
+    app.click(&f, &mut fonts, field.x + 4.0, field.y + 4.0, false);
+    assert!(app.ai.editing, "a press on the field gives it the keyboard");
+    app.key(Key::parse("Escape").unwrap());
+    assert!(app.right_open, "the first Escape stops the field editing");
+    app.key(Key::parse("Escape").unwrap());
+    assert!(!app.right_open, "the second one closes the sheet");
+    assert_eq!(app.tab().unwrap().editor.buf.text(), note, "the note is as it was");
+
+    // A window with room keeps the panel as the column beside the note.
+    let mut app = open(&d);
+    app.run("ai:open");
+    let f = frame(&mut app, &mut fonts, 1280, 720);
+    assert!(classed(&f, "ai-sheet").is_none(), "no sheet when the window has room");
+    assert!(width_of(&f, "mod-right-split") > 100.0, "the right sidebar keeps its column");
+    assert!(classed(&f, "ai-panel").is_some(), "and the panel inside it");
+
+    // A profile longer than the header ends in an ellipsis, and the title keeps every letter.
+    let mut app = open(&d);
+    let _ = frame(&mut app, &mut fonts, 360, 640);
+    let mut cfg = metamind_app::ai::AiConfig::from_config(&app.config);
+    cfg.profiles[0].model = "un-modelo-con-un-nombre-imposible-de-largo-para-un-telefono".into();
+    app.config.app.set(metamind_app::ai::KEY_PROFILES, cfg.to_json()["profiles"].clone());
+    app.run("ai:open");
+    let f = frame(&mut app, &mut fonts, 360, 640);
+    let model = &f.dom.nodes[classed(&f, "ai-sheet-model").expect("the model")];
+    assert!(
+        model.shown.as_deref().is_some_and(|s| s.ends_with('…')),
+        "the model ends in an ellipsis: {:?}",
+        model.shown.as_deref().or(model.el.text.as_deref())
+    );
+    let title = &f.dom.nodes[classed(&f, "ai-sheet-title").expect("the title")];
+    assert_eq!(title.el.text.as_deref(), Some("Copiloto"));
+    assert!(title.shown.is_none(), "the title is never shortened");
+}
+
+/// The sheet slides in from the right on its own clock, and a reader who asked for reduced motion
+/// gets it in place on the first frame.
+#[test]
+fn the_copilot_sheet_slides_in_and_reduced_motion_skips_it() {
+    let d = vault();
+    let mut fonts = Fonts::new();
+    let mut app = open(&d);
+    let _ = frame(&mut app, &mut fonts, 360, 640);
+    assert!(!app.anims.active());
+    app.anims.enabled = true;
+    app.run("ai:open");
+    let first = frame(&mut app, &mut fonts, 360, 640);
+    assert!(app.anims.active(), "opening the sheet starts its clock");
+    let sheet = classed(&first, "ai-sheet").expect("the sheet is in the tree while it slides");
+    assert!(first.dom.nodes[sheet].rect.x > 100.0, "it starts off the right edge");
+    std::thread::sleep(std::time::Duration::from_millis(260));
+    let settled = frame(&mut app, &mut fonts, 360, 640);
+    let (sheet, ws) = (
+        classed(&settled, "ai-sheet").expect("the sheet"),
+        classed(&settled, "workspace").expect("the workspace"),
+    );
+    assert!(
+        (settled.dom.nodes[sheet].rect.x - settled.dom.nodes[ws].rect.x).abs() < 1.0,
+        "it lands on the workspace"
+    );
+
+    // Reduced motion: no clock runs, and the sheet is in place on the first frame.
+    app.set_reduced_motion(true);
+    app.run("ai:close");
+    let _ = frame(&mut app, &mut fonts, 360, 640);
+    app.run("ai:open");
+    let now = frame(&mut app, &mut fonts, 360, 640);
+    assert!(!app.anims.active(), "reduced motion starts no clock");
+    let (sheet, ws) = (
+        classed(&now, "ai-sheet").expect("the sheet"),
+        classed(&now, "workspace").expect("the workspace"),
+    );
+    assert!((now.dom.nodes[sheet].rect.x - now.dom.nodes[ws].rect.x).abs() < 1.0);
 }

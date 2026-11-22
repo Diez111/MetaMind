@@ -296,6 +296,19 @@ impl App {
             }
             return self.run(&action);
         }
+        // The copilot covers the workspace in a compact window, so a press on its blank space is
+        // the panel's: it is not a caret in the note the sheet hides, nor a pan of a graph behind
+        // it, and it does not take the keyboard away from the question being written. The
+        // controls of the sheet answered through their actions above.
+        if self.ai_sheet()
+            && frame
+                .dom
+                .nodes
+                .iter()
+                .any(|n| n.el.classes.iter().any(|c| c == "ai-sheet") && n.rect.contains(x, y))
+        {
+            return;
+        }
         self.graph_end_edit();
         self.backlinks_editing = false;
         self.ai.editing = false;

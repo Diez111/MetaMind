@@ -59,6 +59,8 @@ pub struct Seen {
     pub notice: Option<String>,
     pub left: bool,
     pub right: bool,
+    /// The copilot covering the workspace as a sheet instead of taking a column beside it.
+    pub ai_sheet: bool,
     /// The popovers that come and go with the pointer and the keyboard.
     pub hover: bool,
     pub suggest: bool,
@@ -126,6 +128,7 @@ impl crate::App {
             notice: self.notice.clone(),
             left: self.left_open,
             right: self.right_open,
+            ai_sheet: self.ai_sheet(),
             hover: self.hover_preview.is_some(),
             suggest: self.suggest.is_some(),
             tab: (self.pane, self.active),
@@ -151,6 +154,10 @@ impl crate::App {
         }
         if now.right != old.right {
             self.anims.start("right", SLOW_MS);
+        }
+        if now.ai_sheet && !old.ai_sheet {
+            // The sheet slides in from the right, on the same clock as the sidebars it replaces.
+            self.anims.start("ai-sheet", SLOW_MS);
         }
         if now.hover && !old.hover {
             self.anims.start("hover", FAST_MS);
