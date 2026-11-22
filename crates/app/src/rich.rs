@@ -332,8 +332,47 @@ impl Pen {
         match f {
             mermaid_core::Fill::Node => mix(self.bg, self.fg, 0.12),
             mermaid_core::Fill::Accent => mix(self.bg, self.fg, 0.05),
+            // The shades a diagram uses to tell neighbouring shapes apart: the discs of a pie,
+            // the levels of a mindmap.
+            mermaid_core::Fill::Tone(n) => mix(self.bg, self.fg, 0.06 + 0.06 * f32::from(n.min(6))),
             _ => self.bg,
         }
+    }
+}
+
+/// Fills a polygon one pixel row at a time, the way the diamond of a flowchart is filled: the
+/// painter has no polygon of its own, but a row of commands one device pixel tall comes to the
+/// same shape.
+fn fill_polygon(out: &mut Vec<Cmd>, color: Color, poly: &[(f32, f32)]) {
+    if color.a == 0 || poly.len() < 3 {
+        return;
+    }
+    let top = poly.iter().map(|p| p.1).fold(f32::MAX, f32::min);
+    let bottom = poly.iter().map(|p| p.1).fold(f32::MIN, f32::max);
+    if !top.is_finite() || !bottom.is_finite() {
+        return;
+    }
+    let mut y = top.floor();
+    while y <= bottom {
+        let row = y + 0.5;
+        let mut xs: Vec<f32> = Vec::new();
+        for w in poly.windows(2) {
+            let ((ax, ay), (bx, by)) = (w[0], w[1]);
+            if (ay <= row && by > row) || (by <= row && ay > row) {
+                xs.push(ax + (row - ay) / (by - ay) * (bx - ax));
+            }
+        }
+        xs.sort_by(f32::total_cmp);
+        for pair in xs.as_chunks::<2>().0 {
+            if pair[1] > pair[0] {
+                out.push(Cmd::Fill {
+                    rect: Rect::new(pair[0], y, pair[1] - pair[0], 1.0),
+                    color,
+                    radius: 0.0,
+                });
+            }
+        }
+        y += 1.0;
     }
 }
 
@@ -417,6 +456,25 @@ fn emit_diagram(d: &mermaid_core::Diagram, pen: &Pen, base: &TextStyle, dm: &mut
                 let r = rx.max(*ry) * pen.s;
                 out.push(Cmd::Circles { items: vec![[cx, cy, r]], color: stroke });
                 out.push(Cmd::Circles { items: vec![[cx, cy, r - 1.2]], color: pen.fill(*fill) });
+            }
+            I::Sector { cx, cy, r, from, to, fill } => {
+                let (cx, cy) = pen.p(*cx, *cy);
+                let r = r * pen.s;
+                let sweep = to - from;
+                let steps = (sweep.abs() * 20.0).clamp(3.0, 90.0) as usize;
+                let mut poly: Vec<(f32, f32)> = Vec::with_capacity(steps + 2);
+                poly.push((cx, cy));
+                for i in 0..=steps {
+                    let t = from + sweep * (i as f32 / steps as f32);
+                    poly.push((cx + r * t.cos(), cy + r * t.sin()));
+                }
+                fill_polygon(out, pen.fill(*fill), &poly);
+                let mut segs: Vec<[f32; 4]> =
+                    poly.windows(2).map(|p| [p[0].0, p[0].1, p[1].0, p[1].1]).collect();
+                if let Some(last) = poly.last() {
+                    segs.push([last.0, last.1, cx, cy]);
+                }
+                out.push(Cmd::Lines { segs, width: lw(1.0), color: stroke });
             }
             I::Line { pts, dashed: dash, width } => {
                 let pts: Vec<(f32, f32)> = pts.iter().map(|p| pen.p(p.0, p.1)).collect();

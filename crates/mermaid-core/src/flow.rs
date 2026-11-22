@@ -732,7 +732,7 @@ fn layout(mut g: Graph, dir: &str, m: &mut dyn Measure) -> Diagram {
     let margin = 14.0;
     let (dx, dy) = (margin - lo.0, margin - lo.1);
     for it in &mut items {
-        shift(it, dx, dy);
+        crate::common::shift(it, dx, dy);
     }
     Diagram { width: hi.0 - lo.0 + 2.0 * margin, height: hi.1 - lo.1 + 2.0 * margin, items }
 }
@@ -778,29 +778,6 @@ fn emit_edge(
                 break;
             }
             walk -= l;
-        }
-    }
-}
-
-pub(crate) fn shift(it: &mut Item, dx: f32, dy: f32) {
-    match it {
-        Item::Rect { x, y, .. } => {
-            *x += dx;
-            *y += dy;
-        }
-        Item::Diamond { cx, cy, .. } | Item::Ellipse { cx, cy, .. } => {
-            *cx += dx;
-            *cy += dy;
-        }
-        Item::Line { pts, .. } => {
-            for p in pts {
-                p.0 += dx;
-                p.1 += dy;
-            }
-        }
-        Item::Arrow { x, y, .. } | Item::Text { x, y, .. } => {
-            *x += dx;
-            *y += dy;
         }
     }
 }
