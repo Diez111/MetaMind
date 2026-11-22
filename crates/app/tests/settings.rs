@@ -1097,3 +1097,203 @@ fn the_open_list_stays_in_a_phone_sized_panel() {
         list[0].2
     );
 }
+
+#[test]
+fn the_model_is_picked_from_a_list_and_typed_only_when_wanted() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    app.run("settings:section:ai");
+    app.run("settings:menu:ai.model:0");
+    let menu = app.settings.as_ref().and_then(|s| s.menu.clone()).expect("the list of models is open");
+    let labels: Vec<&str> = menu.options.iter().map(|(_, l)| l.as_str()).collect();
+    // The model in force is the row the list opens on, and it is on the list.
+    assert_eq!(menu.options[menu.at].0, menu.current, "the list opens on the model in force: {labels:?}");
+    assert!(menu.options.iter().any(|(v, _)| v == "deepseek-v4.1-flash"), "{labels:?}");
+    assert!(labels.contains(&"Escribir otro…"), "{labels:?}");
+    assert!(labels.iter().any(|l| l.starts_with("Consultar")), "{labels:?}");
+
+    // Picking one writes it: no typing, no spelling by memory.
+    let at = menu.options.iter().position(|(v, _)| v == "deepseek-chat").expect("the provider's catalogue");
+    app.run(&format!("settings:pick:ai.model:0:{at}"));
+    let cfg = metamind_app::ai::AiConfig::from_config(&app.config);
+    assert_eq!(cfg.profiles[0].model, "deepseek-chat");
+    assert!(app.settings.is_some(), "picking a model keeps the panel");
+
+    // "Escribir otro…" hands the field over, so a model the list does not have is still reachable.
+    app.run("settings:menu:ai.model:0");
+    let menu = app.settings.as_ref().and_then(|s| s.menu.clone()).unwrap();
+    let at = menu.options.iter().position(|(_, l)| l == "Escribir otro…").unwrap();
+    app.run(&format!("settings:pick:ai.model:0:{at}"));
+    let editing = app.settings.as_ref().and_then(|s| s.edit.as_ref()).map(|e| e.key.clone());
+    assert_eq!(editing.as_deref(), Some("ai.p:model:0"), "the field takes over for a model of its own");
+    typed(&mut app, " my-own-model");
+    app.key(key("Enter"));
+    let cfg = metamind_app::ai::AiConfig::from_config(&app.config);
+    assert!(cfg.profiles[0].model.ends_with("my-own-model"), "{}", cfg.profiles[0].model);
+}
+
+#[test]
+fn the_community_theme_is_picked_from_a_list() {
+    let d = vault();
+    let w = |p: &str, t: &str| {
+        let abs = d.path().join(p);
+        fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        fs::write(abs, t).unwrap();
+    };
+    w(".obsidian/themes/Minimal/theme.css", ".theme-dark { --background-primary: #101010 }");
+    w(".obsidian/themes/Gruvbox/theme.css", ".theme-dark { --background-primary: #202020 }");
+    fs::write(d.path().join(".obsidian/appearance.json"), r#"{"theme":"obsidian","cssTheme":"Minimal"}"#)
+        .unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    app.run("settings:section:appearance");
+    // The row is a dropdown now: the themes on disk, not a control that cycles when pressed.
+    let f = draw(&mut app);
+    assert!(
+        !actions(&f).contains(&"settings:css-theme"),
+        "the theme control is not a cycle: {:?}",
+        actions(&f)
+    );
+    app.run("settings:menu:cssTheme");
+    let menu = app.settings.as_ref().and_then(|s| s.menu.clone()).expect("the list of themes is open");
+    let labels: Vec<&str> = menu.options.iter().map(|(_, l)| l.as_str()).collect();
+    assert!(labels.contains(&"Predeterminado"), "{labels:?}");
+    assert!(labels.contains(&"Minimal"), "{labels:?}");
+    assert!(labels.contains(&"Gruvbox"), "{labels:?}");
+    assert_eq!(menu.options[menu.at].0, "Minimal", "the list opens on the theme in force: {labels:?}");
+
+    let at = menu.options.iter().position(|(v, _)| v == "Gruvbox").unwrap();
+    app.run(&format!("settings:pick:cssTheme:{at}"));
+    let a = read_json(&d, ".obsidian/appearance.json");
+    assert_eq!(a["cssTheme"], "Gruvbox", "the pick is written: {a}");
+    assert!(app.settings.is_some(), "picking a theme keeps the panel");
+
+    // And the way back to none of them.
+    app.run("settings:menu:cssTheme");
+    app.run("settings:pick:cssTheme:0");
+    let a = read_json(&d, ".obsidian/appearance.json");
+    assert_eq!(a["cssTheme"], "", "the default theme is an empty name: {a}");
+}
+
+#[test]
+fn a_long_value_ends_in_an_ellipsis_and_never_leaves_its_row() {
+    let d = vault();
+    fs::create_dir_all(d.path().join(".obsidian")).unwrap();
+    let long = "https://opencode.ai/inference/go/openai/v1/a-very-long-segment/and-another";
+    fs::write(
+        d.path().join(".obsidian/app.json"),
+        format!(
+            r#"{{"ai.profiles":[{{"name":"Predeterminado","base_url":"{long}","model":"deepseek-v4.1-flash"}}],"ai.active":"Predeterminado"}}"#
+        ),
+    )
+    .unwrap();
+    for (w, h) in [(1280u32, 900u32), (900, 900), (719, 900), (500, 800)] {
+        let mut app = App::open(d.path()).unwrap();
+        let mut fonts = metamind_ui::Fonts::new();
+        let mut pm = metamind_ui::Pixmap::new(w, h).unwrap();
+        app.run("app:open-settings");
+        app.run("settings:section:ai");
+        let mut f = metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+        // The row is at the bottom of a long page: scroll it into sight the way a reader does.
+        for _ in 0..14 {
+            let page = f.dom.by_id("settings-content").map(|n| f.dom.nodes[n].rect).unwrap();
+            let field = f
+                .dom
+                .nodes
+                .iter()
+                .find(|n| n.el.action.as_deref() == Some("settings:edit:ai.p:base_url:0"))
+                .map(|n| n.rect);
+            if field.is_some_and(|r| page.contains(r.x + 8.0, r.y + 4.0)) {
+                break;
+            }
+            app.wheel(&f, page.x + page.w / 2.0, page.y + page.h / 2.0, 6.0);
+            f = metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+        }
+        let page = f.dom.by_id("settings-content").map(|n| f.dom.nodes[n].rect).unwrap();
+        let node = f
+            .dom
+            .nodes
+            .iter()
+            .position(|n| n.el.action.as_deref() == Some("settings:edit:ai.p:base_url:0"))
+            .expect("the field is laid out");
+        let field = f.dom.nodes[node].rect;
+        assert!(
+            field.x >= page.x - 0.5 && field.x + field.w <= page.x + page.w + 0.5,
+            "{w}x{h}: the field leaves the page: {field:?} against {page:?}"
+        );
+        // What is drawn is the beginning of the value and an ellipsis, not the whole URL running
+        // past the box.
+        let shown = f.dom.nodes[node].shown.clone().unwrap_or_default();
+        assert!(shown.ends_with('…'), "{w}x{h}: the long value is shortened: {shown:?}");
+        assert!(shown.chars().count() < long.chars().count(), "{w}x{h}: {shown:?}");
+    }
+}
+
+#[test]
+fn a_click_that_grazes_the_panel_keeps_the_settings_window() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    let mut fonts = metamind_ui::Fonts::new();
+    let mut pm = metamind_ui::Pixmap::new(1280, 900).unwrap();
+    app.run("app:open-settings");
+    let f = metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+    let panel = f
+        .dom
+        .nodes
+        .iter()
+        .find(|n| n.el.classes.iter().any(|c| c == "mod-settings"))
+        .map(|n| n.rect)
+        .unwrap();
+    // A stray few pixels under the panel: a row the bottom of the page cut, a click that slipped.
+    let (gx, gy) = (panel.x + panel.w / 2.0, panel.y + panel.h + 10.0);
+    assert_eq!(
+        f.dom.action_at(gx, gy).map(|(_, a)| a.to_string()).as_deref(),
+        Some("settings:close"),
+        "the point is on the veil: the test is measuring what it says it measures"
+    );
+    app.click(&f, &mut fonts, gx, gy, false);
+    assert!(app.settings.is_some(), "a near miss on the veil does not throw the window away");
+    // Well outside it: the window closes, the way a modal does.
+    let f = metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+    app.click(&f, &mut fonts, panel.x + panel.w / 2.0, (panel.y + panel.h + 200.0).min(895.0), false);
+    assert!(app.settings.is_none(), "a click clearly outside closes it");
+}
+
+#[test]
+fn every_dropdown_of_the_panel_opens_a_list() {
+    // A control that says ▾ and walks the options on every press is a dropdown that never drops:
+    // the reader cannot see what they are choosing. Every section is checked, the plugin pages
+    // included, so a new choice cannot be born as a cycle.
+    for section in ["appearance", "editor", "calendar", "ai", "plugins", "advanced"] {
+        let d = vault();
+        let mut app = App::open(d.path()).unwrap();
+        app.run("app:open-settings");
+        app.run(&format!("settings:section:{section}"));
+        let f = draw(&mut app);
+        for n in &f.dom.nodes {
+            if !n.el.classes.iter().any(|c| c == "dropdown") {
+                continue;
+            }
+            let a = n.el.action.as_deref().unwrap_or("");
+            assert!(
+                a.starts_with("settings:menu:"),
+                "{section}: a dropdown that does not open a list: {a:?} ({:?})",
+                n.el.text
+            );
+        }
+        // And opening it really opens one: the list is on screen with the right rows.
+        if let Some(n) = f.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == "dropdown")) {
+            let a = n.el.action.clone().unwrap();
+            let key = a.trim_start_matches("settings:menu:");
+            app.run(&a);
+            let menu = app.settings.as_ref().and_then(|s| s.menu.clone());
+            assert!(menu.is_some(), "{section}: {key} opened no list");
+            let f = draw(&mut app);
+            assert!(
+                f.dom.nodes.iter().any(|n| n.el.classes.iter().any(|c| c == "setting-menu")),
+                "{section}: {key} has no list on screen"
+            );
+        }
+    }
+}

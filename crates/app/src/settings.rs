@@ -819,6 +819,9 @@ impl App {
             }
         }
         match op {
+            // A click that only grazed the panel: the open list closes (the pass above), and the
+            // window stays, with everything the reader typed into it.
+            "veil" => {}
             // A click outside closes the open list first: choosing a provider must never take the
             // panel away from the reader, and the list is drawn over the part the veil covers.
             "close" => {
@@ -944,16 +947,6 @@ impl App {
                 let on = self.plugin_setting(&p, key).as_bool().unwrap_or(default);
                 self.set_plugin_setting(plugin, key, json!(!on));
             }
-            "pcycle" => {
-                let Some((plugin, key)) = arg.split_once(':') else { return true };
-                let Some(p) = self.plugin_registry().get(plugin).cloned() else { return true };
-                let Some(setting) = p.settings.iter().find(|s| s.key == key) else { return true };
-                let crate::plugins::SettingKind::Choice(default, opts) = setting.kind else { return true };
-                let cur = self.plugin_setting(&p, key);
-                let cur = cur.as_str().unwrap_or(default);
-                let at = opts.iter().position(|o| o.0 == cur).map_or(0, |p| p + 1);
-                self.set_plugin_setting(plugin, key, json!(opts[at % opts.len()].0));
-            }
             "pset" => {
                 let parts: Vec<&str> = arg.splitn(3, ':').collect();
                 if let [plugin, key, value] = parts.as_slice() {
@@ -970,16 +963,6 @@ impl App {
             }
             "reload-plugins" => {
                 self.run("plugins:reload");
-            }
-            "css-theme" => {
-                let mut opts = vec![String::new()];
-                opts.extend(self.settings.iter().flat_map(|s| s.themes.clone()));
-                let cur = self.config.css_theme().unwrap_or("").to_string();
-                if !opts.contains(&cur) {
-                    opts.push(cur.clone());
-                }
-                let at = opts.iter().position(|o| *o == cur).map_or(0, |p| p + 1);
-                self.save_setting(File::Appearance, "cssTheme", json!(opts[at % opts.len()]));
             }
             "snippet" => {
                 let mut on: Vec<Value> = self
@@ -1224,22 +1207,45 @@ impl App {
                     }
                     return;
                 }
-                let options = if arg.starts_with("ai.model:") {
-                    // The models the provider answered for this profile: (id, id).
-                    let list: Vec<(String, String)> =
-                        self.ai_models.list.iter().map(|m| (m.clone(), m.clone())).collect();
-                    if list.is_empty() {
-                        self.notice = Some("Consultá los modelos del proveedor primero".to_string());
-                        return;
+                let current;
+                let options = if let Some(at) =
+                    arg.strip_prefix("ai.model:").and_then(|a| a.parse::<usize>().ok())
+                {
+                    let cfg = AiConfig::from_config(&self.config);
+                    let Some(p) = cfg.profiles.get(at) else { return };
+                    current = p.model.clone();
+                    model_options(p, &self.ai_models)
+                } else if let Some((plugin, key)) = arg.strip_prefix('@').and_then(|r| r.split_once(':')) {
+                    let Some(p) = self.plugin_registry().get(plugin).cloned() else { return };
+                    let Some(setting) = p.settings.iter().find(|s| s.key == key) else { return };
+                    let crate::plugins::SettingKind::Choice(default, opts) = setting.kind else { return };
+                    let cur = self.plugin_setting(&p, key);
+                    current = cur.as_str().unwrap_or(default).to_string();
+                    opts.iter().map(|(v, l)| ((*v).to_string(), (*l).to_string())).collect()
+                } else if arg == "cssTheme" {
+                    current = self.config.css_theme().unwrap_or("").to_string();
+                    let themes = self.settings.as_ref().map(|s| s.themes.clone()).unwrap_or_default();
+                    let mut opts = vec![(String::new(), "Predeterminado".to_string())];
+                    opts.extend(themes.into_iter().map(|t| (t.clone(), t)));
+                    // A theme in force whose folder is gone still has to be marked in the list.
+                    if !current.is_empty() && !opts.iter().any(|(v, _)| *v == current) {
+                        opts.push((current.clone(), current.clone()));
                     }
-                    list
+                    opts
+                } else if arg.starts_with("ai.") {
+                    let Some(options) = choice_options(arg) else { return };
+                    current = self.ai_field(arg).unwrap_or_default();
+                    options
                 } else {
                     let Some(options) = choice_options(arg) else { return };
+                    let cur = item(arg)
+                        .and_then(|it| self.setting_file(it.file).str(it.key).map(str::to_string))
+                        .unwrap_or_default();
+                    current = cur;
                     options
                 };
                 // It opens on the row the value in force is on.
-                let cur = item(arg).and_then(|it| self.setting_file(it.file).str(it.key).map(str::to_string));
-                let at = cur.and_then(|c| options.iter().position(|(v, _)| *v == c)).unwrap_or(0);
+                let at = options.iter().position(|(v, _)| *v == current).unwrap_or(0);
                 let current = options.get(at).map(|(v, _)| v.clone()).unwrap_or_default();
                 if let Some(s) = &mut self.settings {
                     s.menu = Some(SettingsMenu { key: arg.to_string(), options, at, current });
@@ -1274,6 +1280,14 @@ impl App {
     /// Writes what a dropdown picked: a settings choice, or the preset of an AI profile, which
     /// fills the URL and a model that provider usually serves.
     fn apply_choice(&mut self, key: &str, value: &str) {
+        if key == "cssTheme" {
+            self.save_setting(File::Appearance, "cssTheme", json!(value));
+            return;
+        }
+        if let Some((plugin, setting)) = key.strip_prefix('@').and_then(|r| r.split_once(':')) {
+            self.set_plugin_setting(plugin, setting, json!(value));
+            return;
+        }
         if let Some(at) = key.strip_prefix("ai.prompt:").and_then(|a| a.parse::<usize>().ok()) {
             let Ok(index) = value.parse::<usize>() else { return };
             let Some(text) = crate::ai::preset_prompt(index) else { return };
@@ -1286,6 +1300,16 @@ impl App {
             return;
         }
         if let Some(at) = key.strip_prefix("ai.model:").and_then(|a| a.parse::<usize>().ok()) {
+            // The last row of the list is not a model: it is the way to ask the provider which
+            // ones it serves, which is what fills the list with the names it really answers.
+            if value == ASK_MODELS {
+                self.menu_action("ai-models", &at.to_string());
+                return;
+            }
+            if value == WRITE_MODEL {
+                self.run_settings(&format!("settings:edit:ai.p:model:{at}"));
+                return;
+            }
             let mut cfg = AiConfig::from_config(&self.config);
             if at < cfg.profiles.len() && !value.trim().is_empty() {
                 cfg.profiles[at].model = value.trim().to_string();
@@ -1488,6 +1512,59 @@ impl App {
         }
         true
     }
+
+    /// The value the list of an AI field opens on: the provider preset in force, or the prompt
+    /// template in force, spelled the way [`choice_options`] spells the options (their index).
+    fn ai_field(&self, arg: &str) -> Option<String> {
+        let (key, rest) = arg.split_once(':')?;
+        let at: usize = rest.parse().ok()?;
+        let cfg = AiConfig::from_config(&self.config);
+        let p = cfg.profiles.get(at)?;
+        match key {
+            "ai.preset" => {
+                crate::ai::Preset::ALL.iter().position(|x| *x == p.preset()).map(|i| i.to_string())
+            }
+            "ai.prompt" => crate::ai::PROMPT_PRESETS
+                .iter()
+                .enumerate()
+                .find(|(i, _)| {
+                    crate::ai::preset_prompt(*i).is_some_and(|t| t.trim() == p.system_prompt.trim())
+                })
+                .map(|(i, _)| i.to_string()),
+            _ => None,
+        }
+    }
+}
+
+/// The rows of a model list that are not a model: asking the provider which ones it serves, and
+/// writing one the list does not have. NUL cannot appear in a model name, so neither can clash.
+const ASK_MODELS: &str = "\u{0}ask-models";
+const WRITE_MODEL: &str = "\u{0}write-model";
+
+/// The models a profile can be pointed at: the ones the provider answered when it was asked (the
+/// real catalogue), the ones that provider is known to serve when it has not been asked, the one
+/// in force — the only one that could be missing — and last the way to ask the provider itself.
+fn model_options(p: &crate::ai::AiProfile, listed: &crate::ai::ModelList) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut push = |m: &str| {
+        if !m.trim().is_empty() && !out.iter().any(|(v, _)| v == m) {
+            out.push((m.to_string(), m.to_string()));
+        }
+    };
+    // The model in force goes first: it is what the reader has and what the list has to mark.
+    push(&p.model);
+    if listed.profile == p.name {
+        for m in &listed.list {
+            push(m);
+        }
+    } else {
+        for m in p.preset().models() {
+            push(m);
+        }
+    }
+    out.push((WRITE_MODEL.to_string(), "Escribir otro…".to_string()));
+    out.push((ASK_MODELS.to_string(), "Consultar los del proveedor…".to_string()));
+    out
 }
 
 fn vault_core_num(n: f64) -> String {
@@ -1535,12 +1612,14 @@ fn dropdown(dom: &mut Dom, ctl: NodeId, ui: &SettingsUi, key: &str, label: &str)
             .action(format!("settings:menu:{key}")),
     );
     // The list is not part of this row: a node that grows inside it either pushes the content or
-    // leaves a hole where it opened. The control only marks itself as the anchor and the overlay
-    // pass (`view::settings_menu`) puts the list over everything, after layout, where it can be
-    // measured and placed.
-    let el = dom.nodes[ctl].children.last().copied();
-    if let Some(el) = el {
-        dom.nodes[el].el.id = Some("sm-anchor".to_string());
+    // leaves a hole where it opened. The control of the list that is open marks itself as the
+    // anchor -- only that one: the panel has a dozen dropdowns and the first of them is not the
+    // row the list belongs to -- and the overlay pass (`view::settings_menu`) puts the list over
+    // everything, after layout, where it can be measured and placed.
+    if open.is_some() {
+        if let Some(el) = dom.nodes[ctl].children.last().copied() {
+            dom.nodes[el].el.id = Some("sm-anchor".to_string());
+        }
     }
 }
 
@@ -1591,8 +1670,13 @@ fn input(
     placeholder: Option<&str>,
 ) -> NodeId {
     let editing = edit.filter(|e| e.key == key);
-    let placeholder = placeholder.filter(|p| !p.is_empty() && shown.trim().is_empty() && editing.is_none());
+    // An empty field keeps saying what goes in it while it is being written, instead of turning
+    // into a blank box with a caret in it.
+    let empty = editing.map_or(shown.trim().is_empty(), |e| e.buf.trim().is_empty());
+    let placeholder = placeholder.filter(|p| !p.is_empty() && empty && shown.trim().is_empty());
     let text = match (editing, placeholder) {
+        // An empty field says what goes in it even while the caret is in it.
+        (Some(e), Some(p)) if e.buf.is_empty() => p.to_string(),
         // The field shows the text around the caret, with the caret in it.
         (Some(e), _) => e.view(24),
         (None, Some(p)) => p.to_string(),
@@ -1789,9 +1873,18 @@ fn appearance_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, pr
     items_view(app, dom, parent, ui, Section::Appearance, "", previews);
     heading(dom, parent, "Tema de la comunidad");
     let theme = app.config.css_theme().unwrap_or("");
-    let ctl = row(dom, parent, "Tema", "Lee los temas de .obsidian/themes; haz clic para cambiar.");
+    let ctl = row(
+        dom,
+        parent,
+        "Tema",
+        if ui.themes.is_empty() {
+            "No hay temas en .obsidian/themes: la bóveda usa el de MetaMind."
+        } else {
+            "Los temas de .obsidian/themes, con el nombre de la carpeta de cada uno."
+        },
+    );
     let label = if theme.is_empty() { "Predeterminado" } else { theme };
-    dom.add(ctl, El::div().class("dropdown").text(format!("{label} ▾")).action("settings:css-theme"));
+    dropdown(dom, ctl, ui, "cssTheme", label);
     heading(dom, parent, "Fragmentos CSS");
     let ctl = row(dom, parent, "Recargar", "Vuelve a leer temas, fragmentos y ajustes del disco.");
     button(dom, ctl, "Recargar", "settings:reload".into(), false);
@@ -1988,15 +2081,11 @@ fn plugin_detail_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi,
                 toggle(dom, ctl, on, format!("settings:ptoggle:{}:{}", p.id, s.key));
             }
             crate::plugins::SettingKind::Choice(default, opts) => {
+                // The same list every other choice in the panel opens: a control that says ▾ and
+                // walks the options on every press is a dropdown that never drops.
                 let cur = current.as_str().unwrap_or(default);
                 let label = opts.iter().find(|o| o.0 == cur).map_or(cur, |o| o.1);
-                dom.add(
-                    ctl,
-                    El::div()
-                        .class("dropdown")
-                        .text(format!("{label} ▾"))
-                        .action(format!("settings:pcycle:{}:{}", p.id, s.key)),
-                );
+                dropdown(dom, ctl, ui, &format!("@{0}:{1}", p.id, s.key), label);
             }
             crate::plugins::SettingKind::Text(_) => {
                 let shown = current.as_str().unwrap_or("");
@@ -2148,7 +2237,14 @@ fn ai_matches(needle: &str) -> bool {
 
 /// A text control whose contents are never painted: a row of dots when a value is set, and one
 /// dot per character while it is being edited.
-fn masked_input(dom: &mut Dom, ctl: NodeId, key: &str, set: bool, edit: Option<&FieldEdit>) -> NodeId {
+fn masked_input(
+    dom: &mut Dom,
+    ctl: NodeId,
+    key: &str,
+    set: bool,
+    edit: Option<&FieldEdit>,
+    blank: &str,
+) -> NodeId {
     let editing = edit.filter(|e| e.key == key);
     // Never the text itself: one dot per character with the caret among them, so a pasted key
     // still reads as one value of the right length.
@@ -2162,7 +2258,9 @@ fn masked_input(dom: &mut Dom, ctl: NodeId, key: &str, set: bool, edit: Option<&
             dots
         }
         None if set => "••••••••".to_string(),
-        None => "Sin clave".to_string(),
+        // The label of an empty field is the reader's: a key has none, an address has not been
+        // written yet.
+        None => blank.to_string(),
     };
     let id = dom.add(
         ctl,
@@ -2232,13 +2330,23 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
         ui.edit.as_ref(),
         Some("https://api.deepseek.com"),
     );
-    let ctl = row(dom, parent, "Modelo", "Nombre del modelo tal como lo espera el proveedor.");
-    input(dom, ctl, &format!("ai.p:model:{at}"), &p.model, ui.edit.as_ref(), Some("deepseek-v4.1-flash"));
-    // What the provider says it serves right now, when it has been asked: the model comes from
-    // this list instead of being typed from memory.
-    if app.ai_models.profile == p.name && !app.ai_models.list.is_empty() {
-        let ctl =
-            row(dom, parent, "Elegir del proveedor", "Los modelos que la API respondió hace un momento.");
+    // The model is picked from a list, the way the provider is: the field appears only while the
+    // reader writes one that is not on it. Typing a model from memory was the one field of this
+    // panel that could only be guessed.
+    let editing_model = ui.edit.as_ref().is_some_and(|e| e.key == format!("ai.p:model:{at}"));
+    let ctl = row(
+        dom,
+        parent,
+        "Modelo",
+        if editing_model {
+            "Enter lo aplica; Esc lo cancela."
+        } else {
+            "El nombre tal como lo espera el proveedor: elegilo de la lista o escribí otro."
+        },
+    );
+    if editing_model {
+        input(dom, ctl, &format!("ai.p:model:{at}"), &p.model, ui.edit.as_ref(), Some("deepseek-v4.1-flash"));
+    } else {
         dropdown(dom, ctl, ui, &format!("ai.model:{at}"), &p.model);
     }
     // What the provider says it serves, asked for on demand: the list is the source of truth for
@@ -2284,7 +2392,14 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
         "Clave de API",
         "Se guarda en .obsidian/app.json y no se muestra en claro. Sin clave el panel no envía.",
     );
-    masked_input(dom, ctl, &format!("ai.p:api_key:{at}"), !p.api_key.trim().is_empty(), ui.edit.as_ref());
+    masked_input(
+        dom,
+        ctl,
+        &format!("ai.p:api_key:{at}"),
+        !p.api_key.trim().is_empty(),
+        ui.edit.as_ref(),
+        "Sin clave",
+    );
     let ctl = row(dom, parent, "Tiempo de espera", "Segundos antes de cortar la conexión (1 a 600).");
     input(dom, ctl, &format!("ai.p:timeout_s:{at}"), &p.timeout_s.to_string(), ui.edit.as_ref(), Some("30"));
     heading(dom, parent, "Instrucciones");
@@ -2355,7 +2470,7 @@ fn calendar_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
         "Dirección iCal de Google",
         "Se guarda en .obsidian/app.json y no se muestra en claro. Los eventos de Google son de solo lectura.",
     );
-    masked_input(dom, ctl, "cal.ical_url", !url.is_empty(), ui.edit.as_ref());
+    masked_input(dom, ctl, "cal.ical_url", !url.is_empty(), ui.edit.as_ref(), "Sin dirección");
     button(dom, ctl, "Probar", "settings:cal-test".into(), false);
     let ctl = row(dom, parent, "Eventos del calendario", "Lo que la última consulta encontró, y cuándo fue.");
     let status = match (app.calendar.fetched_ms, &app.calendar.error) {

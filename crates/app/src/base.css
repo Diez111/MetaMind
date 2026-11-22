@@ -516,7 +516,10 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .checkbox-thumb { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 8px; background-color: #ffffff }
 .checkbox-container.is-enabled .checkbox-thumb { left: 21px }
 .dropdown, .setting-input, .setting-hotkey, .setting-button { padding: 4px 10px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); background-color: var(--background-secondary-alt); color: var(--text-normal); font-size: 13px; white-space: nowrap; cursor: pointer }
-.setting-input { width: 216px; max-width: 216px; background-color: var(--background-primary); cursor: text }
+/* A value longer than the box -- a base URL, a model name, a prompt -- ends in an ellipsis instead
+   of running under the column beside it. The whole value comes back when the field is edited. */
+.setting-input { width: 216px; max-width: 216px; min-width: 0; overflow: hidden; text-overflow: ellipsis; background-color: var(--background-primary); cursor: text }
+.setting-input.is-editing { text-overflow: clip }
 .setting-item-control > .dropdown, .setting-item-control > .setting-hotkey, .setting-item-control > .setting-button { width: 216px; text-align: left }
 .setting-item-control > .setting-button { width: auto }
 .setting-item-control > .theme-swatches { margin-right: 0 }
@@ -571,7 +574,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .modal.mod-settings.is-narrow .setting-item-main { flex-direction: column; align-items: stretch; gap: 8px }
 .modal.mod-settings.is-narrow .plugin-card-head { flex-direction: column; align-items: stretch; gap: 8px }
 .modal.mod-settings.is-narrow .setting-item-control { width: auto; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 6px }
-.modal.mod-settings.is-narrow .setting-input { width: 100%; max-width: none }
+.modal.mod-settings.is-narrow .setting-input { width: auto; max-width: none; min-width: 0; flex-grow: 1 }
 .modal.mod-settings.is-narrow .setting-item-control > .dropdown { width: auto; flex-grow: 1 }
 .modal.mod-settings.is-narrow .setting-item-control > .setting-hotkey { width: auto; flex-grow: 1 }
 /* The three previews are the whole control of the theme row, so they get the room they need
@@ -607,7 +610,9 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .plugin-card-title { display: flex; align-items: baseline; gap: 7px; min-width: 0 }
 .plugin-card-name { color: var(--text-normal); font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .plugin-card-version { color: var(--text-faint); font-size: 11px; flex-shrink: 0 }
-.plugin-card-desc { color: var(--text-muted); font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px }
+/* The description of a plugin says what it does: one line with an ellipsis cut the sentence
+   in the middle and told nothing. It wraps, and the card takes the line it needs. */
+.plugin-card-desc { color: var(--text-muted); font-size: var(--font-ui-smaller); margin-top: 2px }
 .plugin-card-meta { color: var(--text-faint); font-size: 11px; padding-left: 45px }
 .plugin-back { display: flex; align-items: center; gap: 5px; padding: 10px 10px 6px 10px; color: var(--text-muted); font-size: var(--font-ui-smaller); cursor: pointer; align-self: flex-start }
 .plugin-back:hover { color: var(--text-accent) }

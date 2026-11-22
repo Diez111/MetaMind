@@ -282,7 +282,16 @@ impl App {
         self.suggest = None;
         self.hover_preview = None;
         if let Some((node, action)) = frame.dom.action_at(x, y) {
-            let action = action.to_string();
+            // A click that lands on the veil only because it grazed the panel -- a row cut in half
+            // by the bottom of the page, a value that runs past its field -- is a click meant for
+            // the panel: it closes the open list and keeps the window, with everything typed into
+            // it. Only a click clearly outside the panel takes the settings window away.
+            let veil = frame.dom.nodes[node].el.classes.iter().any(|c| c == "modal-container");
+            let action = if veil && action == "settings:close" && grazes_settings_panel(&frame.dom, x, y) {
+                "settings:veil".to_string()
+            } else {
+                action.to_string()
+            };
             if action == "mermaid:zoom" {
                 // The block's source is kept with the item that paints it; the full-screen view
                 // re-renders the same diagram with the width of the window.
@@ -781,6 +790,21 @@ fn over_sheet(frame: &Frame, x: f32, y: f32) -> bool {
         .nodes
         .iter()
         .any(|n| n.el.classes.iter().any(|c| c == "ai-sheet" || c == "more-sheet") && n.rect.contains(x, y))
+}
+
+/// Whether a point is on the veil but within a few pixels of the settings panel. The panel is a
+/// window of its own over a dim backdrop, and a click that only grazes it -- the half of a row
+/// the bottom of the page cut, the field whose value runs past it -- was meant for the panel:
+/// losing the whole window, with everything typed into it, is not what the reader asked for.
+fn grazes_settings_panel(dom: &metamind_ui::Dom, x: f32, y: f32) -> bool {
+    const SLOP: f32 = 24.0;
+    dom.nodes.iter().any(|n| {
+        n.el.classes.iter().any(|c| c == "mod-settings")
+            && x >= n.rect.x - SLOP
+            && x <= n.rect.x + n.rect.w + SLOP
+            && y >= n.rect.y - SLOP
+            && y <= n.rect.y + n.rect.h + SLOP
+    })
 }
 
 /// Whether the point is inside the player card of the frame. While the overlay is up the note

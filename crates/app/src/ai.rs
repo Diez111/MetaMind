@@ -249,6 +249,22 @@ impl Preset {
         }
     }
 
+    /// The models this provider is known to serve, for the list a reader picks from instead of
+    /// typing a name from memory. Short on purpose: the ones somebody is likely to want, and the
+    /// names that are easy to misspell. Asking the provider replaces the whole list with the ones
+    /// it really answers, which is what the row under the field is for.
+    pub fn models(self) -> &'static [&'static str] {
+        match self {
+            Preset::DeepSeek => &["deepseek-chat", "deepseek-reasoner", DEFAULT_MODEL],
+            Preset::OpenCodeGo => &[DEFAULT_MODEL],
+            Preset::OpenAi => &["gpt-4o-mini", "gpt-4o", "o3-mini"],
+            Preset::OpenRouter => &["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet"],
+            Preset::Groq => &["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+            Preset::Ollama => &["llama3.2", "qwen2.5", "mistral"],
+            Preset::Custom => &[],
+        }
+    }
+
     /// The preset a saved `base_url` belongs to; [`Preset::Custom`] when none matches.
     pub fn of_base_url(base_url: &str) -> Preset {
         let norm = |u: &str| u.trim().trim_end_matches('/').to_ascii_lowercase();
