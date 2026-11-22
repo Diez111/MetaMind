@@ -1371,7 +1371,9 @@ fn pane(
         }
         _ if app.base_active() => crate::baseview::pane(app.base_view.as_ref().unwrap(), dom, leaf),
         _ if app.exc_active() => crate::excalidrawview::pane(app.exc_view.as_ref().unwrap(), dom, leaf, info),
-        _ if app.kanban_active() => crate::kanbanview::pane(app.kanban_view.as_ref().unwrap(), dom, leaf, info),
+        _ if app.kanban_active() => {
+            crate::kanbanview::pane(app.kanban_view.as_ref().unwrap(), dom, leaf, info)
+        }
         _ => editor(app, dom, leaf, pal, info, app.tab().map(|t| (pane, app.active, t)), true),
     }
     info.panes.push((pane, leaf, None));
