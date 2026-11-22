@@ -123,6 +123,7 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("workspace:close-all", "Cerrar todas las pestañas", ""),
     ("workspace:split-vertical", "Dividir a la derecha", ""),
     ("workspace:split-horizontal", "Dividir abajo", ""),
+    ("workspace:close-pane", "Cerrar el panel", ""),
     ("workspace:move-to-new-window", "Mover pestaña actual a una ventana nueva", ""),
     ("workspace:toggle-stacked-tabs", "Alternar pestañas apiladas", ""),
     ("workspaces:save", "Espacios de trabajo: Guardar espacio actual", ""),
@@ -1840,6 +1841,9 @@ impl App {
         if let Some(i) = command.strip_prefix("close-tab:").and_then(|i| i.parse::<usize>().ok()) {
             return self.close_tab(i);
         }
+        if let Some(i) = command.strip_prefix("pane-close:").and_then(|i| i.parse::<usize>().ok()) {
+            return self.close_pane_at(i);
+        }
         if let Some(folder) = command.strip_prefix("toggle-folder:") {
             let key = folded_path(folder);
             if !self.expanded.remove(&key) {
@@ -1981,6 +1985,7 @@ impl App {
             "workspace:close" => self.close_tab(self.active),
             "workspace:split-vertical" => self.split(true),
             "workspace:split-horizontal" => self.split(false),
+            "workspace:close-pane" => self.close_pane(),
             "workspace:move-to-new-window" => self.move_to_window(),
             "workspace:toggle-stacked-tabs" => self.toggle_stacked(),
             "workspace:unlink-pane" => self.unlink_pane(),

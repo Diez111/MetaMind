@@ -217,3 +217,115 @@ fn stacked_tabs_show_side_by_side_and_a_click_on_a_spine_activates_it() {
     let f = frame(&mut app, &mut fonts);
     assert!(f.info.stack.is_empty());
 }
+
+/// The button at the end of a pane's tab bar closes that pane, and the tabs of the pane are
+/// saved on the way out: a close that dropped what was written would be a data loss, not a
+/// layout command.
+#[test]
+fn a_pane_closes_from_its_tab_bar_and_saves_what_was_written() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("A.md");
+    app.run("workspace:split-vertical");
+    assert_eq!(app.pane, 1);
+    app.text_input("x");
+    let mut fonts = Fonts::new();
+    let f = frame(&mut app, &mut fonts);
+    let node = f.dom.nodes.iter().find(|n| n.el.action.as_deref() == Some("pane-close:1")).unwrap();
+    let (x, y) = (node.rect.x + node.rect.w / 2.0, node.rect.y + node.rect.h / 2.0);
+    app.click(&f, &mut fonts, x, y, false);
+    assert_eq!(app.panes.len(), 1);
+    assert_eq!(app.layout, Layout::Leaf(0));
+    assert_eq!(app.pane, 0);
+    assert_eq!(shown(&app, 0), Some("A.md"));
+    assert_eq!(fs::read_to_string(d.path().join("A.md")).unwrap(), "xalpha\n");
+    // One panel left: the button is gone with the pane it would have closed.
+    let f = frame(&mut app, &mut fonts);
+    assert!(f.dom.nodes.iter().all(|n| n.el.action.as_deref() != Some("pane-close:0")));
+}
+
+/// Closing a pane with the button of a pane that does not have the keyboard closes that pane:
+/// the window never keeps the focus in a leaf that is no longer there.
+#[test]
+fn the_close_button_of_another_pane_closes_that_one() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("A.md");
+    app.run("workspace:split-vertical");
+    let mut fonts = Fonts::new();
+    let f = frame(&mut app, &mut fonts);
+    let node = f.dom.nodes.iter().find(|n| n.el.action.as_deref() == Some("pane-close:0")).unwrap();
+    let (x, y) = (node.rect.x + node.rect.w / 2.0, node.rect.y + node.rect.h / 2.0);
+    app.click(&f, &mut fonts, x, y, false);
+    assert_eq!(app.panes.len(), 1);
+    assert_eq!(app.pane, 0);
+    assert_eq!(shown(&app, 0), Some("A.md"));
+}
+
+/// The ⋮ menu carries the pane commands in the same place a phone reaches them, and they act on
+/// the window the reader is in, at either end of its shape.
+#[test]
+fn the_menu_of_the_window_lists_the_pane_commands() {
+    for (w, h) in [(360u32, 740u32), (1366, 768)] {
+        let d = vault();
+        let mut app = App::open(d.path()).unwrap();
+        app.open_note("A.md");
+        let mut fonts = Fonts::new();
+        let mut pm = Pixmap::new(w, h).unwrap();
+        render(&mut app, &mut fonts, &mut pm, 1.0);
+        app.run("more:open");
+        let f = render(&mut app, &mut fonts, &mut pm, 1.0);
+        let texts: Vec<String> = f.dom.nodes.iter().filter_map(|n| n.el.text.clone()).collect();
+        assert!(texts.iter().any(|t| t == "Paneles"), "{w}x{h}: {texts:?}");
+        for label in ["Dividir a la derecha", "Dividir abajo", "Cerrar panel"] {
+            assert!(texts.iter().any(|t| t == label), "{w}x{h} sin «{label}»");
+        }
+        let row = f
+            .dom
+            .nodes
+            .iter()
+            .find(|n| n.el.action.as_deref() == Some("more:run:workspace:close-pane"))
+            .unwrap();
+        let (x, y) = (row.rect.x + row.rect.w / 2.0, row.rect.y + row.rect.h / 2.0);
+        // One panel: the row is there, muted, and it says why instead of doing nothing.
+        assert!(row.el.classes.iter().any(|c| c == "is-disabled"));
+        app.click(&f, &mut fonts, x, y, false);
+        assert_eq!(app.panes.len(), 1);
+        assert_eq!(app.notice.as_deref(), Some("Ya hay un solo panel"));
+
+        // With a second pane the row is live and closes the pane it names.
+        app.run("more:open");
+        app.run("workspace:split-vertical");
+        assert_eq!(app.panes.len(), 2);
+        app.run("more:open");
+        let f = render(&mut app, &mut fonts, &mut pm, 1.0);
+        let row = f
+            .dom
+            .nodes
+            .iter()
+            .find(|n| n.el.action.as_deref() == Some("more:run:workspace:close-pane"))
+            .unwrap();
+        assert!(row.el.classes.iter().all(|c| c != "is-disabled"));
+        let (x, y) = (row.rect.x + row.rect.w / 2.0, row.rect.y + row.rect.h / 2.0);
+        app.click(&f, &mut fonts, x, y, false);
+        assert_eq!(app.panes.len(), 1);
+        assert_eq!(app.pane, 0);
+    }
+}
+
+/// The commands that act on panes say what they are missing, in the words the menus show.
+#[test]
+fn the_pane_commands_explain_what_they_are_missing() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    assert_eq!(app.blocked("workspace:split-vertical"), Some("Abrí una nota primero"));
+    assert_eq!(app.blocked("workspace:split-horizontal"), Some("Abrí una nota primero"));
+    assert_eq!(app.blocked("workspace:close-pane"), Some("Ya hay un solo panel"));
+    assert_eq!(app.blocked("workspace:close"), None);
+    // A split with nothing open says why instead of opening an empty pane.
+    app.run("workspace:split-vertical");
+    assert_eq!(app.panes.len(), 1);
+    assert_eq!(app.notice.as_deref(), Some("Abrí una nota primero"));
+    app.open_note("A.md");
+    assert_eq!(app.blocked("workspace:split-vertical"), None);
+}

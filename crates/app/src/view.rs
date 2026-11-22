@@ -1435,6 +1435,16 @@ fn pane(
     let new_tab =
         dom.add(tabs, El::div().class("workspace-tab-header-new-tab").action("file-explorer:new-file"));
     dom.add(new_tab, icons::el("plus"));
+    // A divided window lets each pane go from its own bar: the button is the command the tab
+    // menu offers, and it only exists while there is more than one panel to choose between.
+    if app.panes.len() > 1 {
+        let close = dom.add(
+            tabs,
+            El::div().class("workspace-tab-header-close-pane").action(format!("pane-close:{pane}")),
+        );
+        dom.nodes[close].el.attrs.push(("aria-label".into(), "Cerrar panel".into()));
+        dom.add(close, icons::el("x"));
+    }
     if app.panes[pane].stacked && !covered {
         stack(app, dom, leaf, pane, focused, pal, info, width);
         info.panes.push((pane, leaf, None));
@@ -3218,11 +3228,15 @@ fn overlays(app: &App, dom: &mut Dom, workspace: Option<NodeId>, viewport_h: f32
                     .class("menu-item")
                     .class_if(m.selected == Some(i), "is-selected")
                     .class_if(item.warning, "is-warning")
+                    .class_if(item.disabled.is_some(), "is-disabled")
                     .action(format!("menu:{i}")),
             );
             dom.add(row, icons::el(item.icon));
             dom.add(row, El::div().class("menu-item-title").text(item.label.clone()));
-            if !item.hotkey.is_empty() {
+            // A row that cannot run says why in the place the hotkey would take.
+            if item.disabled.is_some() {
+                dom.add(row, El::div().class("menu-item-hotkey").text(item.disabled.unwrap_or("")));
+            } else if !item.hotkey.is_empty() {
                 dom.add(row, El::div().class("menu-item-hotkey").text(item.hotkey.clone()));
             }
         }
@@ -3280,7 +3294,9 @@ type NavRow = (&'static str, &'static str, &'static str);
 /// in a phone-sized window.
 fn more_sheet(app: &App, dom: &mut Dom) {
     // It ends where the note ends: above the bottom navigation and the status bar under it.
-    let body_h = (app.window_h - STATUS_BAR_H - NAV_H).max(0.0);
+    // A wide window has no bottom navigation, so the list goes down to the status bar.
+    let nav_h = if app.compact { NAV_H } else { 0.0 };
+    let body_h = (app.window_h - STATUS_BAR_H - nav_h).max(0.0);
     let sheet = dom.add(
         0,
         El::div().class("more-sheet").style(&format!("top: 0; left: 0; right: 0; height: {body_h:.0}px")),
@@ -3292,7 +3308,15 @@ fn more_sheet(app: &App, dom: &mut Dom) {
     dom.nodes[close].el.attrs.push(("aria-label".into(), "Cerrar el menú".into()));
     dom.add(close, icons::el("x"));
     let list = dom.add(sheet, El::div().class("more-list"));
-    let groups: [(&str, &[NavRow]); 2] = [
+    let groups: [(&str, &[NavRow]); 3] = [
+        (
+            "Paneles",
+            &[
+                ("separator-vertical", "Dividir a la derecha", "workspace:split-vertical"),
+                ("separator-horizontal", "Dividir abajo", "workspace:split-horizontal"),
+                ("x", "Cerrar panel", "workspace:close-pane"),
+            ],
+        ),
         (
             "Vistas",
             &[
@@ -3321,7 +3345,16 @@ fn more_sheet(app: &App, dom: &mut Dom) {
             if app.disabled_by(cmd).is_some() {
                 continue;
             }
-            let row = dom.add(list, El::div().class("more-row").action(format!("more:run:{cmd}")));
+            // A command with nothing to act on stays in the list, muted: the reader sees the
+            // way in and learns why it does nothing today instead of wondering where it went.
+            let blocked = app.blocked(cmd).is_some();
+            let row = dom.add(
+                list,
+                El::div()
+                    .class("more-row")
+                    .class_if(blocked, "is-disabled")
+                    .action(format!("more:run:{cmd}")),
+            );
             dom.add(row, icons::el(icon).class("more-row-icon"));
             dom.add(row, El::div().class("more-row-label").text(*label));
         }
@@ -3435,8 +3468,10 @@ pub fn build(app: &App, viewport_h: f32, solo: Option<usize>) -> (Dom, ViewInfo)
             dom.nodes[n].scroll_y = *y;
         }
     }
-    if with_nav && app.more_open {
+    if app.more_open {
         // Last, so the menu is painted over the note, over a floating sidebar and over the bar.
+        // The command is the same in any window, so a wide one shows the list too; without the
+        // bottom navigation it covers the note from the top down to the status bar.
         more_sheet(app, &mut dom);
     }
     mark_hover(&mut dom, app.hover_action.as_deref());

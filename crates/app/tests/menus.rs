@@ -182,3 +182,81 @@ fn spellcheck_marks_prose_and_fixes_from_the_menu() {
     assert!(metamind_app::spell::misspelled("Zorblax").is_empty());
     assert_eq!(fs::read_to_string(config.path().join("dictionary.txt")).unwrap(), "Zorblax\n");
 }
+
+/// The menu of a tab carries the pane commands, and the ones with nothing to act on say so
+/// instead of looking ready and doing nothing. Picking a muted row explains it.
+#[test]
+fn the_tab_menu_offers_the_pane_commands_and_marks_the_ones_that_cannot_run() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("A");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(1100, 700).unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let (x, y) = center(&frame, "tab:0");
+    app.context_menu(&frame, &mut fonts, x, y);
+    let items = &app.menu.as_ref().unwrap().items;
+    let find = |label: &str| items.iter().find(|i| i.label == label).unwrap();
+    assert!(find("Cerrar").disabled.is_none());
+    assert_eq!(find("Cerrar panel").disabled, Some("Ya hay un solo panel"));
+    assert!(find("Dividir a la derecha").disabled.is_none(), "one tab is enough to split");
+    assert!(find("Dividir abajo").disabled.is_none());
+
+    // The muted row leaves the pane alone and says why.
+    let i = items.iter().position(|i| i.label == "Cerrar panel").unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let (x, y) = center(&frame, &format!("menu:{i}"));
+    app.click(&frame, &mut fonts, x, y, false);
+    assert!(app.menu.is_none());
+    assert_eq!(app.notice.as_deref(), Some("Ya hay un solo panel"));
+    assert_eq!(app.panes.len(), 1);
+
+    // Splitting from the menu of the tab copies that tab into a pane of its own...
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let (x, y) = center(&frame, "tab:0");
+    app.context_menu(&frame, &mut fonts, x, y);
+    let i = app.menu.as_ref().unwrap().items.iter().position(|i| i.label == "Dividir a la derecha").unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let (x, y) = center(&frame, &format!("menu:{i}"));
+    app.click(&frame, &mut fonts, x, y, false);
+    assert_eq!(app.panes.len(), 2);
+
+    // ...and with two panes, "Cerrar panel" closes the one the menu belongs to.
+    let f = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let tab = f.dom.nodes.iter().find(|n| n.el.action.as_deref() == Some("tab:0")).unwrap().rect;
+    app.context_menu(&f, &mut fonts, tab.x + 12.0, tab.y + tab.h / 2.0);
+    let items = &app.menu.as_ref().unwrap().items;
+    assert!(items.iter().find(|i| i.label == "Cerrar panel").unwrap().disabled.is_none());
+    let i = items.iter().position(|i| i.label == "Cerrar panel").unwrap();
+    let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let (x, y) = center(&frame, &format!("menu:{i}"));
+    app.click(&frame, &mut fonts, x, y, false);
+    assert_eq!(app.panes.len(), 1);
+    assert_eq!(app.tabs.len(), 1, "the tab of the pane that closed is gone with it");
+}
+
+/// Splitting from the menu of a tab that is not in front copies that tab, not the one that was
+/// in front when the menu was opened.
+#[test]
+fn splitting_from_the_menu_of_a_tab_splits_that_tab() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    for n in ["A", "B"] {
+        app.open_note(n);
+    }
+    assert_eq!(app.active, 1);
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(1100, 700).unwrap();
+    let f = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let (x, y) = center(&f, "tab:0");
+    app.context_menu(&f, &mut fonts, x, y);
+    let i = app.menu.as_ref().unwrap().items.iter().position(|i| i.label == "Dividir abajo").unwrap();
+    let f = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let (x, y) = center(&f, &format!("menu:{i}"));
+    app.click(&f, &mut fonts, x, y, false);
+    assert_eq!(app.panes.len(), 2);
+    assert_eq!(app.pane, 1);
+    let (tabs, active) = app.pane_tabs(1);
+    assert_eq!(tabs[active].path, "A.md");
+    assert!(matches!(app.layout, metamind_app::split::Layout::Split { row: false, .. }));
+}

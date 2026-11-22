@@ -220,17 +220,39 @@ impl App {
         r
     }
 
+    /// Why the focused pane cannot be split right now, in the words the menus show. `None`
+    /// means it can: a split copies the note in front into a pane of its own, so one tab is
+    /// enough — what is missing is a note to copy, or a window that can hold a second pane.
+    pub fn split_blocked(&self) -> Option<&'static str> {
+        if self.is_popped(self.pane) {
+            return Some("Solo en la ventana principal");
+        }
+        self.tab().is_none().then_some("Abrí una nota primero")
+    }
+
+    /// Why there is no pane to close: a single pane fills the window and there is nothing to
+    /// hand its space to.
+    pub fn close_pane_blocked(&self) -> Option<&'static str> {
+        (self.panes.len() < 2).then_some("Ya hay un solo panel")
+    }
+
+    /// Why `command` cannot run in the state the app is in. Separate from `disabled_by`, which
+    /// answers for a core plugin that is off: this is a command with nothing to act on.
+    pub fn blocked(&self, command: &str) -> Option<&'static str> {
+        match command {
+            "workspace:split-vertical" | "workspace:split-horizontal" => self.split_blocked(),
+            "workspace:close-pane" => self.close_pane_blocked(),
+            _ => None,
+        }
+    }
+
     /// Open the active note in a new pane to the right of (`row`) or below the focused one.
     pub fn split(&mut self, row: bool) {
-        if self.is_popped(self.pane) {
-            self.notice =
-                Some("Los paneles divididos solo están disponibles en la ventana principal".to_string());
+        if let Some(why) = self.split_blocked() {
+            self.notice = Some(why.to_string());
             return;
         }
-        let Some(t) = self.tab() else {
-            self.notice = Some("Abre una nota para dividir el panel".to_string());
-            return;
-        };
+        let Some(t) = self.tab() else { return };
         let mut tab = Tab::new(t.path.clone(), &t.editor.buf.text(), t.stamp, t.vim.is_some());
         tab.mode = t.mode;
         tab.top_block = t.top_block;
@@ -246,6 +268,37 @@ impl App {
         if let Some(t) = self.tabs.last_mut() {
             t.editor.buf.set_sels(sels);
         }
+    }
+
+    /// Close the focused pane, its tabs going with it. Saving comes first, tab by tab, and the
+    /// pane stays open when one of them cannot be saved or is pinned: a close that loses what
+    /// was written is not a close. The space goes to a neighbour, as when its last tab closes.
+    pub fn close_pane(&mut self) {
+        if let Some(why) = self.close_pane_blocked() {
+            self.notice = Some(why.to_string());
+            return;
+        }
+        for i in (0..self.tabs.len()).rev() {
+            self.close_tab(i);
+        }
+        if !self.tabs.is_empty() {
+            self.notice = Some(
+                "El panel sigue abierto: tiene pestañas ancladas o cambios que no se pudieron guardar"
+                    .to_string(),
+            );
+            return;
+        }
+        self.sync_panes();
+    }
+
+    /// Close pane `i` from its own tab bar: the pane takes the focus before it goes, so the
+    /// window never keeps the keyboard in a pane that is no longer there.
+    pub fn close_pane_at(&mut self, i: usize) {
+        if i >= self.panes.len() {
+            return;
+        }
+        self.focus_pane(i);
+        self.close_pane();
     }
 
     /// Close panes left without tabs: a pane in its own window always, a pane of the main

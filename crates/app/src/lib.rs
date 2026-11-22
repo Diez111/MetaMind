@@ -325,9 +325,7 @@ impl App {
         // graph behind it, and it does not take the keyboard away from the field being written.
         // The controls inside them answered through their actions above. A sheet still sliding out
         // is drawn and still covers what it hides.
-        if frame.dom.nodes.iter().any(|n| {
-            n.el.classes.iter().any(|c| c == "ai-sheet" || c == "more-sheet") && n.rect.contains(x, y)
-        }) {
+        if over_sheet(frame, x, y) {
             return;
         }
         self.graph_end_edit();
@@ -462,11 +460,16 @@ impl App {
     /// A press in a pane other than the focused one focuses it first. Returns whether the press
     /// should go on: only tab bar actions do, as the rest of that pane was laid out unfocused.
     pub(crate) fn press_pane(&mut self, frame: &Frame, x: f32, y: f32) -> bool {
+        // A sheet covers the workspace: a press on its pixels belongs to the sheet, and taking
+        // the focus to the pane that happens to be behind it would swallow the press.
+        if over_sheet(frame, x, y) {
+            return true;
+        }
         let hit = frame.info.panes.iter().find(|(_, leaf, _)| frame.dom.nodes[*leaf].rect.contains(x, y));
         let Some(&(p, ..)) = hit.filter(|(p, ..)| *p != self.pane) else { return true };
         self.focus_pane(p);
         frame.dom.action_at(x, y).is_some_and(|(_, a)| {
-            ["tab:", "close-tab:", "toggle-pin:"].iter().any(|t| a.starts_with(t))
+            ["tab:", "close-tab:", "toggle-pin:", "pane-close:"].iter().any(|t| a.starts_with(t))
                 || a == "file-explorer:new-file"
         })
     }
@@ -718,6 +721,14 @@ impl App {
 
 fn in_graph_panel(frame: &Frame, x: f32, y: f32) -> bool {
     frame.info.graph_panel.is_some_and(|n| frame.dom.nodes[n].rect.contains(x, y))
+}
+
+/// Whether the point is inside one of the sheets that cover the workspace (the copilot and the
+/// ⋮ menu). What they paint is theirs: the pane behind those pixels is not the target.
+fn over_sheet(frame: &Frame, x: f32, y: f32) -> bool {
+    frame.dom.nodes.iter().any(|n| {
+        n.el.classes.iter().any(|c| c == "ai-sheet" || c == "more-sheet") && n.rect.contains(x, y)
+    })
 }
 
 /// Whether the point is inside the player card of the frame. While the overlay is up the note

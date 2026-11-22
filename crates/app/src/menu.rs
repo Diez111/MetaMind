@@ -21,6 +21,9 @@ pub struct MenuItem {
     pub hotkey: String,
     /// Destructive actions are shown in the warning color.
     pub warning: bool,
+    /// Why the row cannot run now. A greyed row that says why beats one that looks ready and
+    /// answers with a notice when the reader clicks it.
+    pub disabled: Option<&'static str>,
 }
 
 #[derive(Clone, Debug)]
@@ -47,7 +50,15 @@ impl Builder<'_> {
     fn item(&mut self, icon: &'static str, label: &str, action: impl Into<String>) -> &mut Self {
         let action = action.into();
         let hotkey = self.app.hotkey_for(&action);
-        self.items.push(MenuItem { label: label.into(), icon, action, hotkey, warning: false });
+        let disabled = self.app.blocked(&action);
+        self.items.push(MenuItem { label: label.into(), icon, action, hotkey, warning: false, disabled });
+        self
+    }
+    /// Mark the row just added as one that cannot run, with the reason it shows.
+    fn disabled(&mut self, reason: Option<&'static str>) -> &mut Self {
+        if let (Some(reason), Some(last)) = (reason, self.items.last_mut()) {
+            last.disabled = Some(reason);
+        }
         self
     }
     fn warning(&mut self, icon: &'static str, label: &str, action: impl Into<String>) -> &mut Self {
@@ -65,6 +76,7 @@ impl Builder<'_> {
                 action: String::new(),
                 hotkey: String::new(),
                 warning: false,
+                disabled: None,
             });
         }
         self
@@ -204,9 +216,12 @@ impl App {
             .and_then(|(_, a)| a.strip_prefix("menu:"))
             .and_then(|i| i.parse::<usize>().ok())
             .and_then(|i| menu.items.get(i))
-            .map(|i| i.action.clone());
-        if let Some(action) = picked {
-            self.run(&action);
+            .cloned();
+        match picked {
+            // A row with nothing to act on says why instead of pretending it did something.
+            Some(row) if row.disabled.is_some() => self.notice = row.disabled.map(str::to_string),
+            Some(row) => self.run(&row.action),
+            None => {}
         }
         true
     }
@@ -225,10 +240,14 @@ impl App {
                     rows.get(at.map_or(rows.len() - 1, |a| (a + rows.len() - 1) % rows.len())).copied()
             }
             "Enter" => {
-                let action = menu.selected.and_then(|s| menu.items.get(s)).map(|i| i.action.clone());
+                let row = menu.selected.and_then(|s| menu.items.get(s)).cloned();
                 self.menu = None;
-                if let Some(a) = action {
-                    self.run(&a);
+                match row {
+                    Some(row) if row.disabled.is_some() => {
+                        self.notice = row.disabled.map(str::to_string)
+                    }
+                    Some(row) => self.run(&row.action),
+                    None => {}
                 }
             }
             _ => {
@@ -283,6 +302,21 @@ impl App {
                         self.close_tab(j);
                     }
                 }
+            }
+            // A split asked for from the tab menu of tab `i`: that tab goes in front and then
+            // divides, so the copy that opens beside is the one the reader pointed at.
+            "split-pane" => {
+                let Some((side, i)) = arg.split_once(':') else { return true };
+                if let Ok(i) = i.parse::<usize>() {
+                    if i < self.tabs.len() {
+                        self.active = i;
+                    }
+                }
+                self.run(if side == "down" {
+                    "workspace:split-horizontal"
+                } else {
+                    "workspace:split-vertical"
+                });
             }
             _ => match command {
                 "file-explorer:new-folder" => {
@@ -734,10 +768,23 @@ fn tab_items(b: &mut Builder<'_>, i: usize) {
         b.item("arrow-right", "Cerrar las pestañas a la derecha", format!("close-right:{i}"));
     }
     b.item("x", "Cerrar todas", "workspace:close-all");
+    // The way out of a split: the whole pane goes, its tabs with it, and a neighbour keeps the
+    // window. It is the same command the tab bar of every pane offers, and it has nothing to do
+    // when the window holds a single panel.
+    let pane = b.app.pane;
+    let closing = b.app.close_pane_blocked();
+    b.item("x", "Cerrar panel", format!("pane-close:{pane}")).disabled(closing);
     b.separator();
+    // Splitting copies the tab that was asked for, which is not always the one in front: the
+    // action carries its index and the command makes it active first.
+    if !p.is_empty() {
+        let blocked = b.app.split_blocked();
+        b.item("separator-vertical", "Dividir a la derecha", format!("split-pane:right:{i}"))
+            .disabled(blocked);
+        b.item("separator-horizontal", "Dividir abajo", format!("split-pane:down:{i}"))
+            .disabled(blocked);
+    }
     if i == b.app.active && !p.is_empty() {
-        b.item("separator-vertical", "Dividir a la derecha", "workspace:split-vertical");
-        b.item("separator-horizontal", "Dividir abajo", "workspace:split-horizontal");
         b.item("arrow-up-right", "Mover a una ventana nueva", "workspace:move-to-new-window");
         let stacked =
             if b.app.panes[b.app.pane].stacked { "Desapilar pestañas" } else { "Apilar pestañas" };

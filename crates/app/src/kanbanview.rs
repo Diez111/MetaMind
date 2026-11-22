@@ -1888,6 +1888,7 @@ impl App {
                 action: String::new(),
                 hotkey: String::new(),
                 warning: false,
+                disabled: None,
             },
             self.kanban_item("arrow-left", "Mover a la izquierda", format!("kanban:column-left:{i}"), false),
             self.kanban_item("arrow-right", "Mover a la derecha", format!("kanban:column-right:{i}"), false),
@@ -1897,6 +1898,7 @@ impl App {
                 action: String::new(),
                 hotkey: String::new(),
                 warning: false,
+                disabled: None,
             },
             self.kanban_item("trash", "Eliminar columna", format!("kanban:column-delete:{i}"), true),
         ];
@@ -1914,6 +1916,7 @@ impl App {
             label: label.to_string(),
             icon,
             hotkey: self.hotkey_for(&action),
+            disabled: self.blocked(&action),
             action,
             warning,
         }
