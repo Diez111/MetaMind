@@ -2,7 +2,7 @@
 //! and the three actions on screen.
 
 use metamind_app::recent;
-use metamind_app::welcome::Welcome;
+use metamind_app::welcome::{Screen, Welcome};
 use metamind_ui::{Dom, Fonts, Pixmap};
 
 const W: u32 = 1600;
@@ -20,7 +20,7 @@ fn in_scroller(dom: &Dom, i: usize) -> bool {
     false
 }
 
-fn route(dark: bool) -> Dom {
+fn route(dark: bool) -> (Welcome, Dom) {
     let cfg = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     std::env::set_var("METAMIND_CONFIG_DIR", cfg.path());
@@ -45,13 +45,13 @@ fn route(dark: bool) -> Dom {
     let card = dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == "welcome-card")).unwrap();
     assert!(card.rect.x > 0.0 && card.rect.w > 0.0 && card.rect.h > 0.0, "{:?}", card.rect);
     assert!(card.rect.x + card.rect.w <= W as f32 && card.rect.y + card.rect.h <= H as f32);
-    dom
+    (w, dom)
 }
 
 #[test]
 fn welcome_fits_and_lists_the_three_actions_in_dark_and_light() {
     for dark in [true, false] {
-        let dom = route(dark);
+        let (mut w, dom) = route(dark);
         let theme = if dark { "theme-dark" } else { "theme-light" };
         assert!(dom.nodes[0].el.classes.iter().any(|c| c == theme), "{theme} is set");
         for action in ["welcome:open", "welcome:create", "welcome:sample"] {
@@ -74,5 +74,16 @@ fn welcome_fits_and_lists_the_three_actions_in_dark_and_light() {
                 assert!(r.y + r.h <= bottom + 0.5, "{:?} cut at {:?}", n.el.text, r);
             }
         }
+
+        // Keyboard: the selection walks the actions and the recent vaults, and Enter runs one.
+        assert!(w.key("ArrowDown").is_none() && w.sel == Some(0));
+        w.key("ArrowDown");
+        assert!(w.key("Enter").is_none());
+        assert_eq!(w.screen, Screen::Create);
+        w.run("welcome:back");
+        for _ in 0..4 {
+            w.key("ArrowDown");
+        }
+        assert!(w.key("Enter").is_some(), "a recent vault opens with Enter");
     }
 }
