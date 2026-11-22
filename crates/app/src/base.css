@@ -528,9 +528,11 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
    the tooltip, instead of running under the label column. */
 .setting-item-control > .dropdown { overflow: hidden; text-overflow: ellipsis; min-width: 0 }
 .setting-item-control > .dropdown.is-open { border-color: var(--interactive-accent); background-color: var(--background-primary) }
-.setting-menu { width: 288px; max-height: 260px; overflow-y: auto; margin-top: 8px; display: flex; flex-direction: column; gap: 2px; padding: 4px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m, 8px); background-color: var(--background-secondary); }
-/* The open list is the last line of its row, so the rows below move down and nothing is ever
-   painted over the list. */
+/* The open list is a layer of the panel and not a line of its row: `view::settings_menu` adds it
+   as the last child of the panel, over the rows it covers, with the width and the height the
+   room around its control gives it. The `.is-overlay` class only marks the difference from a
+   list still drawn inside a row. */
+.setting-menu { width: 288px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 4px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m, 8px); background-color: var(--background-secondary); }
 .setting-menu-item { padding: 6px 10px; border-radius: var(--radius-s); color: var(--text-normal); font-size: 13px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer }
 .setting-menu-item:hover, .setting-menu-item.is-active { background-color: var(--background-modifier-hover) }
 .setting-menu-item.is-checked { color: var(--text-accent); font-weight: 600 }
@@ -936,7 +938,6 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 
 /* A dropdown list hangs under its own control, aligned to the column's right edge: it is the
    answer to the field the reader just pressed, not a list floating under the label. */
-.setting-menu-wrap { display: flex; width: 100% }
 .calendar-day-open-icon { width: 12px; height: 12px; flex-shrink: 0 }
 .calendar-day-open-label { white-space: nowrap }
 /* The three previews of the scheme take the row's width when the row has one: they used to hang
@@ -1013,12 +1014,9 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 
 /* An open list takes the width it is given and centres its rows: a menu that sat at the left of
    a column left empty space beside it and read as a table of leftovers. */
-/* No percentage: in this engine `width: 100%` inside a column flex resolves to auto, and the
-   list kept its 288 px with a band of empty space beside it. A stretched child takes the row. */
-.modal.mod-settings.is-single .setting-menu { flex-grow: 1; width: auto; max-width: none }
-.modal.mod-settings.is-narrow .setting-menu { flex-grow: 1; width: auto; max-width: none }
-.modal.mod-settings.is-single .setting-menu-item { text-align: center }
-.modal.mod-settings.is-narrow .setting-menu-item { text-align: center }
+/* The open list is not part of its row at all: `view::settings_menu` adds it as the last child
+   of the panel, over the rows it covers, with its own width and height. This class is what
+   tells it apart from a list still drawn inside a row. */
 
 /* A video card with its first frame behind the play button: the reader sees what the video is
    before deciding, and the poster is decoded once and kept in a budgeted cache. The frame is an

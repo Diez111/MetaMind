@@ -961,3 +961,139 @@ fn the_active_tab_mark_never_paints_over_the_panel() {
     let mark = metamind_app::view::tab_indicator(&app, &frame.dom, &frame.info);
     assert!(mark.is_none(), "a window over the app covers the tab bar: no mark on top of it");
 }
+
+/// The list of an open dropdown, in the document order it is painted in.
+fn open_list(frame: &metamind_app::Frame) -> Vec<(usize, String, metamind_ui::Rect)> {
+    frame
+        .dom
+        .nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| n.el.classes.iter().any(|c| c == "setting-menu-item"))
+        .map(|(i, n)| (i, n.el.text.clone().unwrap_or_default(), n.rect))
+        .collect()
+}
+
+fn rows_of(frame: &metamind_app::Frame) -> Vec<(usize, metamind_ui::Rect)> {
+    frame
+        .dom
+        .nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| n.el.classes.iter().any(|c| c == "setting-item"))
+        .map(|(i, n)| (i, n.rect))
+        .collect()
+}
+
+#[test]
+fn the_open_list_is_a_layer_of_the_panel_and_not_a_line_of_its_row() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    app.run("settings:section:ai");
+    // The rows the list will cover, measured before it exists: opening a list must not move them.
+    let closed = draw(&mut app);
+    let rows: Vec<metamind_ui::Rect> = rows_of(&closed).into_iter().map(|(_, r)| r).collect();
+    assert!(rows.len() > 3, "the AI page has rows: {}", rows.len());
+
+    app.run("settings:menu:ai.preset:0");
+    let f = draw(&mut app);
+    let list = open_list(&f);
+    assert!(list.len() >= 6, "the provider list is open: {}", list.len());
+
+    // 1. The list is a child of the panel and not of the row it belongs to.
+    let panel = f
+        .dom
+        .nodes
+        .iter()
+        .position(|n| n.el.classes.iter().any(|c| c == "mod-settings"))
+        .expect("the settings panel is on screen");
+    let list_node = f.dom.nodes[list[0].0].parent.expect("an option hangs from its list");
+    assert!(
+        f.dom.nodes[list_node].el.classes.iter().any(|c| c == "setting-menu"),
+        "an option hangs from the list: {:?}",
+        f.dom.nodes[list_node].el.classes
+    );
+    let owner = f.dom.nodes[list_node].parent.expect("the list has a parent");
+    assert!(
+        f.dom.nodes[owner].el.classes.iter().any(|c| c == "mod-settings"),
+        "the list must be a layer of the panel {panel}, it hangs from {:?}",
+        f.dom.nodes[owner].el.classes
+    );
+
+    // 2. Nothing moved: no row grew, and no row is left wrapping a list that is not in it.
+    // The page scrolls the control into sight when the list opens, so what has to match is the
+    // shape of the stack -- each row's height and the room between one and the next -- not where
+    // the stack sits: a list that grew inside its row would change both.
+    let after: Vec<metamind_ui::Rect> = rows_of(&f).into_iter().map(|(_, r)| r).collect();
+    assert_eq!(rows.len(), after.len(), "a row appeared or vanished");
+    for (i, (a, b)) in rows.iter().zip(&after).enumerate() {
+        assert!((a.h - b.h).abs() < 0.5, "row {i} changed height: {} -> {}", a.h, b.h);
+        if i > 0 {
+            let (da, db) = (a.y - rows[i - 1].y, b.y - after[i - 1].y);
+            assert!((da - db).abs() < 0.5, "the stack moved between row {} and {i}: {da} -> {db}", i - 1);
+        }
+    }
+    assert!(
+        !f.dom.nodes.iter().any(|n| n.el.classes.iter().any(|c| c == "setting-menu-wrap")),
+        "a row still wraps the list: the panel grows a hole where it used to open"
+    );
+
+    // 3. Every option sits inside the scrolling page, not over the title bar nor the status bar.
+    let page = f.dom.by_id("settings-content").map(|n| f.dom.nodes[n].rect).unwrap();
+    for (_, text, r) in &list {
+        assert!(
+            r.y >= page.y - 0.5 && r.y + r.h <= page.y + page.h + 0.5,
+            "{text:?} at {r:?} is outside the page {page:?}"
+        );
+        assert!(r.x >= page.x - 0.5 && r.x + r.w <= page.x + page.w + 0.5, "{text:?} leaves the page: {r:?}");
+    }
+
+    // 4. It is painted over the rows it covers: in document order it comes after all of them.
+    let last_row = rows_of(&f).iter().map(|(i, _)| *i).max().unwrap();
+    assert!(list[0].0 > last_row, "the list is painted over the rows it covers");
+}
+
+#[test]
+fn the_open_list_stays_in_a_phone_sized_panel() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    let mut fonts = metamind_ui::Fonts::new();
+    let mut pm = metamind_ui::Pixmap::new(500, 700).unwrap();
+    app.run("app:open-settings");
+    metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+    app.run("settings:section:ai");
+    app.run("settings:menu:ai.preset:0");
+    let f = metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+
+    let list = open_list(&f);
+    assert!(list.len() >= 6, "the provider list is open: {}", list.len());
+    let panel = f
+        .dom
+        .nodes
+        .iter()
+        .find(|n| n.el.classes.iter().any(|c| c == "mod-settings"))
+        .map(|n| n.rect)
+        .expect("the panel is on screen");
+    let page = f.dom.by_id("settings-content").map(|n| f.dom.nodes[n].rect).unwrap();
+    for (_, text, r) in &list {
+        assert!(
+            r.y >= page.y - 0.5 && r.y + r.h <= page.y + page.h + 0.5,
+            "{text:?} at {r:?} is outside the page {page:?}"
+        );
+        assert!(r.y >= panel.y && r.y + r.h <= panel.y + panel.h, "{text:?} leaves the panel: {r:?}");
+    }
+    // The title bar with the search field and the way out stays clear.
+    let bar = f
+        .dom
+        .nodes
+        .iter()
+        .find(|n| n.el.classes.iter().any(|c| c == "settings-topbar"))
+        .map(|n| n.rect)
+        .unwrap();
+    assert!(
+        list.iter().all(|(_, _, r)| r.y >= bar.y + bar.h - 0.5),
+        "the list covers the title bar: {:?} against {bar:?}",
+        list[0].2
+    );
+}

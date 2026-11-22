@@ -363,9 +363,8 @@ const MEASURE_H: f32 = 100_000.0;
 fn shape_of(app: &App, tab: &crate::shell::Tab, width: f32) -> Shape {
     let a = &app.config.appearance;
     let half = |px: f64| (px * 2.0).round() as u32;
-    let px = |key: &str, default: f64| {
-        half(a.get(key).and_then(serde_json::Value::as_f64).unwrap_or(default))
-    };
+    let px =
+        |key: &str, default: f64| half(a.get(key).and_then(serde_json::Value::as_f64).unwrap_or(default));
     Shape {
         width: half(f64::from(width)),
         font: px("baseFontSize", 16.0),
@@ -1868,11 +1867,8 @@ pub fn scroll_views(app: &mut App, dom: &mut Dom, info: &ViewInfo) {
         // Where each block of the note begins, in the note's own pixels: the room the view left
         // for the blocks it did not build is part of the count, so this is the document's offset
         // and not the window's. The margin above a block belongs to the note and not to its box.
-        let pos: Vec<f32> = s
-            .marks
-            .iter()
-            .map(|&(_, n)| dom.nodes[n].rect.y - dom.nodes[n].style.margin[0] - top)
-            .collect();
+        let pos: Vec<f32> =
+            s.marks.iter().map(|&(_, n)| dom.nodes[n].rect.y - dom.nodes[n].style.margin[0] - top).collect();
         let anchor = s.marks.iter().position(|&(b, _)| b >= top_block).unwrap_or(s.marks.len() - 1);
         let max = dom.max_scroll(s.view);
         let want = pos[anchor] + t.scroll_px;
@@ -1894,11 +1890,7 @@ pub fn scroll_views(app: &mut App, dom: &mut Dom, info: &ViewInfo) {
                 let (block_top, block_h) = (pos[k], dom.nodes[s.marks[k].1].rect.h);
                 let box_h = dom.content_rect(s.view).h;
                 if y > block_top || block_top + block_h > y + box_h {
-                    y = if block_h >= box_h {
-                        block_top
-                    } else {
-                        (block_top + block_h - box_h).max(0.0)
-                    };
+                    y = if block_h >= box_h { block_top } else { (block_top + block_h - box_h).max(0.0) };
                 }
             }
         }
@@ -3685,6 +3677,93 @@ pub const STATUS_BAR_H: f32 = 27.0;
 
 /// Height of the bottom navigation, drawn only in a compact window, right above the status bar.
 pub const NAV_H: f32 = 52.0;
+
+/// The list of an open dropdown, over the rows of the panel it belongs to.
+///
+/// It runs after the first layout, when the control it belongs to has a rectangle: the list is
+/// anchored to it, right-aligned, flipped up when there is no room below, and added as the last
+/// child of the panel so it paints over the rows it covers (this engine has no z-index). It is
+/// placed inside the panel's own box, which clips: the list never runs out over the veil, the
+/// status bar or the note behind them, and it scrolls instead of growing past the edge. Nothing
+/// grows: the row keeps its height whether the list is open or not.
+///
+/// How tall the list wants to be is not guessed from a row size in pixels: it is built once with
+/// all the room the panel has and measured. A list of long provider names is taller than one of
+/// short theme names, and guessing short cut the last option out of sight.
+pub fn settings_menu(app: &App, dom: &mut Dom, fonts: &mut Fonts, w: f32, h: f32) {
+    let Some(ui) = app.settings.as_ref() else { return };
+    let Some(menu) = ui.menu.as_ref() else { return };
+    let Some(anchor) = dom.by_id("sm-anchor") else { return };
+    let Some(panel) = dom.nodes.iter().position(|n| n.el.classes.iter().any(|c| c == "mod-settings")) else {
+        return;
+    };
+    let p = dom.nodes[panel].rect;
+    let st = dom.nodes[panel].style.clone();
+    // The box an absolutely positioned child of the panel is placed in: its padding box.
+    let pad = Rect::new(
+        p.x + st.border[3],
+        p.y + st.border[0],
+        (p.w - st.border[1] - st.border[3]).max(0.0),
+        (p.h - st.border[0] - st.border[2]).max(0.0),
+    );
+    let a = dom.nodes[anchor].rect;
+    // The rows live in the scrolling page of the panel, not under its title bar: the list stays
+    // inside that page, so it never covers the search field or the way to close the window.
+    let band = dom.by_id("settings-content").map_or(pad, |n| dom.nodes[n].rect);
+    let (inside, gap) = (10.0, 4.0);
+    let w_list = a.w.max(240.0).min((pad.w - 2.0 * inside).max(120.0));
+    let x = (a.x + a.w - w_list).clamp(pad.x + inside, (pad.x + pad.w - inside - w_list).max(pad.x + inside));
+    let room = (band.h - 2.0 * inside).max(48.0);
+    let list = dom.add(
+        panel,
+        El::div().class("setting-menu is-overlay").attr("role", "listbox").style(&format!(
+            "position: absolute; left: {:.1}px; top: {:.1}px; width: {w_list:.1}px; max-height: {room:.1}px",
+            x - pad.x,
+            a.y + a.h + gap - pad.y
+        )),
+    );
+    for (i, (value, text)) in menu.options.iter().enumerate() {
+        dom.add(
+            list,
+            El::div()
+                .class("setting-menu-item")
+                .class_if(i == menu.at, "is-active")
+                .class_if(*value == menu.current, "is-checked")
+                .attr("role", "option")
+                .text(text.clone())
+                .action(format!("settings:pick:{}:{i}", menu.key)),
+        );
+    }
+    // Laid out with the whole panel as its room, the list reports the height it wants, not the
+    // height the side it opens on would give it.
+    dom.style(&app.theme, app.env());
+    dom.layout(fonts, w, h);
+    let want_h = dom.nodes[list].rect.h;
+    // The room on each side of the control: the list takes the side where it fits whole, and the
+    // roomier one when it fits on neither.
+    let below = (band.y + band.h - inside - (a.y + a.h) - gap).max(0.0);
+    let above = (a.y - band.y - inside - gap).max(0.0);
+    let (want_h, down) = if want_h <= below {
+        (want_h, true)
+    } else if want_h <= above {
+        (want_h, false)
+    } else if below >= above {
+        (below, true)
+    } else {
+        (above, false)
+    };
+    // A list that fits on neither side still has to be usable: it opens at a couple of rows and
+    // scrolls to the rest, never taller than the panel.
+    let floor = 80.0_f32.min(want_h);
+    let h_list = want_h.max(floor).min(room);
+    let y = if down { a.y + a.h + gap } else { a.y - gap - h_list };
+    let y = y.clamp(band.y + inside, (band.y + band.h - inside - h_list).max(band.y + inside));
+    dom.nodes[list].el.inline_style = Some(format!(
+        "position: absolute; left: {:.1}px; top: {:.1}px; width: {w_list:.1}px; max-height: {h_list:.1}px",
+        x - pad.x,
+        y - pad.y
+    ));
+}
 
 /// The window's view. `solo` is a pane shown alone in a window of its own; the menus, prompts
 /// and notices show in the window whose pane has the keyboard.

@@ -142,8 +142,7 @@ pub fn render_window(
     app.note_widths.clear();
     for &(pane, _, ed) in &info.panes {
         if let Some(w) = ed.and_then(|n| dom.nodes.get(n)).map(|n| n.rect.w).filter(|w| *w > 0.0) {
-            let tab =
-                if pane == app.pane { app.active } else { app.panes.get(pane).map_or(0, |p| p.active) };
+            let tab = if pane == app.pane { app.active } else { app.panes.get(pane).map_or(0, |p| p.active) };
             app.note_widths.insert((pane, tab), w);
         }
     }
@@ -155,27 +154,6 @@ pub fn render_window(
     if let Some(w) = info.editor.and_then(|n| dom.nodes.get(n)).map(|n| n.rect.w).filter(|w| *w > 0.0) {
         app.note_widths.insert((app.pane, app.active), w);
     }
-    // A list opened in the settings panel is brought into view before anything is drawn over it:
-    // a row below the edge of the scrollport cannot be clicked, and the click lands on the veil.
-    if app.settings.as_ref().is_some_and(|s| s.scroll_menu) {
-        if let Some(s) = &mut app.settings {
-            s.scroll_menu = false;
-        }
-        if let (Some(menu), Some(view)) = (dom.by_id("settings-menu"), dom.by_id("settings-content")) {
-            let (m, v) = (dom.nodes[menu].rect, dom.nodes[view].rect);
-            let over = (m.y + m.h) - (v.y + v.h);
-            if over > 0.0 {
-                let max = dom.max_scroll(view);
-                let now = dom.nodes[view].scroll_y;
-                let want = (now + over + 8.0).min(max);
-                app.scrolls.insert("settings-content".to_string(), want);
-                // The tree is already built: the scroll has to land on the node itself before the
-                // second layout, which is what the reader (and the pointer) see.
-                dom.nodes[view].scroll_y = want;
-                dom.layout(fonts, pixmap.width() as f32 / scale, pixmap.height() as f32 / scale);
-            }
-        }
-    }
     view::scroll_views(app, &mut dom, &info);
     // The suggestion and the composing text sit at the caret, which is only known after layout.
     let caret = view::caret_rect(app, &dom, &info, fonts);
@@ -185,6 +163,27 @@ pub fn render_window(
         preedit = view::add_preedit(app, &mut dom, &info, caret);
         dom.style(&app.theme, env);
         dom.layout(fonts, pixmap.width() as f32 / scale, pixmap.height() as f32 / scale);
+    }
+    // The list of an open dropdown is a layer of the settings panel: it is placed after the first
+    // layout, when its control has a rectangle, and laid out again so its own rows have one.
+    if app.settings.as_ref().is_some_and(|s| s.menu.is_some()) {
+        // The control the list belongs to is brought into sight first: a list anchored to a row
+        // that is scrolled out of the panel lands in the middle of nowhere.
+        let w = pixmap.width() as f32 / scale;
+        let h = pixmap.height() as f32 / scale;
+        if let (Some(anchor), Some(view)) = (dom.by_id("sm-anchor"), dom.by_id("settings-content")) {
+            let (a, v) = (dom.nodes[anchor].rect, dom.nodes[view].rect);
+            if a.y + a.h > v.y + v.h || a.y < v.y {
+                let dy = if a.y < v.y { a.y - v.y - 8.0 } else { a.y + a.h - (v.y + v.h) + 8.0 };
+                let want = (dom.nodes[view].scroll_y + dy).clamp(0.0, dom.max_scroll(view));
+                app.scrolls.insert("settings-content".to_string(), want);
+                dom.nodes[view].scroll_y = want;
+                dom.layout(fonts, w, h);
+            }
+        }
+        view::settings_menu(app, &mut dom, fonts, w, h);
+        dom.style(&app.theme, env);
+        dom.layout(fonts, w, h);
     }
     icons::paint(&mut dom);
     view::add_carets(app, &mut dom, &info, fonts);

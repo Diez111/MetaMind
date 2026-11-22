@@ -178,9 +178,6 @@ pub struct SettingsUi {
     pub ai_edit: Option<usize>,
     /// In a phone-sized panel, whether the page is in front (the list of categories behind it).
     pub page: bool,
-    /// Set when a list was just opened: after layout, the panel scrolls so the whole list is in
-    /// sight. A list below the edge of the viewport cannot be clicked: the click lands on the veil.
-    pub scroll_menu: bool,
     /// The open dropdown: which control it belongs to, its options and the highlighted one.
     pub menu: Option<SettingsMenu>,
 }
@@ -192,6 +189,8 @@ pub struct SettingsMenu {
     pub key: String,
     pub options: Vec<(String, String)>,
     pub at: usize,
+    /// The value in force when the list opened: it wears the mark, wherever the keyboard goes.
+    pub current: String,
 }
 
 /// A settings field with the keyboard: the text, the caret and the selection anchor, all as
@@ -329,7 +328,6 @@ impl SettingsUi {
             nav: None,
             ai_edit: None,
             page: false,
-            scroll_menu: false,
             menu: None,
         };
         s.scan(app);
@@ -1242,9 +1240,9 @@ impl App {
                 // It opens on the row the value in force is on.
                 let cur = item(arg).and_then(|it| self.setting_file(it.file).str(it.key).map(str::to_string));
                 let at = cur.and_then(|c| options.iter().position(|(v, _)| *v == c)).unwrap_or(0);
+                let current = options.get(at).map(|(v, _)| v.clone()).unwrap_or_default();
                 if let Some(s) = &mut self.settings {
-                    s.menu = Some(SettingsMenu { key: arg.to_string(), options, at });
-                    s.scroll_menu = true;
+                    s.menu = Some(SettingsMenu { key: arg.to_string(), options, at, current });
                 }
             }
             "menu-move" => {
@@ -1523,7 +1521,7 @@ fn choice_options(key: &str) -> Option<Vec<(String, String)>> {
 
 /// The dropdown of a settings row: the value in force and, when it is open, the list to pick
 /// from. The list is laid over the rows, anchored to the control, so opening it moves nothing.
-fn dropdown(dom: &mut Dom, ctl: NodeId, ui: &SettingsUi, key: &str, label: &str, current: &str) {
+fn dropdown(dom: &mut Dom, ctl: NodeId, ui: &SettingsUi, key: &str, label: &str) {
     let open = ui.menu.as_ref().filter(|m| m.key == key);
     dom.add(
         ctl,
@@ -1536,26 +1534,13 @@ fn dropdown(dom: &mut Dom, ctl: NodeId, ui: &SettingsUi, key: &str, label: &str,
             .text(format!("{label} ▾"))
             .action(format!("settings:menu:{key}")),
     );
-    let Some(m) = open else { return };
-    // The list hangs from the row, not from the 216 px control column: it gets the room it needs
-    // and grows the row instead of floating over the next one (the renderer paints in DOM order
-    // and has no z-index, so a floating list would be painted under the row below). The control
-    // sits inside the row's name-and-control line, so the row is two levels up.
-    let main = dom.nodes[ctl].parent.unwrap_or(ctl);
-    let row = dom.nodes[main].parent.unwrap_or(main);
-    let wrap = dom.add(row, El::div().class("setting-menu-wrap"));
-    let menu = dom.add(wrap, El::div().class("setting-menu").id("settings-menu").attr("role", "listbox"));
-    for (i, (value, text)) in m.options.iter().enumerate() {
-        dom.add(
-            menu,
-            El::div()
-                .class("setting-menu-item")
-                .class_if(i == m.at, "is-active")
-                .class_if(value == current, "is-checked")
-                .attr("role", "option")
-                .text(text.clone())
-                .action(format!("settings:pick:{key}:{i}")),
-        );
+    // The list is not part of this row: a node that grows inside it either pushes the content or
+    // leaves a hole where it opened. The control only marks itself as the anchor and the overlay
+    // pass (`view::settings_menu`) puts the list over everything, after layout, where it can be
+    // measured and placed.
+    let el = dom.nodes[ctl].children.last().copied();
+    if let Some(el) = el {
+        dom.nodes[el].el.id = Some("sm-anchor".to_string());
     }
 }
 
@@ -1754,7 +1739,7 @@ fn items_view(
                     theme_swatches(dom, ctl, &cur);
                     continue;
                 }
-                dropdown(dom, ctl, ui, it.key, &label, &cur);
+                dropdown(dom, ctl, ui, it.key, &label);
             }
             Text => {
                 input(
@@ -2237,7 +2222,7 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
         "Proveedor",
         "Elegir un preset completa la URL y un modelo típico; «Personalizado» deja los tuyos.",
     );
-    dropdown(dom, ctl, ui, &format!("ai.preset:{at}"), p.preset().label(), p.preset().label());
+    dropdown(dom, ctl, ui, &format!("ai.preset:{at}"), p.preset().label());
     let ctl = row(dom, parent, "URL base", "Origen de la API, con o sin su /v1.");
     input(
         dom,
@@ -2254,7 +2239,7 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     if app.ai_models.profile == p.name && !app.ai_models.list.is_empty() {
         let ctl =
             row(dom, parent, "Elegir del proveedor", "Los modelos que la API respondió hace un momento.");
-        dropdown(dom, ctl, ui, &format!("ai.model:{at}"), &p.model, &p.model);
+        dropdown(dom, ctl, ui, &format!("ai.model:{at}"), &p.model);
     }
     // What the provider says it serves, asked for on demand: the list is the source of truth for
     // the spelling of a model, which is where a hand-written name usually goes wrong.
@@ -2322,7 +2307,7 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
         "Plantilla del prompt",
         "Escribe el texto del prompt; después se puede editar a mano.",
     );
-    dropdown(dom, ctl, ui, &format!("ai.prompt:{at}"), preset, preset);
+    dropdown(dom, ctl, ui, &format!("ai.prompt:{at}"), preset);
     // The skills: standing instructions that ride along with every question of this profile.
     heading(dom, parent, "Skills del copiloto");
     dom.add(
@@ -2463,13 +2448,7 @@ pub fn modal(app: &App, dom: &mut Dom) {
     } else if !(ui.section == Section::Plugins && ui.plugin.is_some()) {
         section_header(dom, container, ui.section);
     }
-    let content = dom.add(
-        container,
-        El::div()
-            .class("vertical-tab-content")
-            .class_if(ui.menu.is_some(), "has-menu")
-            .id("settings-content"),
-    );
+    let content = dom.add(container, El::div().class("vertical-tab-content").id("settings-content"));
     if !needle.is_empty() {
         search_view(app, dom, content, ui, &needle);
     } else {
