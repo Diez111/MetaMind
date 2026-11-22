@@ -1303,7 +1303,9 @@ impl App {
             // The last row of the list is not a model: it is the way to ask the provider which
             // ones it serves, which is what fills the list with the names it really answers.
             if value == ASK_MODELS {
-                self.menu_action("ai-models", &at.to_string());
+                // The query lives in `run_settings` (it is an action of its own, button included),
+                // not in the pick pass: it is asked for by name.
+                self.run_settings(&format!("settings:ai-models:{at}"));
                 return;
             }
             if value == WRITE_MODEL {

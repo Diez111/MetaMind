@@ -1346,3 +1346,23 @@ fn the_keyboard_walks_the_list_without_losing_the_mark() {
         list.0
     );
 }
+
+#[test]
+fn the_last_row_of_the_model_list_asks_the_provider() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    app.run("settings:section:ai");
+    app.run("settings:menu:ai.model:0");
+    let menu = app.settings.as_ref().and_then(|s| s.menu.clone()).unwrap();
+    let at = menu.options.iter().position(|(_, l)| l.starts_with("Consultar")).expect("the way to ask");
+    app.run(&format!("settings:pick:ai.model:0:{at}"));
+    // No key in this vault: the query is refused, in a message the row shows, and the list of
+    // models is untouched -- but the row did the asking instead of nothing at all.
+    let err = app.ai_models.error.clone().unwrap_or_default();
+    assert!(
+        err.contains("clave") || app.ai_models.pending_for("Predeterminado"),
+        "asking the provider did nothing: {err:?}"
+    );
+    assert!(app.settings.is_some(), "asking keeps the panel");
+}
