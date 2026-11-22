@@ -810,3 +810,26 @@ fn extents_come_from_the_measure_when_it_has_them() {
     let approx = render_full("x^2", 16.0, false, &Metrics::ZERO, &mut Approx).layout;
     assert!(tall.height() > approx.height(), "{} vs {}", tall.height(), approx.height());
 }
+
+/// The display formulas of the note that reported them shown raw: a decimal comma `{,}` and the
+/// commands around it (`\lvert`, `\rvert`, `\le`, `\cdot`) are read, not drawn as their source.
+#[test]
+fn the_reported_display_formulas_have_nothing_unread() {
+    let snippets = [
+        (r"P_4(0{,}3)=1-0{,}045+\frac{0{,}0081}{24}=1-0{,}045+0{,}0003375=0{,}9553375", '='),
+        (r"\lvert R_4(0{,}3)\rvert\le\frac{0{,}00243}{120}=2{,}03\cdot 10^{-5}", '≤'),
+    ];
+    for (s, mark) in snippets {
+        let r = render_full(s, 20.0, true, &Metrics::default(), &mut Approx);
+        assert!(r.diagnostics.is_empty(), "{s}: {:?}", r.diagnostics);
+        // A command the engine cannot read is drawn as its own text: a backslash never survives.
+        let drawn: String = r.layout.glyphs.iter().map(|g| g.text.as_str()).collect();
+        assert!(!drawn.contains('\\'), "{s} drew its source: {drawn}");
+        // The decimal comma is punctuation of the number, at the size of the text around it.
+        assert!(drawn.contains(','), "{s}: {drawn}");
+        assert!(drawn.contains(mark), "{s}: {drawn}");
+        // `\frac` is a rule between its parts, never the word `frac`.
+        assert!(!r.layout.segs.is_empty(), "{s}: no fraction rule");
+        assert!(r.layout.width > 0.0 && r.layout.height() > 0.0);
+    }
+}

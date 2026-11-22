@@ -45,6 +45,7 @@ cases! {
     math_unterminated_still_swallows: "$$\n\\int x\ndx\n\npara\n" => "<div class=\"math math-block\">\\int x\ndx\n\npara</div>\n";
     footnotes: "a[^1] b^[inline *n*]\n\n[^1]: The note\n    more\n" => "<p>a<sup class=\"footnote-ref\"><a href=\"#fn-1\">[1]</a></sup> b<sup class=\"footnote-ref\"><a href=\"#fn-inline-2\">[inline-2]</a></sup></p>\n<section class=\"footnotes\">\n<hr>\n<ol>\n<li id=\"fn-1\"><p>The note\nmore</p></li>\n<li id=\"fn-inline-2\">inline <em>n</em></li>\n</ol>\n</section>\n";
     block_id: "para text ^abc-1\n\n- item ^i1\n" => "<p>para text</p>\n<ul>\n<li>item</li>\n</ul>\n";
+    svg_block: "<svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" xmlns=\"http://www.w3.org/2000/svg\">\n<text>x</text>\n</svg>\n\nafter\n" => "<svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" xmlns=\"http://www.w3.org/2000/svg\">\n<text>x</text>\n</svg>\n<p>after</p>\n";
     html_passthrough: "<div class=\"x\">\n*raw*\n</div>\n\na <b>bold</b> <!-- c -->" => "<div class=\"x\">\n*raw*\n</div>\n<p>a <b>bold</b> <!-- c --></p>\n";
     escapes: "\\*not\\* \\[\\[x]] &amp; &copy; &#65; a < b" => "<p>*not* [[x]] &amp; © A a &lt; b</p>\n";
     front_matter: "---\ntitle: x\n---\n# H\n" => "<h1 data-heading=\"H\">H</h1>\n";
@@ -85,4 +86,32 @@ fn gfm_only_options() {
     let md = "[[x]] #t ==h== %%c%%";
     let doc = md_engine::Document::parse(md, md_engine::Options::gfm());
     assert_eq!(html::render(&doc, md), "<p>[[x]] #t ==h== %%c%%</p>\n");
+}
+
+/// A `$$` block inside a callout is a `MathBlock` of its own, nested in the quote: the paragraph
+/// of prose it used to be is what showed the dollars and the commands raw.
+#[test]
+fn a_display_formula_inside_a_callout_is_a_math_block() {
+    let src = "> [!solucion]+ Solución\n> $$P_4(0{,}3)=1$$\n>\n> $$\\lvert R_4\\rvert\\le 2$$\n";
+    let doc = parse(src);
+    let tree = &doc.blocks[0].tree;
+    let mut maths = Vec::new();
+    let mut paragraphs = 0;
+    for (_, n) in tree.iter() {
+        match n.kind {
+            md_engine::NodeKind::MathBlock { content } => maths.push(content.of(src)),
+            md_engine::NodeKind::Paragraph => paragraphs += 1,
+            _ => {}
+        }
+    }
+    assert_eq!(paragraphs, 0, "the body is formulas, not prose: {}", doc.dump(src));
+    assert_eq!(maths.len(), 2, "{}", doc.dump(src));
+    assert_eq!(maths[0].trim(), "P_4(0{,}3)=1");
+    assert_eq!(maths[1].trim(), "\\lvert R_4\\rvert\\le 2");
+    // The dollars themselves are block markup: no inline formula holds them.
+    assert!(
+        !tree.iter().any(|(_, n)| matches!(n.kind, md_engine::NodeKind::InlineMath { .. })),
+        "{}",
+        doc.dump(src)
+    );
 }

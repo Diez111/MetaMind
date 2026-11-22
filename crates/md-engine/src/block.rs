@@ -289,6 +289,12 @@ const BLOCK_TAGS: &[&str] = &[
     "video",
     "audio",
     "img",
+    "svg",
+    "math",
+    "canvas",
+    "object",
+    "picture",
+    "template",
 ];
 
 fn html_block_start(b: &[u8]) -> bool {
