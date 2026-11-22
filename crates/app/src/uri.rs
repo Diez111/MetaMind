@@ -124,7 +124,9 @@ pub fn for_path(p: &Path, vaults: &[PathBuf]) -> Result<Target, String> {
 
 /// Write a new note, numbering the name when it is taken. Returns its vault-relative path.
 fn create(vault: &Path, name: &str, content: &str) -> Result<String, String> {
-    if name.split(['/', '\\']).any(|s| s == "..") {
+    // A `..` segment, an absolute name or a Windows drive prefix would put the new note outside
+    // the vault. The name arrives from another program, so none of them is trusted.
+    if name.contains(':') || name.starts_with(['/', '\\']) || name.split(['/', '\\']).any(|s| s == "..") {
         return Err(format!("`{name}` leaves the vault"));
     }
     let base = path::normalize(path::strip_md(name));
@@ -143,4 +145,55 @@ fn create(vault: &Path, name: &str, content: &str) -> Result<String, String> {
     }
     std::fs::write(&file, content).map_err(|e| format!("{}: {e}", file.display()))?;
     Ok(rel)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn vault() -> (tempfile::TempDir, PathBuf) {
+        let d = tempfile::tempdir().unwrap();
+        let v = d.path().join("Vault");
+        std::fs::create_dir_all(v.join(".obsidian")).unwrap();
+        (d, v)
+    }
+
+    #[test]
+    fn a_new_note_from_a_link_cannot_land_outside_the_vault() {
+        let (tmp, v) = vault();
+        for uri in [
+            "metamind://new?vault=Vault&name=../escape.md",
+            "metamind://new?vault=Vault&name=%2e%2e%2fescape.md",
+            "metamind://new?vault=Vault&name=..%5C..%5Cescape.md",
+            "metamind://new?vault=Vault&name=C:escape.md",
+            "metamind://new?vault=Vault&name=/etc/escape.md",
+            "metamind://new?vault=Vault&name=%5C%5Cserver%5Cshare%5Cescape.md",
+        ] {
+            assert!(resolve(uri, std::slice::from_ref(&v)).is_err(), "{uri}");
+            assert!(!tmp.path().join("escape.md").exists(), "{uri}");
+            assert!(!tmp.path().join("etc").exists(), "{uri}");
+        }
+        assert_eq!(tmp.path().read_dir().unwrap().count(), 1, "nothing was written next to the vault");
+    }
+
+    #[test]
+    fn a_link_writes_a_note_inside_the_vault_and_numbers_it() {
+        let (_tmp, v) = vault();
+        let uri = "metamind://new?vault=Vault&name=sub/Nota%20uno&content=hola";
+        let t = resolve(uri, std::slice::from_ref(&v)).unwrap();
+        assert_eq!(t.note.as_deref(), Some("sub/Nota uno.md"));
+        assert_eq!(std::fs::read_to_string(v.join("sub/Nota uno.md")).unwrap(), "hola");
+        let again = resolve(uri, std::slice::from_ref(&v)).unwrap();
+        assert_eq!(again.note.as_deref(), Some("sub/Nota uno 1.md"));
+    }
+
+    #[test]
+    fn a_link_to_a_note_stays_inside_the_known_vault() {
+        let (_tmp, v) = vault();
+        let note = v.join("a/b.md");
+        std::fs::create_dir_all(note.parent().unwrap()).unwrap();
+        std::fs::write(&note, "").unwrap();
+        let t = resolve(&format!("metamind://open?path={}", note.display()), &[]).unwrap();
+        assert_eq!((t.vault, t.note.as_deref()), (v, Some("a/b.md")));
+    }
 }
