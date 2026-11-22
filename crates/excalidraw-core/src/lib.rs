@@ -58,7 +58,12 @@
 //!   list paints in file order and does not group, lock or draw anything for a link.
 //! - **Format 1**: a version-1 file parses as far as its fields match the model, but no v1 file was
 //!   tested here — the fixtures are all version 2.
-//! - **Wiring**: nothing in the app opens `.excalidraw` files yet.
+//! - **Editing**: [`new_element`], [`Element::contains`], [`Element::bump`] and the mutating
+//!   methods of [`Scene`] are what a board editor needs — a scene can be built, hit-tested, moved
+//!   and written back without leaving this crate. Grouping, locking and frame containment are not
+//!   part of that: an editor selects one element at a time and paints in file order.
+//! - **Wiring**: MetaMind opens a `.excalidraw` file in its own tab (`crates/app/src/
+//!   excalidrawview.rs`) and draws `![[…]]` embeds read-only (`crates/app/src/excalidraw.rs`).
 
 mod canvas;
 mod display;
@@ -71,7 +76,7 @@ use std::collections::BTreeMap;
 use style::string_enum;
 
 pub use canvas::to_canvas;
-pub use display::{DisplayList, DrawOp, ImageRef, Polyline, Shape, Skip, Style, TextRun};
+pub use display::{Bounds, DisplayList, DrawOp, ImageRef, Polyline, Shape, Skip, Style, TextRun};
 pub use style::{Arrowhead, FillStyle, FontFamily, Rgba, StrokeStyle, TextAlign, VerticalAlign};
 
 string_enum! {
@@ -364,10 +369,157 @@ impl Scene {
         self.elements.iter().find(|e| e.id == id)
     }
 
+    /// The element with this id, to change it.
+    pub fn element_mut(&mut self, id: &str) -> Option<&mut Element> {
+        self.elements.iter_mut().find(|e| e.id == id)
+    }
+
+    /// The topmost element painted at a scene point, which is what a click selects.
+    pub fn hit(&self, x: f64, y: f64) -> Option<&Element> {
+        self.elements.iter().rev().find(|e| e.painted() && e.contains(x, y))
+    }
+
+    /// Drop an element from the scene. False when no element has that id.
+    pub fn remove(&mut self, id: &str) -> bool {
+        let before = self.elements.len();
+        self.elements.retain(|e| e.id != id);
+        self.elements.len() != before
+    }
+
+    /// The box everything in the scene paints, in scene coordinates.
+    pub fn bounds(&self) -> Option<Bounds> {
+        self.display_list().bounds()
+    }
+
     /// Drawing commands for the scene, in paint order.
     pub fn display_list(&self) -> DisplayList {
         display::build(self)
     }
+}
+
+/// A new element, with the fields and the defaults Excalidraw itself writes for a freshly drawn
+/// shape: the style defaults, `version: 1`, a `versionNonce` and the `updated` stamp. `seed` fills
+/// the id and the nonce (drawing programs pass a pseudorandom number so two identical shapes
+/// differ).
+///
+/// The points of a `line`, `arrow` or `freedraw` are its own box: `[[0, 0], [width, height]]`,
+/// offsets from `x`/`y` the way the format stores them.
+pub fn new_element(
+    kind: ElementType,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    seed: u64,
+    now_ms: u64,
+) -> Element {
+    let mut e = Element {
+        id: format!("{seed:016x}"),
+        kind: kind.clone(),
+        x,
+        y,
+        width,
+        height,
+        seed,
+        updated: Some(now_ms),
+        ..Element::default()
+    };
+    e.extra.insert("version".into(), Value::from(1));
+    e.extra.insert("versionNonce".into(), Value::from(seed as u32));
+    // A new element is live: `isDeleted` is a field of the model, so it is written once.
+    e.is_deleted = Some(false);
+    match kind {
+        ElementType::Text => {
+            e.text = Some(String::new());
+            e.original_text = Some(String::new());
+            e.font_size = Some(20.0);
+            e.font_family = Some(FontFamily::HandDrawn);
+            e.text_align = Some(TextAlign::Left);
+            e.vertical_align = Some(VerticalAlign::Top);
+            e.line_height = Some(1.25);
+            e.auto_resize = Some(true);
+        }
+        ElementType::Arrow | ElementType::Line | ElementType::Freedraw => {
+            e.points = Some(vec![[0.0, 0.0], [width, height]]);
+            if matches!(kind, ElementType::Freedraw) {
+                e.simulate_pressure = Some(true);
+            } else {
+                e.end_arrowhead = (kind == ElementType::Arrow).then_some(Arrowhead::Arrow);
+            }
+        }
+        _ => {}
+    }
+    e
+}
+
+impl Element {
+    /// Whether the display list would paint this element. A deleted element, a type this crate
+    /// does not paint and an empty text produce no op, so they are not selectable either.
+    pub fn painted(&self) -> bool {
+        if self.is_deleted == Some(true) {
+            return false;
+        }
+        match &self.kind {
+            ElementType::Other(_) => false,
+            ElementType::Text => !self.text().is_empty(),
+            ElementType::Arrow | ElementType::Line | ElementType::Freedraw => {
+                self.points.iter().flatten().count() >= 2
+            }
+            _ => true,
+        }
+    }
+
+    /// The element's text, from `text` or, for an element whose text was never edited, from
+    /// `originalText`. Empty for every other type.
+    pub fn text(&self) -> String {
+        self.text.as_deref().or(self.original_text.as_deref()).unwrap_or("").to_string()
+    }
+
+    /// Whether a scene point is on the element: inside its box, turned the way `angle` says, or —
+    /// for a line, an arrow and a freedraw stroke — near the polyline itself, so that a thin
+    /// diagonal is not selectable by the whole box around it.
+    pub fn contains(&self, x: f64, y: f64) -> bool {
+        match &self.kind {
+            ElementType::Arrow | ElementType::Line | ElementType::Freedraw => {
+                let pts = display::absolute_points(self);
+                if pts.len() < 2 {
+                    return false;
+                }
+                let tol = (self.stroke_width * 0.5).max(6.0);
+                pts.windows(2).any(|w| segment_distance(x, y, w[0], w[1]) <= tol)
+            }
+            _ => {
+                // Undo the rotation around the box centre, then test the plain box.
+                let (cx, cy) = (self.x + self.width / 2.0, self.y + self.height / 2.0);
+                let (sin, cos) = (-self.angle).sin_cos();
+                let (dx, dy) = (x - cx, y - cy);
+                let (lx, ly) = (cx + dx * cos - dy * sin, cy + dx * sin + dy * cos);
+                lx >= self.x - 1.0
+                    && lx <= self.x + self.width + 1.0
+                    && ly >= self.y - 1.0
+                    && ly <= self.y + self.height + 1.0
+            }
+        }
+    }
+
+    /// Mark the element as edited the way Excalidraw does: `version` goes up and `versionNonce` and
+    /// `updated` are stamped. The file then looks like one Excalidraw wrote, which is what its own
+    /// synchronisation uses to decide what changed.
+    pub fn bump(&mut self, now_ms: u64, nonce: u64) {
+        let version = self.extra.get("version").and_then(Value::as_u64).unwrap_or(1) + 1;
+        self.extra.insert("version".into(), Value::from(version));
+        self.extra.insert("versionNonce".into(), Value::from(nonce as u32));
+        self.updated = Some(now_ms);
+    }
+}
+
+/// Distance from a point to a segment, so a line is selected by its stroke and not by its box.
+fn segment_distance(x: f64, y: f64, a: (f64, f64), b: (f64, f64)) -> f64 {
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let len2 = dx * dx + dy * dy;
+    let t = if len2 > 0.0 { (((x - a.0) * dx + (y - a.1) * dy) / len2).clamp(0.0, 1.0) } else { 0.0 };
+    let (px, py) = (a.0 + dx * t, a.1 + dy * t);
+    ((x - px).powi(2) + (y - py).powi(2)).sqrt()
 }
 
 #[cfg(test)]

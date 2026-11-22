@@ -102,6 +102,27 @@ pub enum Skip {
     MissingFile(String),
 }
 
+/// A box in scene coordinates: everything the display list paints fits in one of these.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Bounds {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+impl Bounds {
+    pub fn right(&self) -> f64 {
+        self.x + self.width
+    }
+    pub fn bottom(&self) -> f64 {
+        self.y + self.height
+    }
+    pub fn contains(&self, x: f64, y: f64) -> bool {
+        x >= self.x && x <= self.right() && y >= self.y && y <= self.bottom()
+    }
+}
+
 /// The drawing commands of one scene, in paint order.
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct DisplayList {
@@ -222,11 +243,56 @@ fn opacity(percent: f64) -> f64 {
 }
 
 /// An element's `points` are offsets from its `x`/`y`; every consumer wants scene coordinates.
-fn absolute_points(e: &Element) -> Vec<(f64, f64)> {
+pub(crate) fn absolute_points(e: &Element) -> Vec<(f64, f64)> {
     e.points.iter().flatten().map(|p| (e.x + p[0], e.y + p[1])).collect()
 }
 
 impl DisplayList {
+    /// The box every op paints, in scene coordinates. `None` when the list paints nothing.
+    ///
+    /// This is what a viewer frames: a scene whose elements start at `x: 40` has its left edge at
+    /// 40, not at 0, so a board never needs a margin guessed around it.
+    pub fn bounds(&self) -> Option<Bounds> {
+        let (mut x0, mut y0) = (f64::INFINITY, f64::INFINITY);
+        let (mut x1, mut y1) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+        let mut grow = |x: f64, y: f64| {
+            x0 = x0.min(x);
+            y0 = y0.min(y);
+            x1 = x1.max(x);
+            y1 = y1.max(y);
+        };
+        for op in &self.ops {
+            match op {
+                DrawOp::Rect(s, _) | DrawOp::Ellipse(s, _) | DrawOp::Diamond(s, _) => {
+                    // A rotated box is framed by the box around its corners, not by its own sides.
+                    let (hw, hh) = (s.width / 2.0, s.height / 2.0);
+                    let (cx, cy) = (s.x + hw, s.y + hh);
+                    let (sin, cos) = s.angle.sin_cos();
+                    for (dx, dy) in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)] {
+                        grow(cx + dx * cos - dy * sin, cy + dx * sin + dy * cos);
+                    }
+                }
+                DrawOp::Polyline(p) => {
+                    for &(x, y) in &p.points {
+                        grow(x, y);
+                    }
+                }
+                DrawOp::TextRun(t) => {
+                    grow(t.x, t.y);
+                    grow(t.x + t.width, t.y + t.height);
+                }
+                DrawOp::ImageRef(i) => {
+                    grow(i.x, i.y);
+                    grow(i.x + i.width, i.y + i.height);
+                }
+            }
+        }
+        if !x0.is_finite() || !y0.is_finite() {
+            return None;
+        }
+        Some(Bounds { x: x0, y: y0, width: x1 - x0, height: y1 - y0 })
+    }
+
     /// A stable one-line-per-op text rendering, used by the tests and pasted into reviews.
     pub fn dump(&self) -> String {
         let mut out = String::new();

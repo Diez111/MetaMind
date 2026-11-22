@@ -190,6 +190,13 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("canvas:edit-selected", "Canvas: Editar nodo de texto seleccionado", ""),
     ("canvas:reset-view", "Canvas: Ajustar lienzo al panel", ""),
     ("canvas:focus", "Canvas: Mostrar lienzo", ""),
+    ("exc:focus", "Excalidraw: Mostrar el tablero", ""),
+    ("exc:zoom-fit", "Excalidraw: Ajustar el tablero al panel", "Ctrl+0"),
+    ("exc:zoom-in", "Excalidraw: Acercar", ""),
+    ("exc:zoom-out", "Excalidraw: Alejar", ""),
+    ("exc:zoom-reset", "Excalidraw: Volver al 100 %", ""),
+    ("exc:fullscreen", "Excalidraw: Pantalla completa", "F11"),
+    ("exc:delete-selected", "Excalidraw: Eliminar el elemento seleccionado", ""),
     ("graph:open", "Vista de gráfico: Abrir gráfico", "Ctrl+G"),
     ("graph:open-local", "Vista de gráfico: Abrir gráfico local", ""),
     ("graph:toggle-tags", "Vista de gráfico: Alternar etiquetas", ""),
@@ -409,6 +416,11 @@ pub struct App {
     pub show_canvas: bool,
     pub base_view: Option<crate::baseview::BaseView>,
     pub show_base: bool,
+    /// The `.excalidraw` board open in the main pane, and whether it has the pane.
+    pub exc_view: Option<crate::excalidrawview::ExcView>,
+    pub show_exc: bool,
+    /// The board covers the window instead of sitting in its pane.
+    pub exc_fullscreen: bool,
     /// Tables of the `dataview` blocks drawn so far, per query and vault revision.
     pub(crate) dataview: crate::dataview::Cached,
     pub store: VaultStore,
@@ -677,6 +689,9 @@ impl App {
             show_canvas: false,
             base_view: None,
             show_base: false,
+            exc_view: None,
+            show_exc: false,
+            exc_fullscreen: false,
             dataview: Default::default(),
             video: Default::default(),
             ai: Default::default(),
@@ -914,13 +929,16 @@ impl App {
 
     /// The note being edited; `None` while the graph has the main pane.
     pub fn tab(&self) -> Option<&Tab> {
-        self.tabs
-            .get(self.active)
-            .filter(|_| !self.show_graph && !self.canvas_active() && !self.base_active())
+        self.tabs.get(self.active).filter(|_| self.editor_shown())
     }
     pub fn tab_mut(&mut self) -> Option<&mut Tab> {
-        let shown = !self.show_graph && !self.canvas_active() && !self.base_active();
+        let shown = self.editor_shown();
         self.tabs.get_mut(self.active).filter(|_| shown)
+    }
+
+    /// Whether the panes show the active note instead of a graph, a canvas, a base or a board.
+    pub fn editor_shown(&self) -> bool {
+        !self.show_graph && !self.canvas_active() && !self.base_active() && !self.exc_active()
     }
 
     pub fn hotkey_for(&self, command: &str) -> String {
@@ -951,6 +969,9 @@ impl App {
         if path::kind_of(&rel) == FileKind::Base {
             return self.open_base(&rel);
         }
+        if path::extension(&rel).eq_ignore_ascii_case("excalidraw") {
+            return self.open_exc(&rel);
+        }
         if let Some(i) = self.tabs.iter().position(|t| t.path.eq_ignore_ascii_case(&rel)) {
             self.active = i;
         } else {
@@ -974,6 +995,8 @@ impl App {
         self.show_graph = false;
         self.show_canvas = false;
         self.show_base = false;
+        self.show_exc = false;
+        self.exc_fullscreen = false;
         self.plugins.push(ext_api::Event::FileOpen { path: rel.clone() });
         if record {
             self.history.truncate(self.history_pos + usize::from(!self.history.is_empty()));
@@ -1066,6 +1089,7 @@ impl App {
     /// Save every modified tab (called when the window loses focus, on a timer, and on quit).
     pub fn save_all(&mut self) {
         self.canvas_save();
+        self.exc_save();
         for p in 0..self.panes.len() {
             self.in_pane(p, |a| {
                 let active = a.active;
@@ -1096,6 +1120,7 @@ impl App {
         }
         self.tree = None;
         self.canvas_files_changed(paths);
+        self.exc_files_changed(paths);
         self.base_files_changed(paths);
         if let Some(g) = &mut self.graph_view {
             g.dirty = true;
@@ -1425,6 +1450,8 @@ if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
                 self.active = i;
                 self.show_graph = false;
                 self.show_canvas = false;
+                self.show_exc = false;
+                self.exc_fullscreen = false;
                 self.show_base = false;
                 self.focus = Focus::Editor;
             }
@@ -1546,7 +1573,13 @@ if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
                 }
             }
             "editor:save-file" => {
-                if self.save() {
+                if self.exc_active() {
+                    self.exc_save();
+                    self.notice = None;
+                } else if self.canvas_active() {
+                    self.canvas_save();
+                    self.notice = None;
+                } else if self.save() {
                     self.notice = None;
                 }
             }
@@ -1555,6 +1588,9 @@ if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
                 self.show_graph = false;
             }
             "workspace:close" if self.base_active() => self.run("base:close"),
+            "workspace:close" | "exc:close" if self.exc_active() || command == "exc:close" => {
+                self.exc_close();
+            }
             "workspace:close" | "canvas:close" if self.canvas_active() || command == "canvas:close" => {
                 self.canvas_save();
                 self.canvas_view = None;
@@ -1620,6 +1656,10 @@ if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
             "workspace:next-tab" | "workspace:previous-tab" if self.base_active() => self.show_base = false,
             "workspace:next-tab" | "workspace:previous-tab" if self.canvas_active() => {
                 self.show_canvas = false
+            }
+            "workspace:next-tab" | "workspace:previous-tab" if self.exc_active() => {
+                self.show_exc = false;
+                self.exc_fullscreen = false;
             }
             "workspace:next-tab" if !self.tabs.is_empty() => {
                 self.active = (self.active + 1) % self.tabs.len()
@@ -1741,7 +1781,11 @@ if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
                 self.quit = true;
             }
             _ => {
-                if self.run_graph(command) || self.run_canvas(command) || self.run_base(command) {
+                if self.run_graph(command)
+                    || self.run_canvas(command)
+                    || self.run_base(command)
+                    || self.run_exc(command)
+                {
                     return;
                 }
                 if self.run_editing(command, now) {
@@ -1811,7 +1855,7 @@ if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
 
     /// Suggestions follow the text before the cursor, and only while the editor has focus.
     fn after_editor_input(&mut self) {
-        if self.focus == Focus::Editor && !self.canvas_active() {
+        if self.focus == Focus::Editor && !self.canvas_active() && !self.exc_active() {
             self.update_suggest();
         } else {
             self.suggest = None;
@@ -1890,6 +1934,9 @@ if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
             Focus::Editor => {
                 if self.canvas_active() {
                     return self.canvas_key(&key);
+                }
+                if self.exc_active() && self.exc_key(&key) {
+                    return true;
                 }
                 let Some(t) = self.tabs.get_mut(self.active).filter(|_| !self.show_graph) else {
                     return false;
@@ -2008,6 +2055,9 @@ if let Some(i) = command.strip_prefix("suggest:").and_then(|i| i.parse().ok()) {
             }
             Focus::Search => self.search_query.push_str(text),
             Focus::Editor if self.canvas_active() => self.canvas_text(text),
+            Focus::Editor if self.exc_active() => {
+                self.exc_text(text);
+            }
             Focus::Editor => {
                 let shown = !self.show_graph;
                 if let Some(t) =

@@ -18,7 +18,7 @@
 //! separator-vertical, separator-horizontal, unlink, code, list, link, calendar, vault,
 //! chevrons-down-up, house, hard-drive, check, play, triangle-alert, panel-left, layout-template,
 //! panel-right, circle-help, copy, clipboard, scissors, trash, bold, italic, strikethrough,
-//! highlighter, table, scan-text, sparkles.
+//! highlighter, table, scan-text, sparkles, square, circle, diamond, type, minus.
 //!
 //! The names are MetaMind's, so a few point at the nearest Lucide icon rather than one with the
 //! same name: `note` is `file-text`, `note-plus` is `file-plus`, `canvas` is `layout-dashboard`,
@@ -1025,6 +1025,27 @@ fn shape(name: &str) -> Shape {
             .l(9.0, 15.0),
         // lucide `send`: the paper plane of the panel's send button.
         "send" => s.m(22.0, 2.0).l(15.0, 22.0).l(11.0, 13.0).l(2.0, 9.0).z().m(22.0, 2.0).l(11.0, 13.0),
+        // lucide `square`, `circle`, `diamond`, `type` and `minus`: the drawing tools of a board
+        // and the zoom bar under it.
+        "square" => s.rect(4.0, 4.0, 20.0, 20.0),
+        "circle" => s
+            .m(12.0, 3.0)
+            .c(16.97, 3.0, 21.0, 7.03, 21.0, 12.0)
+            .c(21.0, 16.97, 16.97, 21.0, 12.0, 21.0)
+            .c(7.03, 21.0, 3.0, 16.97, 3.0, 12.0)
+            .c(3.0, 7.03, 7.03, 3.0, 12.0, 3.0)
+            .z(),
+        "diamond" => s.m(12.0, 3.0).l(21.0, 12.0).l(12.0, 21.0).l(3.0, 12.0).z(),
+        "type" => s
+            .m(4.0, 7.0)
+            .l(4.0, 4.0)
+            .l(20.0, 4.0)
+            .l(20.0, 7.0)
+            .m(9.0, 20.0)
+            .l(15.0, 20.0)
+            .m(12.0, 4.0)
+            .l(12.0, 20.0),
+        "minus" => s.m(5.0, 12.0).l(19.0, 12.0),
         _ => s.rect(3.0, 3.0, 21.0, 21.0),
     }
 }
@@ -1071,6 +1092,7 @@ pub fn for_file(path: &str) -> &'static str {
     match vault_core::path::extension(path).to_ascii_lowercase().as_str() {
         "md" => "note",
         "canvas" => "canvas",
+        "excalidraw" => "edit",
         "base" => "table",
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" => "image",
         _ => "file",

@@ -173,6 +173,9 @@ pub struct ViewInfo {
     pub graph_panel: Option<NodeId>,
     pub canvas: Option<NodeId>,
     pub canvas_colors: Vec<NodeId>,
+    /// Each node that paints an Excalidraw board: the pane's, and the full-screen box's.
+    pub excview: Vec<NodeId>,
+    pub exc_colors: Vec<NodeId>,
     /// Each pane with its leaf element and, unless focused, its scrolling view.
     pub panes: Vec<(usize, NodeId, Option<NodeId>)>,
     /// Each tab of a stacked pane: (pane, tab, its column or spine, its scrolling view unless
@@ -1211,7 +1214,7 @@ fn pane(
             dom.add(x, icons::el(close.1));
         };
     let (open, active) = app.pane_tabs(pane);
-    let covered = focused && (app.show_graph || app.canvas_active() || app.base_active());
+    let covered = focused && (app.show_graph || app.canvas_active() || app.base_active() || app.exc_active());
     for (i, t) in open.iter().enumerate() {
         tab_header(
             dom,
@@ -1234,6 +1237,10 @@ fn pane(
     if let Some(b) = app.base_view.as_ref().filter(|_| focused) {
         let (focus, close) = ("base:focus".to_string(), ("base:close".to_string(), "x"));
         tab_header(dom, "table", &b.title(), false, app.base_active(), focus, close);
+    }
+    if let Some(e) = app.exc_view.as_ref().filter(|_| focused) {
+        let (focus, close) = ("exc:focus".to_string(), ("exc:close".to_string(), "x"));
+        tab_header(dom, "edit", &e.title(), e.dirty, app.exc_active(), focus, close);
     }
     let new_tab =
         dom.add(tabs, El::div().class("workspace-tab-header-new-tab").action("file-explorer:new-file"));
@@ -1258,6 +1265,7 @@ fn pane(
             crate::canvasview::pane(app.canvas_view.as_ref().unwrap(), dom, leaf, info)
         }
         _ if app.base_active() => crate::baseview::pane(app.base_view.as_ref().unwrap(), dom, leaf),
+        _ if app.exc_active() => crate::excalidrawview::pane(app.exc_view.as_ref().unwrap(), dom, leaf, info),
         _ => editor(app, dom, leaf, pal, info, app.tab().map(|t| (pane, app.active, t)), true),
     }
     info.panes.push((pane, leaf, None));
@@ -2547,9 +2555,14 @@ fn diagram_zoom(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate:
 }
 
 /// Prompts, the hover preview, settings, menus and notices, over the window.
-fn overlays(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate::rich::Item>) {
+fn overlays(app: &App, dom: &mut Dom, viewport_h: f32, info: &mut ViewInfo) {
     video_fullscreen(app, dom, viewport_h);
-    diagram_zoom(app, dom, viewport_h, rich);
+    diagram_zoom(app, dom, viewport_h, &mut info.rich);
+    if app.exc_fullscreen {
+        if let Some(v) = &app.exc_view {
+            crate::excalidrawview::fullscreen(v, dom, app.window_w, viewport_h, info);
+        }
+    }
     if let Some(p) = &app.prompt {
         let t = app.anims.t("prompt");
         let mut el = El::div().class("prompt");
@@ -2677,7 +2690,7 @@ pub fn build(app: &App, viewport_h: f32, solo: Option<usize>) -> (Dom, ViewInfo)
         None => !app.is_popped(app.pane),
     };
     if here {
-        overlays(app, &mut dom, viewport_h, &mut info.rich);
+        overlays(app, &mut dom, viewport_h, &mut info);
     }
     for (id, y) in &app.scrolls {
         if let Some(n) = dom.by_id(id) {
