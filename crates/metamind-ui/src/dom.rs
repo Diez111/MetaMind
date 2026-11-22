@@ -466,9 +466,13 @@ impl Dom {
             let mut preferred: Vec<(f32, f32)> = Vec::with_capacity(kids.len());
             for &c in &kids {
                 let m = &self.nodes[c].style.margin;
-                let size =
-                    self.intrinsic(fonts, c, if s.row { f32::INFINITY } else { avail - m[1] - m[3] });
-                let size = self.row_child_size(fonts, c, if s.row && avail.is_finite() { Some(avail) } else { None }, size);
+                let size = self.intrinsic(fonts, c, if s.row { f32::INFINITY } else { avail - m[1] - m[3] });
+                let size = self.row_child_size(
+                    fonts,
+                    c,
+                    if s.row && avail.is_finite() { Some(avail) } else { None },
+                    size,
+                );
                 let (cw, ch) = size;
                 preferred.push((cw, ch));
                 let (cw, ch) = (cw + m[1] + m[3], ch + m[0] + m[2]);
@@ -529,10 +533,36 @@ impl Dom {
         (w, self.height_at(fonts, id, w))
     }
 
-    /// Height of a flex row that is narrower than its children's preferred sizes. `place`
-    /// squeezes those that can give up width, and wrapped text needs another line at the width
-    /// it finally gets; without measuring again the row stays one line tall and the next block
-    /// is drawn over the text that wrapped.
+    /// Widths `place` gives the children of a flex row that has less room than they asked for:
+    /// only the ones that opted in (grow, clipping or wrapping text) give up space, in proportion
+    /// to the width each of them asked for. Whatever needs a child's final width before it is
+    /// placed — a row's own height, the height of a text that wraps at that width — has to run
+    /// this same arithmetic, or the two disagree and the next row is drawn over the wrapped text.
+    fn shrunk_row(&self, kids: &[NodeId], sizes: &mut [(f32, f32)], free: f32) {
+        let shrinkable: Vec<usize> = kids
+            .iter()
+            .enumerate()
+            .filter(|(_, &c)| {
+                let cs = &self.nodes[c].style;
+                cs.shrink > 0.0
+                    && !matches!(cs.width, Dim::Px(_))
+                    && (cs.grow > 0.0 || cs.clip || (self.nodes[c].el.text.is_some() && cs.text.wrap))
+            })
+            .map(|(i, _)| i)
+            .collect();
+        let total: f32 = shrinkable.iter().map(|&i| sizes[i].0).sum();
+        if total <= 0.0 {
+            return;
+        }
+        for &i in &shrinkable {
+            sizes[i].0 = (sizes[i].0 + free * sizes[i].0 / total).max(0.0);
+        }
+    }
+
+    /// Height of a flex row that is narrower than its children's preferred sizes. The children
+    /// are squeezed exactly as `place` will squeeze them and measured again at the width they
+    /// really get: wrapped text needs another line there, and without it the row stays a line
+    /// short and the next block is drawn over the text that wrapped.
     fn row_height(
         &self,
         fonts: &mut Fonts,
@@ -541,17 +571,16 @@ impl Dom {
         avail: f32,
         total: f32,
     ) -> f32 {
+        let mut sizes = preferred.to_vec();
+        self.shrunk_row(kids, &mut sizes, avail - total);
         let mut h = 0.0f32;
-        for (&c, &(cw, ch)) in kids.iter().zip(preferred) {
+        for (i, &c) in kids.iter().enumerate() {
             let cs = &self.nodes[c].style;
             let m = cs.margin;
-            let mut ch = ch;
-            if self.nodes[c].el.text.is_some() && cs.text.wrap && cs.shrink > 0.0 {
-                let squeezed = if total > 0.0 { cw + (avail - total) * cw / total } else { cw };
-                if squeezed < cw {
-                    ch = self.height_at(fonts, c, squeezed.max(0.0));
-                }
-            }
+            let (asked, asked_h) = preferred[i];
+            // Measured again at its final width: text gains a line, a nested row gains the
+            // height of the text it holds.
+            let ch = if sizes[i].0 < asked { self.height_at(fonts, c, sizes[i].0) } else { asked_h };
             h = h.max(ch + m[0] + m[2]);
         }
         h
@@ -654,29 +683,22 @@ impl Dom {
             }
         } else if definite_main && free < 0.0 && !s.scroll {
             // Only children that opted in (grow, clipping or wrapping text) give up space.
-            let shrinkable: Vec<usize> = kids
-                .iter()
-                .enumerate()
-                .filter(|(_, &c)| {
-                    let cs = &self.nodes[c].style;
-                    let fixed = matches!(if s.row { cs.width } else { cs.height }, Dim::Px(_));
-                    cs.shrink > 0.0
-                        && !fixed
-                        && (cs.grow > 0.0
-                            || cs.clip
-                            || (s.row && self.nodes[c].el.text.is_some() && cs.text.wrap))
-                })
-                .map(|(i, _)| i)
-                .collect();
-            let total: f32 = shrinkable.iter().map(|&i| if s.row { sizes[i].0 } else { sizes[i].1 }).sum();
-            if total > 0.0 {
-                for &i in &shrinkable {
-                    let cur = if s.row { sizes[i].0 } else { sizes[i].1 };
-                    let new = (cur + free * cur / total).max(0.0);
-                    if s.row {
-                        sizes[i].0 = new;
-                    } else {
-                        sizes[i].1 = new;
+            if s.row {
+                self.shrunk_row(&kids, &mut sizes, free);
+            } else {
+                let shrinkable: Vec<usize> = kids
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, &c)| {
+                        let cs = &self.nodes[c].style;
+                        cs.shrink > 0.0 && !matches!(cs.height, Dim::Px(_)) && (cs.grow > 0.0 || cs.clip)
+                    })
+                    .map(|(i, _)| i)
+                    .collect();
+                let total: f32 = shrinkable.iter().map(|&i| sizes[i].1).sum();
+                if total > 0.0 {
+                    for &i in &shrinkable {
+                        sizes[i].1 = (sizes[i].1 + free * sizes[i].1 / total).max(0.0);
                     }
                 }
             }
@@ -889,8 +911,10 @@ impl Dom {
             }
             self.paint_node(c, scene, opacity);
         }
-        if s.scroll && n.content_h > cb.h + 1.0 {
-            // Scrollbar thumb.
+        if s.scroll && n.content_h > cb.h + s.padding[2] + 1.0 {
+            // Scrollbar thumb. The bottom padding is room to breathe at the end of the list, not
+            // content under the fold: a list that fits exactly would otherwise carry a bar for a
+            // scroll of a few pixels that shows nothing.
             let track = r.h;
             let thumb = (track * cb.h / n.content_h).max(24.0);
             let max_scroll = n.content_h - cb.h;

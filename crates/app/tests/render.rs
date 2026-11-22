@@ -61,9 +61,7 @@ fn math_blocks(f: &Frame) -> Vec<(String, String)> {
         .rich
         .iter()
         .filter_map(|it| match &it.kind {
-            metamind_app::rich::Kind::Math { src, display: true } => {
-                Some((src.clone(), drawn(f, it.node)))
-            }
+            metamind_app::rich::Kind::Math { src, display: true } => Some((src.clone(), drawn(f, it.node))),
             _ => None,
         })
         .collect()
@@ -169,9 +167,7 @@ fn empty_callouts_have_one_height() {
         .dom
         .nodes
         .iter()
-        .filter(|n| {
-            n.el.classes.iter().any(|c| c == "cm-callout" || c == "cm-callout-block")
-        })
+        .filter(|n| n.el.classes.iter().any(|c| c == "cm-callout" || c == "cm-callout-block"))
         .map(|n| n.rect.h)
         .collect();
     assert_eq!(boxes.len(), 2, "two callouts: {boxes:?}");
@@ -236,12 +232,7 @@ fn a_note_opens_at_its_first_line_and_ends_above_the_status_bar() {
     let view = f.info.editor.unwrap();
     let cb = f.dom.content_rect(view);
     let vb = f.dom.nodes[view].rect;
-    let status = f
-        .dom
-        .nodes
-        .iter()
-        .find(|n| n.el.classes.iter().any(|c| c == "status-bar"))
-        .unwrap();
+    let status = f.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == "status-bar")).unwrap();
     let last = f.info.blocks.last().map(|b| b.node).expect("the end of the note is laid out");
     let lr = f.dom.nodes[last].rect;
     assert!(lr.y + lr.h <= cb.y + cb.h + 0.5, "the last line is inside the view: {lr:?} against {cb:?}");
@@ -257,8 +248,69 @@ fn a_formula_without_delimiters_is_left_as_the_reader_wrote_it() {
     let (mut app, mut fonts) = open(&d, ViewMode::Reading);
     let f = frame(&mut app, &mut fonts);
     let texts = shown(&f);
-    assert!(texts.iter().any(|t| t == "La derivada queda g(x)=\\operatorname{sen}(3x) en texto plano."),
-        "{texts:?}");
+    assert!(
+        texts.iter().any(|t| t == "La derivada queda g(x)=\\operatorname{sen}(3x) en texto plano."),
+        "{texts:?}"
+    );
     assert!(f.info.rich.is_empty(), "no block formula was invented");
     assert!(f.info.inline.is_empty(), "no inline formula was invented");
+}
+
+#[test]
+fn a_row_of_a_callout_is_as_tall_as_the_text_it_holds() {
+    // The bullets of the EDO note, as the reader reported them: an item whose text wraps over
+    // four lines with two formulas in it, in a panel narrow enough that the squeeze is what
+    // decides the last line. The row used to keep the height of a wider measurement, so the
+    // next bullet was drawn over the formula at the end of this one.
+    let text = concat!(
+        "> [!abstract] Al terminar esta unidad vas a poder\n",
+        "> - Clasificar una EDO de primer orden como separable o lineal y aplicar el método que le ",
+        "corresponde: separar e integrar, o factor integrante $\\mu(x)=e^{\\int P(x)\\,dx}$.\n",
+        "> - Convertir una ecuación integral en una EDO derivando los dos miembros con la regla del ",
+        "producto y el TFC, agregando el factor $g'(x)$ cuando el límite superior es $g(x)$.\n",
+        "> - Resolver el ejercicio del parcial completo: derivar, simplificar hasta que quede $f'$ y ",
+        "$f$, integrar y fijar $C$ con la condición inicial.\n",
+        "> - Plantear un modelo (enfriamiento de Newton, desintegración, bola de nieve) y elegir la ",
+        "variable que linealiza la EDO.\n",
+    );
+    let d = vault(text);
+    let (mut app, mut fonts) = open(&d, ViewMode::Reading);
+    let mut pm = Pixmap::new(520, 900).unwrap();
+    let f = render(&mut app, &mut fonts, &mut pm, 1.0);
+
+    // Every row of the callout, in the order it is stacked, with the text it holds.
+    let rows: Vec<(usize, metamind_ui::Rect)> = f
+        .dom
+        .nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| n.el.classes.iter().any(|c| c == "cm-list-item"))
+        .map(|(i, n)| (i, n.rect))
+        .collect();
+    assert!(rows.len() >= 4, "the four bullets are laid out: {}", rows.len());
+    for (i, (node, r)) in rows.iter().enumerate() {
+        // The text of the row fits inside it: it is what the next row is stacked after.
+        let text = f.dom.nodes[*node]
+            .children
+            .iter()
+            .copied()
+            .find(|c| f.dom.nodes[*c].el.classes.iter().any(|k| k == "list-item-text"))
+            .expect("a row of a list item holds its text");
+        let tr = f.dom.nodes[text].rect;
+        assert!(
+            tr.h <= r.h + 0.5,
+            "row {i} is {:.1} tall but its text is {:.1}: the next row is drawn over it",
+            r.h,
+            tr.h
+        );
+        if let Some((_, prev)) = rows.get(i.wrapping_sub(1)).filter(|_| i > 0) {
+            assert!(
+                r.y >= prev.y + prev.h - 0.5,
+                "row {i} starts at {:.1}, inside the row above it ({:.1}..{:.1})",
+                r.y,
+                prev.y,
+                prev.y + prev.h
+            );
+        }
+    }
 }
