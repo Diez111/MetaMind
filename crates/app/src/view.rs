@@ -6,7 +6,7 @@ use crate::shell::{App, Focus, Panel, PromptKind, RightPanel, ViewMode};
 use editor_core::deco::{decorate, Deco, Style as Deco_};
 use editor_core::Sel;
 use md_engine::NodeKind;
-use rustsidian_ui::{Dom, El, Fonts, NodeId, Rect, Span};
+use metamind_ui::{Dom, El, Fonts, NodeId, Rect, Span};
 use theme_engine::{parse_color, Color, Element};
 use vault_core::path;
 
@@ -1944,7 +1944,7 @@ fn embeds(
                 El::div()
                     .class("media-card-action")
                     .text(if crate::video::is_video(rel) {
-                        "Reproducir en RustSidian"
+                        "Reproducir en MetaMind"
                     } else {
                         "Abrir con el reproductor del sistema"
                     })
@@ -2045,11 +2045,11 @@ fn empty_state(app: &App, dom: &mut Dom, parent: NodeId) {
 }
 
 /// The application icon as an image, rasterised once.
-pub fn logo() -> rustsidian_ui::Image {
-    static LOGO: std::sync::OnceLock<rustsidian_ui::Image> = std::sync::OnceLock::new();
+pub fn logo() -> metamind_ui::Image {
+    static LOGO: std::sync::OnceLock<metamind_ui::Image> = std::sync::OnceLock::new();
     LOGO.get_or_init(|| {
         const SIZE: u32 = 192;
-        let mut pm = rustsidian_ui::Pixmap::new(SIZE, SIZE).expect("icon size is not zero");
+        let mut pm = metamind_ui::Pixmap::new(SIZE, SIZE).expect("icon size is not zero");
         let rgba = crate::icon::rgba(SIZE);
         for (dst, src) in pm.data_mut().as_chunks_mut::<4>().0.iter_mut().zip(rgba.as_chunks::<4>().0) {
             // The pixmap holds premultiplied color.
@@ -2061,7 +2061,7 @@ pub fn logo() -> rustsidian_ui::Image {
                 src[3],
             ]);
         }
-        rustsidian_ui::Image(std::sync::Arc::new(pm))
+        metamind_ui::Image(std::sync::Arc::new(pm))
     })
     .clone()
 }

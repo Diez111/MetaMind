@@ -1,5 +1,5 @@
-use rustsidian_app::shell::PromptKind;
-use rustsidian_app::App;
+use metamind_app::shell::PromptKind;
+use metamind_app::App;
 use std::fs;
 
 fn vault() -> tempfile::TempDir {
@@ -25,7 +25,7 @@ fn a_saved_workspace_brings_back_its_panes_and_tabs() {
     assert_eq!(app.prompt.as_ref().map(|p| p.kind), Some(PromptKind::Workspace));
     app.text_input("Writing");
     assert_eq!(labels(&app), ["Guardar como \u{201c}Writing\u{201d}"]);
-    app.key(rustsidian_app::Key::new("Enter"));
+    app.key(metamind_app::Key::new("Enter"));
     assert_eq!(app.workspace_names().unwrap(), ["Writing"]);
 
     app.run("workspace:close-all");
@@ -53,7 +53,7 @@ fn a_broken_workspace_file_is_reported_not_ignored() {
     let d = vault();
     let mut app = App::open(d.path()).unwrap();
     fs::create_dir_all(&app.config.dir).unwrap();
-    fs::write(app.config.dir.join("rustsidian-workspaces.json"), "{oops").unwrap();
+    fs::write(app.config.dir.join("metamind-workspaces.json"), "{oops").unwrap();
     app.run("workspaces:load");
     assert!(labels(&app)[0].starts_with("No se pudieron leer los espacios de trabajo"), "{:?}", labels(&app));
     app.save_workspace("x");

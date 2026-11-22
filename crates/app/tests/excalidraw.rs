@@ -1,11 +1,11 @@
 //! A `![[Tablero.excalidraw]]` embed is drawn where the note says it, and a board that cannot be
 //! read leaves the `![[…]]` line and a notice instead of a picture.
 //!
-//! The fixtures are the two boards of the `vault-rustsidian-test` copy (Análisis Matemático I,
+//! The fixtures are the two boards of the `vault-metamind-test` copy (Análisis Matemático I,
 //! Practica), byte for byte: eight elements in one and seven in the other, text plus one box.
-use rustsidian_app::shell::ViewMode;
-use rustsidian_app::{render, App, Frame};
-use rustsidian_ui::{Cmd, Fonts, Pixmap};
+use metamind_app::shell::ViewMode;
+use metamind_app::{render, App, Frame};
+use metamind_ui::{Cmd, Fonts, Pixmap};
 use std::fs;
 
 const AREAS: &str = include_str!("fixtures/Tablero-Areas.excalidraw");
@@ -48,7 +48,7 @@ fn caret_at(app: &mut App, needle: &str) {
     app.tab_mut().unwrap().editor.buf.set_sels(vec![editor_core::Sel::cursor(at)]);
 }
 
-fn drawn_text(f: &Frame, node: rustsidian_ui::NodeId) -> Vec<String> {
+fn drawn_text(f: &Frame, node: metamind_ui::NodeId) -> Vec<String> {
     f.dom.nodes[node]
         .draw
         .iter()
@@ -155,7 +155,7 @@ fn the_board_is_read_once_per_modification_time() {
     let c = app.media.borrow_mut().board(&app.store, "Tablero-Areas.excalidraw").unwrap();
     assert!(!std::sync::Arc::ptr_eq(&a, &c));
     match &*c {
-        rustsidian_app::excalidraw::Loaded::Board(board) => assert_eq!(board.list.ops.len(), 7),
-        rustsidian_app::excalidraw::Loaded::Failed(e) => panic!("{e}"),
+        metamind_app::excalidraw::Loaded::Board(board) => assert_eq!(board.list.ops.len(), 7),
+        metamind_app::excalidraw::Loaded::Failed(e) => panic!("{e}"),
     }
 }

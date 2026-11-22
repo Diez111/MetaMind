@@ -29,21 +29,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-      - run: cargo build --release -p rustsidian --target ${{ matrix.target }}
+      - run: cargo build --release -p metamind --target ${{ matrix.target }}
       - name: Package
         shell: bash
         run: |
-          dir="rustsidian-${GITHUB_REF_NAME}-${{ matrix.name }}"
+          dir="metamind-${GITHUB_REF_NAME}-${{ matrix.name }}"
           mkdir "$dir"
           cp README.md LICENSE-MIT LICENSE-APACHE "$dir/"
           if [ "${{ runner.os }}" = "Windows" ]; then
-            cp "target/${{ matrix.target }}/release/rustsidian.exe" "$dir/"
+            cp "target/${{ matrix.target }}/release/metamind.exe" "$dir/"
             7z a "$dir.zip" "$dir"
           else
-            cp "target/${{ matrix.target }}/release/rustsidian" "$dir/"
-            strip "$dir/rustsidian" || true
+            cp "target/${{ matrix.target }}/release/metamind" "$dir/"
+            strip "$dir/metamind" || true
             if [ "${{ runner.os }}" = "Linux" ]; then
-              cp packaging/rustsidian.desktop packaging/rustsidian.svg "$dir/"
+              cp packaging/metamind.desktop packaging/metamind.svg "$dir/"
             fi
             tar czf "$dir.tar.gz" "$dir"
           fi
@@ -53,10 +53,10 @@ jobs:
         shell: bash
         run: |
           choco install innosetup --no-progress -y
-          dir="rustsidian-${GITHUB_REF_NAME}-${{ matrix.name }}"
+          dir="metamind-${GITHUB_REF_NAME}-${{ matrix.name }}"
           "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" -Q "-DAppVersion=${GITHUB_REF_NAME#v}" \
             "-DSourceDir=$(cygpath -w "$PWD/$dir")" "-DOutputName=$dir-setup" \
-            "-O$(cygpath -w "$PWD")" packaging/rustsidian.iss
+            "-O$(cygpath -w "$PWD")" packaging/metamind.iss
           echo "SETUP=$dir-setup.exe" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with:

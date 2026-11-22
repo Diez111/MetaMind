@@ -1,6 +1,6 @@
-use rustsidian_app::shell::Key;
-use rustsidian_app::{render, App, Frame};
-use rustsidian_ui::{Fonts, Pixmap};
+use metamind_app::shell::Key;
+use metamind_app::{render, App, Frame};
+use metamind_ui::{Fonts, Pixmap};
 use std::fs;
 
 fn vault() -> tempfile::TempDir {
@@ -11,7 +11,7 @@ fn vault() -> tempfile::TempDir {
     d
 }
 
-fn rect(frame: &Frame, action: &str) -> rustsidian_ui::Rect {
+fn rect(frame: &Frame, action: &str) -> metamind_ui::Rect {
     frame.dom.nodes.iter().find(|n| n.el.action.as_deref() == Some(action)).unwrap().rect
 }
 

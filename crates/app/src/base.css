@@ -1,5 +1,5 @@
-/* Rustsidian base theme. Variable and class names follow the community theme conventions so that
-   community themes and snippets apply; the values are Rustsidian's own. */
+/* MetaMind base theme. Variable and class names follow the community theme conventions so that
+   community themes and snippets apply; the values are MetaMind's own. */
 body {
   --font-text-size: 16px;
   --font-text: sans-serif;

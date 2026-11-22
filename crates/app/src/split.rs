@@ -35,7 +35,7 @@ pub enum Layout {
 pub struct PaneDrag {
     pub path: Vec<usize>,
     pub k: usize,
-    pub rect: rustsidian_ui::Rect,
+    pub rect: metamind_ui::Rect,
 }
 
 fn insert_beside(node: &mut Layout, cur: usize, new: usize, row: bool) -> bool {

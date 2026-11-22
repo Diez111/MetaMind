@@ -2,7 +2,7 @@
 //! boards. Entries are keyed by vault path and reloaded when the file's modification time changes.
 
 use crate::excalidraw::{Board, Loaded};
-use rustsidian_ui::Image;
+use metamind_ui::Image;
 use std::collections::HashMap;
 use std::sync::Arc;
 use vault_core::VaultStore;

@@ -4,7 +4,7 @@
 //! `excalidraw-core` reads a scene into a display list — boxes, ellipses, diamonds, polylines, text
 //! runs and image references in scene coordinates. Nothing here interprets the scene again: this
 //! module maps those coordinates onto the note's column and turns each op into the commands
-//! `rustsidian-ui` can paint, the same way the Mermaid and graph views do.
+//! `metamind-ui` can paint, the same way the Mermaid and graph views do.
 //!
 //! # Size
 //!
@@ -18,7 +18,7 @@
 //!
 //! Excalidraw's `fontFamily` numbers map onto the faces this build has: 1 (the hand-drawn face,
 //! Excalidraw's "Virgil") and 2 (its normal sans) both paint in the app's text font — no
-//! hand-lettered face ships with Rustsidian — and 3 (the code face) paints in the monospace font.
+//! hand-lettered face ships with MetaMind — and 3 (the code face) paints in the monospace font.
 //! A number a newer Excalidraw writes paints in the text font. Sizes, line height and the file's
 //! own colours are used as they are stored.
 //!
@@ -42,7 +42,7 @@ use excalidraw_core::{
     Arrowhead, DisplayList, DrawOp, FontFamily, ImageRef, Polyline, Rgba, Scene, Shape, Style, TextAlign,
     TextRun, VerticalAlign,
 };
-use rustsidian_ui::{Cmd, Color, Dom, El, Fonts, NodeId, Rect, TextStyle};
+use metamind_ui::{Cmd, Color, Dom, El, Fonts, NodeId, Rect, TextStyle};
 use std::sync::Arc;
 
 /// The width a board is laid out for: the default `--file-line-width` of the note column.

@@ -1,6 +1,6 @@
-use rustsidian_app::bases::Val;
-use rustsidian_app::{render, App, Frame};
-use rustsidian_ui::{Fonts, Pixmap};
+use metamind_app::bases::Val;
+use metamind_app::{render, App, Frame};
+use metamind_ui::{Fonts, Pixmap};
 use std::fs;
 
 const BASE: &str = r#"filters:
@@ -135,7 +135,7 @@ fn clicking_a_property_cell_edits_the_note() {
     assert_eq!(app.prompt.as_ref().map(|p| p.query.as_str()), Some("reading"));
     app.prompt.as_mut().unwrap().query.clear();
     app.text_input("paused");
-    app.key(rustsidian_app::Key::new("Enter"));
+    app.key(metamind_app::Key::new("Enter"));
     let text = fs::read_to_string(d.path().join("A.md")).unwrap();
     assert!(text.contains("status: paused\n"), "{text}");
     // The open tab shows the change, and so do the rows.
@@ -182,7 +182,7 @@ fn a_kanban_view_has_a_column_per_group_and_moves_cards() {
             "Quitar \u{201c}status\u{201d} de A",
         ]
     );
-    app.key(rustsidian_app::Key::new("Enter"));
+    app.key(metamind_app::Key::new("Enter"));
     let f = frame(&mut app, &mut fonts);
     assert_eq!(has(&f, "bases-kanban-heading"), ["done (2)"]);
     assert!(fs::read_to_string(d.path().join("A.md")).unwrap().contains("status: done\n"));

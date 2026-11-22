@@ -1,14 +1,14 @@
 //! Performance budget gate. Generates synthetic vaults, measures, and exits non-zero if a
 //! budget is exceeded.
 //!
-//! `cargo run --release -p rustsidian --example perf_budget -- [--dir <path>] [--sizes 1000,10000,50000] [--report-only]`
+//! `cargo run --release -p metamind --example perf_budget -- [--dir <path>] [--sizes 1000,10000,50000] [--report-only]`
 //!
 //! Budgets that need a real window (cold start to a presented frame, idle RAM and CPU) are
 //! measured by `scripts/window-budget.sh` instead; here start-up is measured headlessly as
 //! "open vault + load fonts + render the first frame".
 
-use rustsidian_app::{render, App};
-use rustsidian_ui::{Fonts, Pixmap};
+use metamind_app::{render, App};
+use metamind_ui::{Fonts, Pixmap};
 use search_core::{Corpus, Fuzzy, Query, RankWeights, Sort};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -71,7 +71,7 @@ fn main() {
     let value = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
     let dir = value("--dir")
         .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::temp_dir().join("rustsidian-perf-vaults"));
+        .unwrap_or_else(|| std::env::temp_dir().join("metamind-perf-vaults"));
     let sizes: Vec<usize> = value("--sizes")
         .unwrap_or_else(|| "1000,10000,50000".into())
         .split(',')

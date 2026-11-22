@@ -9,8 +9,8 @@
 //! at the file's own rate: `-re` is asked for, but ffmpeg 9 bursts a short file out regardless.
 
 use crate::icons;
-use rustsidian_ui::dom::NodeId;
-use rustsidian_ui::{Dom, El, Image, Rect};
+use metamind_ui::dom::NodeId;
+use metamind_ui::{Dom, El, Image, Rect};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -282,7 +282,7 @@ fn read_frames(
 /// A pixmap from raw RGBA rows. `ffmpeg` writes opaque frames; alpha is premultiplied only when
 /// the frame actually has some, as the rasterizer expects.
 fn rgba_image(src: &[u8], w: u32, h: u32) -> Option<Image> {
-    let mut pm = rustsidian_ui::Pixmap::new(w, h)?;
+    let mut pm = metamind_ui::Pixmap::new(w, h)?;
     let dst = pm.data_mut();
     if dst.len() != src.len() {
         return None;

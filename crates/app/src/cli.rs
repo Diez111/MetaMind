@@ -7,27 +7,27 @@ use std::time::Instant;
 use vault_core::config::VaultConfig;
 use vault_core::{path, VaultStore};
 
-pub const USAGE: &str = "Rustsidian
+pub const USAGE: &str = "MetaMind
 
 USO:
-  rustsidian                                    Muestra la pantalla de bienvenida para elegir o crear una bóveda
-  rustsidian [open] <bóveda> [nota]             Abre una bóveda en una ventana
-  rustsidian <archivo.md>                       Abre una nota de la bóveda que lo contiene
-  rustsidian <rustsidian://enlace>              Abre o crea una nota desde un enlace (acciones: open, new)
-  rustsidian index <bóveda>                     Crea o actualiza el índice e imprime estadísticas
-  rustsidian search <bóveda> <consulta> [--limit N] Busca con la sintaxis de consultas
-  rustsidian export <bóveda> <nota> [--format html|md|pdf] [-o <ruta>]
-  rustsidian doctor <bóveda>                    Diagnostica la configuración, el índice y las notas
-  rustsidian screenshot <bóveda> <salida.png> [--note <ruta>] [--size WxH] [--keys \"Ctrl+P ...\"] [--type <texto>] [--run <id de comando>,...] [--frames N] [--scroll-to <texto>] [--light]
-  rustsidian welcome-screenshot <salida.png> [--run <acción>,...] [--type <texto>]
-  rustsidian commands                           Lista los ids de comando y sus atajos predeterminados
-  rustsidian update [--check]                   Instala la última versión o solo la informa
-  rustsidian version                            Imprime la versión
+  metamind                                    Muestra la pantalla de bienvenida para elegir o crear una bóveda
+  metamind [open] <bóveda> [nota]             Abre una bóveda en una ventana
+  metamind <archivo.md>                       Abre una nota de la bóveda que lo contiene
+  metamind <metamind://enlace>              Abre o crea una nota desde un enlace (acciones: open, new)
+  metamind index <bóveda>                     Crea o actualiza el índice e imprime estadísticas
+  metamind search <bóveda> <consulta> [--limit N] Busca con la sintaxis de consultas
+  metamind export <bóveda> <nota> [--format html|md|pdf] [-o <ruta>]
+  metamind doctor <bóveda>                    Diagnostica la configuración, el índice y las notas
+  metamind screenshot <bóveda> <salida.png> [--note <ruta>] [--size WxH] [--keys \"Ctrl+P ...\"] [--type <texto>] [--run <id de comando>,...] [--frames N] [--scroll-to <texto>] [--light]
+  metamind welcome-screenshot <salida.png> [--run <acción>,...] [--type <texto>]
+  metamind commands                           Lista los ids de comando y sus atajos predeterminados
+  metamind update [--check]                   Instala la última versión o solo la informa
+  metamind version                            Imprime la versión
 
 OPCIONES:
   --profile    Imprime un desglose de tiempos de inicio (con `open` e `index`)
 
-No implementado en esta compilación: `rustsidian plugin`, `--config-dir`, modo portátil.";
+No implementado en esta compilación: `metamind plugin`, `--config-dir`, modo portátil.";
 
 struct Args {
     pos: Vec<String>,
@@ -80,7 +80,7 @@ pub enum Outcome {
 }
 
 fn fail(msg: &str) -> Outcome {
-    eprintln!("rustsidian: {msg}");
+    eprintln!("metamind: {msg}");
     Outcome::Exit(2)
 }
 
@@ -89,7 +89,7 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
     let a = parse_args(args);
     let Some(first) = a.pos.first().map(String::as_str) else {
         if a.flag("--version") {
-            let _ = writeln!(out, "rustsidian {}", crate::update::CURRENT);
+            let _ = writeln!(out, "metamind {}", crate::update::CURRENT);
             return Outcome::Exit(0);
         }
         if !a.flag("--help") && cfg!(feature = "window") {
@@ -105,14 +105,14 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
             Outcome::Exit(0)
         }
         "version" => {
-            let _ = writeln!(out, "rustsidian {}", crate::update::CURRENT);
+            let _ = writeln!(out, "metamind {}", crate::update::CURRENT);
             Outcome::Exit(0)
         }
         "update" => {
             let r = match crate::update::check() {
                 Ok(Some(r)) => r,
                 Ok(None) => {
-                    let _ = writeln!(out, "rustsidian {} es la última versión", crate::update::CURRENT);
+                    let _ = writeln!(out, "metamind {} es la última versión", crate::update::CURRENT);
                     return Outcome::Exit(0);
                 }
                 Err(e) => return fail(&format!("update: {e}")),
@@ -256,8 +256,8 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
             if let Some(g) = &mut app.graph_view {
                 g.settle();
             }
-            let mut fonts = rustsidian_ui::Fonts::new();
-            let Some(mut pm) = rustsidian_ui::Pixmap::new(w.clamp(64, 8192), h.clamp(64, 8192)) else {
+            let mut fonts = metamind_ui::Fonts::new();
+            let Some(mut pm) = metamind_ui::Pixmap::new(w.clamp(64, 8192), h.clamp(64, 8192)) else {
                 return fail("screenshot: tamaño no válido");
             };
             // Two frames so the perf overlay shows a warm-cache frame time; `--frames` renders
@@ -287,8 +287,8 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
             if let Some(t) = a.value("--type") {
                 w.text_input(t);
             }
-            let mut fonts = rustsidian_ui::Fonts::new();
-            let Some(mut pm) = rustsidian_ui::Pixmap::new(1280, 800) else {
+            let mut fonts = metamind_ui::Fonts::new();
+            let Some(mut pm) = metamind_ui::Pixmap::new(1280, 800) else {
                 return fail("welcome-screenshot: tamaño no válido");
             };
             w.render(&mut fonts, &mut pm, 1.0);
@@ -320,7 +320,7 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
                     Outcome::Open { vault, note: a.pos.get(1).cloned(), profile: a.flag("--profile") }
                 }
                 None => fail(&format!(
-                    "`{first}` no es un comando, un archivo ni una carpeta. Ejecuta `rustsidian help`."
+                    "`{first}` no es un comando, un archivo ni una carpeta. Ejecuta `metamind help`."
                 )),
             }
         }
@@ -434,7 +434,7 @@ fn export(
                 Err(e) => return fail(&format!("export: {e}")),
             };
             app.open_note(&rel);
-            match crate::pdf::export(&mut app, &mut rustsidian_ui::Fonts::new(), &dest) {
+            match crate::pdf::export(&mut app, &mut metamind_ui::Fonts::new(), &dest) {
                 Ok(pages) => {
                     let _ = writeln!(out, "se escribió {} ({pages} páginas)", dest.display());
                     Outcome::Exit(0)
@@ -517,14 +517,14 @@ fn doctor(root: &Path, out: &mut dyn std::io::Write) -> Outcome {
             let g = store.index.graph();
             let unresolved: usize = g.unresolved.iter().map(Vec::len).sum();
             line(true, format!("{unresolved} destinos de enlace sin resolver (informativo)"));
-            let tmp = root.join(".rustsidian").join("doctor-write-test");
+            let tmp = root.join(".metamind").join("doctor-write-test");
             let writable = vault_core::fsio::atomic_write(&tmp, b"ok").is_ok();
             let _ = std::fs::remove_file(&tmp);
             line(writable, "la bóveda es escribible".into());
         }
         Err(e) => line(false, format!("no se pudo abrir la bóveda: {e}")),
     }
-    let fonts = rustsidian_ui::Fonts::new();
+    let fonts = metamind_ui::Fonts::new();
     line(fonts.font_count() > 0, format!("{} tipos de letra disponibles", fonts.font_count()));
     let _ = writeln!(
         out,

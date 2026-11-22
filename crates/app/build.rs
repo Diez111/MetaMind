@@ -71,7 +71,7 @@ fn main() {
         entry(&mut res, RT_ICON, id, 0x1010, 0x0409, &image);
     }
     entry(&mut res, RT_GROUP_ICON, 1, 0x1030, 0x0409, &group);
-    let path = std::path::Path::new(&var("OUT_DIR")).join("rustsidian-icon.res");
+    let path = std::path::Path::new(&var("OUT_DIR")).join("metamind-icon.res");
     if std::fs::write(&path, res).is_ok() {
         println!("cargo:rustc-link-arg-bins={}", path.display());
     }

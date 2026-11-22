@@ -1,5 +1,5 @@
 [package]
-name = "rustsidian-ui"
+name = "metamind-ui"
 description = "Retained UI toolkit: CSS-styled element tree, taffy layout, display list, software renderer"
 version.workspace = true
 edition.workspace = true

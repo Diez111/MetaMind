@@ -1,6 +1,6 @@
 # Roadmap
 
-Rustsidian aims to be the fastest local-first knowledge base, with database-style structure that
+MetaMind aims to be the fastest local-first knowledge base, with database-style structure that
 stays plain Markdown on disk. Each level below builds on the one before it and ships as a release
 with one headline feature; the performance budgets in [FEATURES.md](FEATURES.md#performance-budgets)
 gate every release.

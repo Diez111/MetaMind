@@ -23,14 +23,14 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
-      - run: cargo build --release -p rustsidian
+      - run: cargo build --release -p metamind
       # Timings on hosted runners vary from run to run, and `line:` search on 50,000 notes is a
       # known miss (see README), so the table is reported, not a gate. Each row over budget
       # becomes a warning on the run page.
       - name: Performance budgets
         shell: bash
         run: |
-          cargo run --release -p rustsidian --example perf_budget -- --dir "$RUNNER_TEMP/perf-vaults" --sizes 1000,10000,50000 --report-only > perf.md
+          cargo run --release -p metamind --example perf_budget -- --dir "$RUNNER_TEMP/perf-vaults" --sizes 1000,10000,50000 --report-only > perf.md
           cat perf.md | tee -a "$GITHUB_STEP_SUMMARY"
           grep '| OVER |' perf.md | while IFS='|' read -r _ what got budget _; do
             echo "::warning title=Over budget::$what:$got (budget$budget)"
@@ -38,7 +38,7 @@ jobs:
       - name: Binary size gate (20 MB)
         shell: bash
         run: |
-          bin=target/release/rustsidian
+          bin=target/release/metamind
           [ -f "$bin.exe" ] && bin="$bin.exe"
           size=$(wc -c < "$bin")
           echo "$bin: $size bytes"
@@ -58,6 +58,6 @@ jobs:
       - name: Window budgets under a virtual display (cold start, idle RAM, idle CPU)
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb libxkbcommon-x11-0
-          cargo build --release -p rustsidian
-          cargo run --release -p rustsidian --example perf_budget -- --dir "$RUNNER_TEMP/v" --sizes 5000,10000,50000 --report-only
+          cargo build --release -p metamind
+          cargo run --release -p metamind --example perf_budget -- --dir "$RUNNER_TEMP/v" --sizes 5000,10000,50000 --report-only
           xvfb-run -a scripts/window-budget.sh "$RUNNER_TEMP/v"

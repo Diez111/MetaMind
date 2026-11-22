@@ -73,7 +73,7 @@ impl JsonFile {
     }
 }
 
-/// The set of vault config files Rustsidian reads and writes.
+/// The set of vault config files MetaMind reads and writes.
 pub struct VaultConfig {
     pub dir: PathBuf,
     pub app: JsonFile,

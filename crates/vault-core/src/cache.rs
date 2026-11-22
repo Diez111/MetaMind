@@ -1,4 +1,4 @@
-//! Persisted index: `.rustsidian/cache/index.bin`.
+//! Persisted index: `.metamind/cache/index.bin`.
 //!
 //! Layout (little endian): magic, version, payload length, payload checksum, then the payload:
 //! a file table (path, stamp, metadata offset+length) followed by the metadata blobs. The file is

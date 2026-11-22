@@ -1,6 +1,6 @@
-use rustsidian_app::shell::{Focus, ViewMode};
-use rustsidian_app::{render, App, Frame, Key};
-use rustsidian_ui::{Cmd, Fonts, Pixmap};
+use metamind_app::shell::{Focus, ViewMode};
+use metamind_app::{render, App, Frame, Key};
+use metamind_ui::{Cmd, Fonts, Pixmap};
 use std::fs;
 
 fn vault() -> tempfile::TempDir {
@@ -48,7 +48,7 @@ fn edit_save_and_conflict() {
     typed(&mut app, "!");
     fs::write(d.path().join("Home.md"), "changed elsewhere, different length").unwrap();
     assert!(!app.save());
-    assert!(app.notice.as_deref().unwrap().contains("fuera de Rustsidian"));
+    assert!(app.notice.as_deref().unwrap().contains("fuera de MetaMind"));
     assert_eq!(fs::read_to_string(d.path().join("Home.md")).unwrap(), "changed elsewhere, different length");
     assert!(
         app.tab().unwrap().editor.buf.text().ends_with("new line!"),
@@ -191,7 +191,7 @@ fn rendering_and_mouse() {
 
 #[test]
 fn cli_commands() {
-    use rustsidian_app::cli::{run, Outcome};
+    use metamind_app::cli::{run, Outcome};
     let d = vault();
     let v = d.path().to_string_lossy().to_string();
     let call = |args: &[&str]| {
@@ -227,7 +227,7 @@ fn cli_commands() {
     assert_eq!(call(&[&v]).0, -1, "a bare vault path opens a window");
     assert_eq!(call(&[&format!("{v}/Home.md")]).0, -1, "a note file opens its vault");
     assert_eq!(call(&["nonsense"]).0, 2);
-    assert_eq!(call(&["rustsidian://frobnicate"]).0, 2, "links are parsed, not taken as folders");
+    assert_eq!(call(&["metamind://frobnicate"]).0, 2, "links are parsed, not taken as folders");
     let (_, out) = call(&["commands"]);
     assert!(out.contains("command-palette:open"));
 }
@@ -354,7 +354,7 @@ fn cmd_box(c: &Cmd) -> Option<(f32, f32, f32, f32)> {
     }
 }
 
-fn leaf_rect(frame: &Frame) -> rustsidian_ui::Rect {
+fn leaf_rect(frame: &Frame) -> metamind_ui::Rect {
     frame
         .dom
         .nodes
@@ -468,7 +468,7 @@ fn a_display_formula_wider_than_its_block_is_shrunk_to_fit() {
     let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
     let node = frame.info.rich[0].node;
     let r = frame.dom.content_rect(node);
-    let ink = |frame: &rustsidian_app::Frame, node: rustsidian_ui::NodeId| {
+    let ink = |frame: &metamind_app::Frame, node: metamind_ui::NodeId| {
         let mut max_x = f32::MIN;
         let mut max_size = 0.0f32;
         for cmd in &frame.dom.nodes[node].draw {
@@ -508,8 +508,8 @@ fn mermaid_blocks_are_drawn_or_explained() {
     assert!(frame.info.rich.is_empty());
 }
 
-fn tiny_skia_color(r: u8, g: u8, b: u8) -> rustsidian_ui::SkColor {
-    rustsidian_ui::SkColor::from_rgba8(r, g, b, 255)
+fn tiny_skia_color(r: u8, g: u8, b: u8) -> metamind_ui::SkColor {
+    metamind_ui::SkColor::from_rgba8(r, g, b, 255)
 }
 
 fn note(text: &str, app_json: &str) -> (tempfile::TempDir, App) {
@@ -740,7 +740,7 @@ fn copy_screenshot_crops_the_open_pane() {
     let pane =
         frame.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == "markdown-source-view")).unwrap();
     let r = pane.rect;
-    let shot = rustsidian_app::pane_image(&frame, &pm, 2.0).unwrap();
+    let shot = metamind_app::pane_image(&frame, &pm, 2.0).unwrap();
     assert_eq!((shot.width(), shot.height()), ((r.w * 2.0).round() as u32, (r.h * 2.0).round() as u32));
     let (x, y) = ((r.x * 2.0).round() as u32, (r.y * 2.0).round() as u32);
     assert_eq!(shot.pixel(5, 5), pm.pixel(x + 5, y + 5));
@@ -831,7 +831,7 @@ fn status_bar_shows_word_goal_and_reading_time() {
 
 #[test]
 fn jpeg_embeds_are_shown() {
-    // The same hand-built 8x8 baseline JPEG as the decoder test in rustsidian-ui.
+    // The same hand-built 8x8 baseline JPEG as the decoder test in metamind-ui.
     let mut j = vec![0xFF, 0xD8, 0xFF, 0xDB, 0x00, 0x43, 0x00];
     j.extend([1u8; 64]);
     j.extend([0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x08, 0x00, 0x08, 0x01, 0x01, 0x11, 0x00]);
@@ -1079,7 +1079,7 @@ fn a_diagram_opens_pans_zooms_and_swaps_to_its_source() {
     for _ in 0..40 {
         app.wheel(&frame, cx, cy, 20.0);
     }
-    assert_eq!(app.diagram_zoom_scale, rustsidian_app::MIN_DIAGRAM_ZOOM);
+    assert_eq!(app.diagram_zoom_scale, metamind_app::MIN_DIAGRAM_ZOOM);
 
     // A double click inside the view shows its source, in the same box. The view has been open
     // for a while by now, so the pair of presses is its own and not the block's.

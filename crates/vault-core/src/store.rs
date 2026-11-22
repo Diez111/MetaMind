@@ -43,7 +43,7 @@ pub enum WriteError {
 impl std::fmt::Display for WriteError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            WriteError::Conflict { .. } => write!(f, "file was modified outside Rustsidian"),
+            WriteError::Conflict { .. } => write!(f, "file was modified outside MetaMind"),
             WriteError::Io(e) => write!(f, "{e}"),
         }
     }
@@ -119,7 +119,7 @@ pub struct Progress {
 
 impl VaultStore {
     pub fn cache_path(root: &Path) -> PathBuf {
-        root.join(".rustsidian/cache/index.bin")
+        root.join(".metamind/cache/index.bin")
     }
 
     /// Open a vault. Metadata of files whose mtime and size match the persisted index is reused;

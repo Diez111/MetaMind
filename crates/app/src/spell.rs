@@ -16,7 +16,7 @@ pub fn load() {
     let mut dict = match Dictionary::new(include_str!("dict/en_US.aff"), include_str!("dict/en_US.dic")) {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("rustsidian: spellcheck dictionary: {e}");
+            eprintln!("metamind: spellcheck dictionary: {e}");
             return;
         }
     };
@@ -25,12 +25,12 @@ pub fn load() {
             Ok(words) => {
                 for w in words.lines().map(str::trim).filter(|w| !w.is_empty()) {
                     if let Err(e) = dict.add(w) {
-                        eprintln!("rustsidian: {}: {w}: {e}", path.display());
+                        eprintln!("metamind: {}: {w}: {e}", path.display());
                     }
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => eprintln!("rustsidian: {}: {e}", path.display()),
+            Err(e) => eprintln!("metamind: {}: {e}", path.display()),
         }
     }
     if let Ok(mut d) = DICT.write() {

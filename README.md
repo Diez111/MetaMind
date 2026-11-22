@@ -1,29 +1,29 @@
 <div align="center">
 
-<img src="packaging/rustsidian.svg" width="104" alt="Rustsidian icon">
+<img src="packaging/metamind.svg" width="104" alt="MetaMind icon">
 
-# Rustsidian
+# MetaMind
 
 **A fast, native Markdown knowledge base. Plain files, linked thinking, no Electron.**
 
-[![CI](https://github.com/siddarth1872004/RustSidian/actions/workflows/ci.yml/badge.svg)](https://github.com/siddarth1872004/RustSidian/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/siddarth1872004/RustSidian?color=f47a30)](https://github.com/siddarth1872004/RustSidian/releases/latest)
+[![CI](https://github.com/siddarth1872004/MetaMind/actions/workflows/ci.yml/badge.svg)](https://github.com/siddarth1872004/MetaMind/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/siddarth1872004/MetaMind?color=f47a30)](https://github.com/siddarth1872004/MetaMind/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-34264e)](#license)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-555)
 
-[Download](https://github.com/siddarth1872004/RustSidian/releases/latest) ·
-[Website](https://siddarth1872004.github.io/RustSidian/) ·
+[Download](https://github.com/siddarth1872004/MetaMind/releases/latest) ·
+[Website](https://siddarth1872004.github.io/MetaMind/) ·
 [Features](FEATURES.md) ·
 [Roadmap](ROADMAP.md)
 
-<img src="docs/img/editor.png" alt="Rustsidian editing a note with highlighted code and typeset math" width="880">
+<img src="docs/img/editor.png" alt="MetaMind editing a note with highlighted code and typeset math" width="880">
 
 </div>
 
-## Why Rustsidian
+## Why MetaMind
 
 - **Your notes stay yours.** A vault is a folder of Markdown files. Open an existing vault as it
-  is; Rustsidian keeps its own data in `.rustsidian/` and never rewrites what it does not
+  is; MetaMind keeps its own data in `.metamind/` and never rewrites what it does not
   understand.
 - **Fast.** A 19 MB native binary with no browser engine inside. It opens 5,000 notes in under
   100 ms, uses about 34 MB of RAM idle at 10,000 notes, and uses no CPU while you're not typing.
@@ -71,30 +71,30 @@ reload live.</td>
 ## Install
 
 Download the archive for your system from the
-[latest release](https://github.com/siddarth1872004/RustSidian/releases/latest) and check it
+[latest release](https://github.com/siddarth1872004/MetaMind/releases/latest) and check it
 against `SHA256SUMS.txt`.
 
 | System | Archive | Notes |
 |---|---|---|
-| Windows 10/11 x64 | `rustsidian-*-windows-x86_64-setup.exe` or `.zip` | The installer needs no administrator rights, adds a Start menu entry, handles `rustsidian://` links and offers Rustsidian under "Open with" for `.md` files. Or unzip anywhere and run `rustsidian.exe` |
-| macOS (Apple silicon / Intel) | `rustsidian-*-macos-arm64.tar.gz` / `macos-x86_64` | Unsigned: right-click → Open the first time |
-| Linux x64 | `rustsidian-*-linux-x86_64.tar.gz` | Needs `libxkbcommon-x11` on X11 (`sudo apt install libxkbcommon-x11-0`) and `wl-clipboard`, `xclip` or `xsel` for copy and paste |
+| Windows 10/11 x64 | `metamind-*-windows-x86_64-setup.exe` or `.zip` | The installer needs no administrator rights, adds a Start menu entry, handles `metamind://` links and offers MetaMind under "Open with" for `.md` files. Or unzip anywhere and run `metamind.exe` |
+| macOS (Apple silicon / Intel) | `metamind-*-macos-arm64.tar.gz` / `macos-x86_64` | Unsigned: right-click → Open the first time |
+| Linux x64 | `metamind-*-linux-x86_64.tar.gz` | Needs `libxkbcommon-x11` on X11 (`sudo apt install libxkbcommon-x11-0`) and `wl-clipboard`, `xclip` or `xsel` for copy and paste |
 
-On Linux, `packaging/rustsidian.desktop` and `packaging/rustsidian.svg` add a menu entry when
+On Linux, `packaging/metamind.desktop` and `packaging/metamind.svg` add a menu entry when
 copied to `~/.local/share/applications` and `~/.local/share/icons/hicolor/scalable/apps`.
-The entry also offers Rustsidian for Markdown files and `rustsidian://` links; run
+The entry also offers MetaMind for Markdown files and `metamind://` links; run
 `update-desktop-database ~/.local/share/applications` after copying, and
-`xdg-mime default rustsidian.desktop x-scheme-handler/rustsidian` to make it the link handler.
+`xdg-mime default metamind.desktop x-scheme-handler/metamind` to make it the link handler.
 
 ## Build from source
 
 Requires stable Rust 1.92 or later. Every dependency is pure Rust.
 
 ```sh
-git clone https://github.com/siddarth1872004/RustSidian && cd RustSidian
-cargo build --release -p rustsidian          # target/release/rustsidian
-target/release/rustsidian examples/vault     # open the sample vault
-target/release/rustsidian help               # CLI: index, search, export, doctor, screenshot
+git clone https://github.com/siddarth1872004/MetaMind && cd MetaMind
+cargo build --release -p metamind          # target/release/metamind
+target/release/metamind examples/vault     # open the sample vault
+target/release/metamind help               # CLI: index, search, export, doctor, screenshot
 cargo test --workspace                       # 251 tests
 ```
 
@@ -127,8 +127,8 @@ crates/math-core, mermaid-core, highlight-core   rendering of math, diagrams and
 crates/ext-api           extension API: JSON call boundary, permissions, registry
 crates/plugin-host-wasm  sandboxed WASM plugin host
 crates/scripting         Rhai user scripts
-crates/rustsidian-ui     element tree, flex layout, software renderer
-crates/app               shell, commands, view, CLI, window (binary: rustsidian)
+crates/metamind-ui     element tree, flex layout, software renderer
+crates/app               shell, commands, view, CLI, window (binary: metamind)
 ```
 
 More documentation: [CUSTOMIZATION.md](CUSTOMIZATION.md) (settings, hotkeys, themes),

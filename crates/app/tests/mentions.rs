@@ -1,5 +1,5 @@
-use rustsidian_app::{render, App};
-use rustsidian_ui::{Fonts, Pixmap};
+use metamind_app::{render, App};
+use metamind_ui::{Fonts, Pixmap};
 use std::fs;
 
 #[test]
@@ -50,7 +50,7 @@ fn linked_mentions_show_context_and_panels_switch() {
     app.right_open = true;
     let mut fonts = Fonts::new();
     let mut pm = Pixmap::new(1200, 800).unwrap();
-    let texts = |frame: &rustsidian_app::Frame| -> Vec<String> {
+    let texts = |frame: &metamind_app::Frame| -> Vec<String> {
         frame.dom.nodes.iter().filter_map(|n| n.el.text.clone()).collect()
     };
     let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
@@ -78,7 +78,7 @@ fn linked_mentions_show_context_and_panels_switch() {
     app.refresh_derived();
     let linked = &app.linked.as_ref().unwrap().files;
     assert_eq!(linked[0].1, ["See [[Plan|the plan]] today."]);
-    app.key(rustsidian_app::Key::parse("Escape").unwrap());
+    app.key(metamind_app::Key::parse("Escape").unwrap());
     app.text_input("x");
     assert_eq!(
         app.backlinks_filter.as_deref(),

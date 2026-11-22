@@ -1,4 +1,4 @@
-use rustsidian_app::instance::{forward, same_vault, Instance};
+use metamind_app::instance::{forward, same_vault, Instance};
 use std::sync::mpsc;
 use std::time::Duration;
 

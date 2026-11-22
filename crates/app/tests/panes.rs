@@ -1,6 +1,6 @@
-use rustsidian_app::shell::Panel;
-use rustsidian_app::{render, App};
-use rustsidian_ui::{Fonts, Pixmap};
+use metamind_app::shell::Panel;
+use metamind_app::{render, App};
+use metamind_ui::{Fonts, Pixmap};
 use std::fs;
 
 fn vault() -> tempfile::TempDir {

@@ -1,7 +1,7 @@
 //! A `dataview` fence is drawn as its table in reading view, and its links open the note.
-use rustsidian_app::shell::ViewMode;
-use rustsidian_app::{render, App, Frame};
-use rustsidian_ui::{Fonts, Pixmap};
+use metamind_app::shell::ViewMode;
+use metamind_app::{render, App, Frame};
+use metamind_ui::{Fonts, Pixmap};
 use std::fs;
 
 const INDICE: &str = "# Índice\n\nTodo lo del año.\n\n```dataview\nTABLE tipo AS \"Tipo\", unidad AS \"Unidad\"\nFROM \"Facultad\"\nWHERE tipo != \"materia\"\nSORT unidad ASC\n```\n";

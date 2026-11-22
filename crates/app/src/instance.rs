@@ -1,4 +1,4 @@
-//! Hand a request to an already running Rustsidian that has the same vault open, so links and
+//! Hand a request to an already running MetaMind that has the same vault open, so links and
 //! file associations reuse its window instead of opening the vault twice.
 //!
 //! Each running window listens on a loopback port and records the port and a random token in

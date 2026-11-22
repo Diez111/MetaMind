@@ -1,6 +1,6 @@
-use rustsidian_app::welcome::{Screen, Welcome};
-use rustsidian_app::{recent, render, App};
-use rustsidian_ui::{Fonts, Pixmap};
+use metamind_app::welcome::{Screen, Welcome};
+use metamind_app::{recent, render, App};
+use metamind_ui::{Fonts, Pixmap};
 use std::fs;
 
 fn vault() -> tempfile::TempDir {
@@ -146,7 +146,7 @@ fn welcome_flow_and_recent_vaults() {
     // One test for everything that reads the configuration folder, since it is set per process.
     let cfg = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
-    std::env::set_var("RUSTSIDIAN_CONFIG_DIR", cfg.path());
+    std::env::set_var("METAMIND_CONFIG_DIR", cfg.path());
     std::env::set_var("HOME", home.path());
     std::env::set_var("USERPROFILE", home.path());
     fs::create_dir_all(home.path().join("Notes/.obsidian")).unwrap();
@@ -219,23 +219,23 @@ fn welcome_flow_and_recent_vaults() {
 
     // Starting with no arguments asks for the welcome screen instead of printing usage.
     let mut out = Vec::new();
-    assert!(matches!(rustsidian_app::cli::run(&[], &mut out), rustsidian_app::cli::Outcome::Welcome));
+    assert!(matches!(metamind_app::cli::run(&[], &mut out), metamind_app::cli::Outcome::Welcome));
     assert!(matches!(
-        rustsidian_app::cli::run(&["--help".to_string()], &mut out),
-        rustsidian_app::cli::Outcome::Exit(0)
+        metamind_app::cli::run(&["--help".to_string()], &mut out),
+        metamind_app::cli::Outcome::Exit(0)
     ));
     let mut out = Vec::new();
     assert!(matches!(
-        rustsidian_app::cli::run(&["--version".to_string()], &mut out),
-        rustsidian_app::cli::Outcome::Exit(0)
+        metamind_app::cli::run(&["--version".to_string()], &mut out),
+        metamind_app::cli::Outcome::Exit(0)
     ));
-    assert!(String::from_utf8(out).unwrap().starts_with("rustsidian "));
+    assert!(String::from_utf8(out).unwrap().starts_with("metamind "));
 }
 
 #[test]
 fn app_icon_is_opaque_inside_and_clear_at_the_corners() {
     for size in [16u32, 64, 256] {
-        let px = rustsidian_app::icon::rgba(size);
+        let px = metamind_app::icon::rgba(size);
         assert_eq!(px.len(), (size * size * 4) as usize);
         assert_eq!(px[3], 0, "corner is transparent");
         let mid = ((size / 2 * size + size / 2) * 4) as usize;
@@ -256,9 +256,9 @@ fn reduced_motion_stops_animations_and_reaches_themes() {
     );
     w(".obsidian/appearance.json", r#"{"enabledCssSnippets":["m"]}"#);
     let mut app = App::open(d.path()).unwrap();
-    let still = rustsidian_app::view::palette(&app).accent;
+    let still = metamind_app::view::palette(&app).accent;
     app.set_reduced_motion(true);
-    assert_ne!(rustsidian_app::view::palette(&app).accent, still);
+    assert_ne!(metamind_app::view::palette(&app).accent, still);
     let mut fonts = Fonts::new();
     let mut pm = Pixmap::new(800, 600).unwrap();
     render(&mut app, &mut fonts, &mut pm, 1.0);
@@ -300,9 +300,9 @@ fn high_contrast_overrides_theme_colors() {
     fs::write(d.path().join(".obsidian/appearance.json"), r#"{"enabledCssSnippets":["s"]}"#).unwrap();
     let mut app = App::open(d.path()).unwrap();
     app.dark = true;
-    let themed = rustsidian_app::view::palette(&app).accent;
+    let themed = metamind_app::view::palette(&app).accent;
     assert_eq!((themed.r, themed.g, themed.b), (0x34, 0x56, 0x78));
     app.high_contrast = true;
-    let strong = rustsidian_app::view::palette(&app).accent;
+    let strong = metamind_app::view::palette(&app).accent;
     assert_eq!((strong.r, strong.g, strong.b), (0xff, 0xe6, 0x00));
 }

@@ -20,7 +20,7 @@
 //! panel-right, circle-help, copy, clipboard, scissors, trash, bold, italic, strikethrough,
 //! highlighter, table, scan-text, sparkles.
 //!
-//! The names are Rustsidian's, so a few point at the nearest Lucide icon rather than one with the
+//! The names are MetaMind's, so a few point at the nearest Lucide icon rather than one with the
 //! same name: `note` is `file-text`, `note-plus` is `file-plus`, `canvas` is `layout-dashboard`,
 //! `switcher` is `arrow-right-left`, `command` is `terminal`, `graph` is `share-2`, `context` is
 //! `text-align-start`, `sort` is `arrow-up-down`, `edit` is `pencil`, `book` is `book-open`,
@@ -33,7 +33,7 @@
 //! lights) the zero-length path segment it writes there is drawn as a filled disc of half the
 //! stroke instead.
 
-use rustsidian_ui::{Cmd, Dom, El};
+use metamind_ui::{Cmd, Dom, El};
 
 type Line = Vec<(f32, f32)>;
 

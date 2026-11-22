@@ -1,4 +1,4 @@
-use rustsidian_app::{App, Key};
+use metamind_app::{App, Key};
 use serde_json::json;
 use std::fs;
 
@@ -126,14 +126,14 @@ fn new_note_location_setting() {
 fn color_scheme_follows_system_unless_set() {
     let d = tempfile::tempdir().unwrap();
     std::fs::write(d.path().join("A.md"), "a").unwrap();
-    let mut app = rustsidian_app::App::open(d.path()).unwrap();
+    let mut app = metamind_app::App::open(d.path()).unwrap();
     app.set_system_dark(Some(false));
     assert!(!app.dark);
     app.set_system_dark(Some(true));
     assert!(app.dark);
     std::fs::create_dir_all(d.path().join(".obsidian")).unwrap();
     std::fs::write(d.path().join(".obsidian/appearance.json"), r#"{"theme":"moonstone"}"#).unwrap();
-    let mut app = rustsidian_app::App::open(d.path()).unwrap();
+    let mut app = metamind_app::App::open(d.path()).unwrap();
     app.set_system_dark(Some(true));
     assert!(!app.dark);
 }
@@ -167,10 +167,10 @@ fn font_accent_and_line_width_settings_style_notes() {
     );
     app.key(key("Escape"));
 
-    let mut fonts = rustsidian_ui::Fonts::new();
-    let mut pm = rustsidian_ui::Pixmap::new(1000, 600).unwrap();
-    let frame = rustsidian_app::render(&mut app, &mut fonts, &mut pm, 1.0);
-    let has = |n: &&rustsidian_ui::dom::Node, c: &str| n.el.classes.iter().any(|x| x == c);
+    let mut fonts = metamind_ui::Fonts::new();
+    let mut pm = metamind_ui::Pixmap::new(1000, 600).unwrap();
+    let frame = metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+    let has = |n: &&metamind_ui::dom::Node, c: &str| n.el.classes.iter().any(|x| x == c);
     let line = frame.dom.nodes.iter().find(|n| has(n, "cm-line")).unwrap();
     assert_eq!(line.style.text.family.as_deref(), Some("No Such Font, serif"));
     assert_eq!(line.style.max_w, 600.0);
@@ -203,35 +203,35 @@ fn core_plugins_off_hide_and_block_their_commands() {
 fn settings_search_spans_sections_and_interface_toggles_apply() {
     let d = vault();
     let mut app = App::open(d.path()).unwrap();
-    let mut fonts = rustsidian_ui::Fonts::new();
-    let mut pm = rustsidian_ui::Pixmap::new(1200, 900).unwrap();
+    let mut fonts = metamind_ui::Fonts::new();
+    let mut pm = metamind_ui::Pixmap::new(1200, 900).unwrap();
     app.run("app:open-settings");
     app.run("settings:edit:search");
     typed(&mut app, "barra de iconos");
-    let frame = rustsidian_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+    let frame = metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
     let has = |a: &str| frame.dom.nodes.iter().any(|n| n.el.action.as_deref() == Some(a));
     assert!(has("settings:toggle:showRibbon"));
     assert!(!has("settings:toggle:vimMode"));
     app.run("settings:toggle:showRibbon");
     assert_eq!(read_json(&d, ".obsidian/appearance.json")["showRibbon"], false);
     app.run("settings:close");
-    let frame = rustsidian_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+    let frame = metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
     let ribbon =
         frame.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == "workspace-ribbon")).unwrap();
     assert!(ribbon.style.display_none);
 }
 
-fn draw(app: &mut App) -> rustsidian_app::Frame {
-    let mut fonts = rustsidian_ui::Fonts::new();
-    let mut pm = rustsidian_ui::Pixmap::new(1280, 900).unwrap();
-    rustsidian_app::render(app, &mut fonts, &mut pm, 1.0)
+fn draw(app: &mut App) -> metamind_app::Frame {
+    let mut fonts = metamind_ui::Fonts::new();
+    let mut pm = metamind_ui::Pixmap::new(1280, 900).unwrap();
+    metamind_app::render(app, &mut fonts, &mut pm, 1.0)
 }
 
-fn actions(frame: &rustsidian_app::Frame) -> Vec<&str> {
+fn actions(frame: &metamind_app::Frame) -> Vec<&str> {
     frame.dom.nodes.iter().filter_map(|n| n.el.action.as_deref()).collect()
 }
 
-fn texts<'a>(frame: &'a rustsidian_app::Frame, class: &'a str) -> Vec<&'a str> {
+fn texts<'a>(frame: &'a metamind_app::Frame, class: &'a str) -> Vec<&'a str> {
     frame
         .dom
         .nodes
@@ -293,7 +293,7 @@ fn theme_swatches_preview_and_apply_the_scheme() {
         .filter(|n| n.el.classes.iter().any(|c| c == "theme-swatch"))
         .collect();
     assert_eq!(swatches.len(), 3);
-    let value = |n: &&rustsidian_ui::dom::Node| {
+    let value = |n: &&metamind_ui::dom::Node| {
         n.el.attrs.iter().find(|(k, _)| k == "data-value").map(|(_, v)| v.clone()).unwrap()
     };
     assert_eq!(swatches.iter().map(value).collect::<Vec<_>>(), ["obsidian", "moonstone", "system"]);
@@ -377,7 +377,7 @@ fn every_control_in_the_panel_sits_on_one_axis() {
     app.run("app:open-settings");
     app.run("settings:section:appearance");
     let frame = draw(&mut app);
-    let has = |n: &rustsidian_ui::dom::Node, c: &str| n.el.classes.iter().any(|x| x == c);
+    let has = |n: &metamind_ui::dom::Node, c: &str| n.el.classes.iter().any(|x| x == c);
     // The controls of the panel, and the box each one sits in.
     let mut rights: Vec<f32> = Vec::new();
     for n in frame.dom.nodes.iter().filter(|n| has(n, "setting-item-control")) {
@@ -435,7 +435,7 @@ fn the_settings_sidebar_has_an_icon_for_every_category() {
         let mut y0 = f32::MAX;
         let mut y1 = f32::MIN;
         for c in &icon.draw {
-            if let rustsidian_ui::Cmd::Lines { segs, .. } = c {
+            if let metamind_ui::Cmd::Lines { segs, .. } = c {
                 for s in segs {
                     x0 = x0.min(s[0]).min(s[2]);
                     x1 = x1.max(s[0]).max(s[2]);

@@ -52,7 +52,7 @@ fn generate(root: &Path, n: usize) {
 /// Path of the cached vault, generating it on first use. A `.complete` marker (dot-files are
 /// skipped by the vault walk) tells a finished generation from an interrupted one.
 fn vault_root(n: usize) -> PathBuf {
-    let root = std::env::temp_dir().join(format!("rustsidian-bench-engine-{VAULT_VERSION}-{n}"));
+    let root = std::env::temp_dir().join(format!("metamind-bench-engine-{VAULT_VERSION}-{n}"));
     if !root.join(".complete").exists() {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();

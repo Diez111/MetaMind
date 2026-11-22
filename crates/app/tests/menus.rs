@@ -1,6 +1,6 @@
-use rustsidian_app::shell::Key;
-use rustsidian_app::{render, App, Frame};
-use rustsidian_ui::{Fonts, Pixmap};
+use metamind_app::shell::Key;
+use metamind_app::{render, App, Frame};
+use metamind_ui::{Fonts, Pixmap};
 use std::fs;
 
 fn vault() -> tempfile::TempDir {
@@ -141,8 +141,8 @@ fn menu_keys_and_tab_menu() {
 #[test]
 fn spellcheck_marks_prose_and_fixes_from_the_menu() {
     let config = tempfile::tempdir().unwrap();
-    std::env::set_var("RUSTSIDIAN_CONFIG_DIR", config.path());
-    rustsidian_app::spell::load();
+    std::env::set_var("METAMIND_CONFIG_DIR", config.path());
+    metamind_app::spell::load();
     let d = vault();
     // The pipeline default is off for this user's Spanish vault; this test explicitly turns
     // it on so the marked words and the right-click suggestions can be checked.
@@ -161,7 +161,7 @@ fn spellcheck_marks_prose_and_fixes_from_the_menu() {
     let src = app.tab().unwrap().editor.buf.text().to_string();
     let bv = frame.info.blocks.iter().find(|b| b.display.contains("wrod")).unwrap();
     let marked: Vec<&str> =
-        rustsidian_app::view::misspellings(&app, &frame.dom, bv).iter().map(|&(a, b)| &src[a..b]).collect();
+        metamind_app::view::misspellings(&app, &frame.dom, bv).iter().map(|&(a, b)| &src[a..b]).collect();
     assert_eq!(marked, ["wrod"], "code and links are not checked");
 
     let node = &frame.dom.nodes[bv.node];
@@ -177,8 +177,8 @@ fn spellcheck_marks_prose_and_fixes_from_the_menu() {
     pick(&mut app, &mut fonts, &mut pm, "word");
     assert!(app.tab().unwrap().editor.buf.text().starts_with("A word in `codde`"));
 
-    assert!(!rustsidian_app::spell::misspelled("Zorblax").is_empty());
+    assert!(!metamind_app::spell::misspelled("Zorblax").is_empty());
     app.run("spell:add:Zorblax");
-    assert!(rustsidian_app::spell::misspelled("Zorblax").is_empty());
+    assert!(metamind_app::spell::misspelled("Zorblax").is_empty());
     assert_eq!(fs::read_to_string(config.path().join("dictionary.txt")).unwrap(), "Zorblax\n");
 }

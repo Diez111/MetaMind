@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Budgets that need a display: cold start to a presented frame, idle RAM, idle CPU, binary size.
-# Usage: scripts/window-budget.sh <dir with vault-5000, vault-10000, vault-50000> [rustsidian binary]
-# Generate the vaults first with: cargo run --release -p rustsidian --example perf_budget -- --dir <dir> --sizes 5000,10000,50000 --report-only
+# Usage: scripts/window-budget.sh <dir with vault-5000, vault-10000, vault-50000> [metamind binary]
+# Generate the vaults first with: cargo run --release -p metamind --example perf_budget -- --dir <dir> --sizes 5000,10000,50000 --report-only
 set -u
 DIR=${1:?vault dir}
-BIN=${2:-target/release/rustsidian}
+BIN=${2:-target/release/metamind}
 fail=0
 # A missed budget becomes a CI annotation, so it is visible without opening the job log.
 miss() { echo "::error::over budget: $*"; fail=1; }

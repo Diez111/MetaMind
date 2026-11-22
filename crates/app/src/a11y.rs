@@ -4,8 +4,8 @@
 //! it carries `aria-level`. Images need an `aria-label`; containers without text are flattened.
 
 use accesskit::{Action, Node, NodeId, Rect, Role, TreeId, TreeInfo, TreeUpdate};
-use rustsidian_app::shell::COMMANDS;
-use rustsidian_ui::Dom;
+use metamind_app::shell::COMMANDS;
+use metamind_ui::Dom;
 
 pub const ROOT: NodeId = NodeId(0);
 
@@ -26,7 +26,7 @@ pub fn tree(dom: &Dom, scale: f64, title: &str) -> TreeUpdate {
     TreeUpdate { nodes, tree: Some(TreeInfo::new(ROOT)), tree_id: TreeId::ROOT, focus }
 }
 
-type Clip = Option<rustsidian_ui::Rect>;
+type Clip = Option<metamind_ui::Rect>;
 
 fn collect(
     dom: &Dom,
@@ -115,21 +115,21 @@ fn descendant_text<'a>(dom: &'a Dom, id: usize, out: &mut Vec<&'a str>) {
     }
 }
 
-fn intersect(a: rustsidian_ui::Rect, b: rustsidian_ui::Rect) -> rustsidian_ui::Rect {
+fn intersect(a: metamind_ui::Rect, b: metamind_ui::Rect) -> metamind_ui::Rect {
     let (x0, y0) = (a.x.max(b.x), a.y.max(b.y));
     let (x1, y1) = ((a.x + a.w).min(b.x + b.w), (a.y + a.h).min(b.y + b.h));
-    rustsidian_ui::Rect { x: x0, y: y0, w: (x1 - x0).max(0.0), h: (y1 - y0).max(0.0) }
+    metamind_ui::Rect { x: x0, y: y0, w: (x1 - x0).max(0.0), h: (y1 - y0).max(0.0) }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustsidian_ui::El;
+    use metamind_ui::El;
 
     fn lay_out(dom: &mut Dom) {
-        let theme = rustsidian_ui::Theme::default();
-        dom.style(&theme, rustsidian_ui::Env::default());
-        dom.layout(&mut rustsidian_ui::Fonts::new(), 400.0, 300.0);
+        let theme = metamind_ui::Theme::default();
+        dom.style(&theme, metamind_ui::Env::default());
+        dom.layout(&mut metamind_ui::Fonts::new(), 400.0, 300.0);
     }
 
     #[test]
@@ -173,11 +173,11 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         std::fs::write(d.path().join("A.md"), "# Alpha\n\nSome prose.\n").unwrap();
         std::fs::write(d.path().join("B.md"), "b\n").unwrap();
-        let mut app = rustsidian_app::App::open(d.path()).unwrap();
+        let mut app = metamind_app::App::open(d.path()).unwrap();
         app.open_note("A");
-        let mut fonts = rustsidian_ui::Fonts::new();
-        let mut pm = rustsidian_ui::Pixmap::new(1100, 700).unwrap();
-        let frame = rustsidian_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+        let mut fonts = metamind_ui::Fonts::new();
+        let mut pm = metamind_ui::Pixmap::new(1100, 700).unwrap();
+        let frame = metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
         let update = tree(&frame.dom, 1.0, "v");
         let find = |role: Role, label: &str| {
             update
@@ -202,7 +202,7 @@ mod tests {
         let r = frame.dom.nodes[dom_node(b).unwrap()].rect;
         app.click(&frame, &mut fonts, r.x + r.w / 2.0, r.y + r.h / 2.0, false);
         app.release();
-        let frame = rustsidian_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+        let frame = metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
         let update = tree(&frame.dom, 1.0, "v");
         assert!(update.nodes.iter().any(|(_, n)| n.value() == Some("b")), "B is open");
     }

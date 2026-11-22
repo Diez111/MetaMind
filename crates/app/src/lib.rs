@@ -1,4 +1,4 @@
-//! Rustsidian application library: state, commands, view construction and headless rendering.
+//! MetaMind application library: state, commands, view construction and headless rendering.
 
 pub mod ai;
 pub mod anim;
@@ -43,7 +43,7 @@ pub mod video;
 
 pub use shell::{App, Key};
 
-use rustsidian_ui::{Dom, Fonts, Pixmap};
+use metamind_ui::{Dom, Fonts, Pixmap};
 use std::time::{Duration, Instant};
 
 /// How long after a press the next one still counts as its second half.
@@ -57,7 +57,7 @@ pub struct Frame {
     pub dom: Dom,
     pub info: view::ViewInfo,
     /// Where the editor caret is, for placing the input method's candidate window.
-    pub caret: Option<rustsidian_ui::Rect>,
+    pub caret: Option<metamind_ui::Rect>,
 }
 
 /// Build, style, lay out and paint the window into `pixmap`.
@@ -108,14 +108,14 @@ pub fn render_window(
     excalidraw::paint(&mut dom, &info.exc, fonts);
     let scene = dom.paint();
     let clear = dom.nodes[0].style.background;
-    rustsidian_ui::render(&scene, fonts, pixmap, scale, clear);
+    metamind_ui::render(&scene, fonts, pixmap, scale, clear);
     app.last_frame_us = t.elapsed().as_micros() as u64;
     Frame { dom, info, caret }
 }
 
 /// The open pane of a drawn frame, without the tab bar and sidebars, at the pixmap's resolution.
 pub fn pane_image(frame: &Frame, pixmap: &Pixmap, scale: f32) -> Result<Pixmap, String> {
-    let has = |n: &rustsidian_ui::dom::Node, c: &str| n.el.classes.iter().any(|x| x == c);
+    let has = |n: &metamind_ui::dom::Node, c: &str| n.el.classes.iter().any(|x| x == c);
     let nodes = &frame.dom.nodes;
     let root = nodes
         .iter()
@@ -125,7 +125,7 @@ pub fn pane_image(frame: &Frame, pixmap: &Pixmap, scale: f32) -> Result<Pixmap, 
     let (x0, y0) = ((r.x * scale).round().max(0.0), (r.y * scale).round().max(0.0));
     let x1 = ((r.x + r.w) * scale).round().min(pixmap.width() as f32);
     let y1 = ((r.y + r.h) * scale).round().min(pixmap.height() as f32);
-    rustsidian_ui::IntRect::from_ltrb(x0 as i32, y0 as i32, x1 as i32, y1 as i32)
+    metamind_ui::IntRect::from_ltrb(x0 as i32, y0 as i32, x1 as i32, y1 as i32)
         .and_then(|rect| pixmap.clone_rect(rect))
         .ok_or_else(|| "el panel no está visible".to_string())
 }
@@ -528,6 +528,6 @@ fn in_graph_panel(frame: &Frame, x: f32, y: f32) -> bool {
 }
 
 /// The graph pane of a frame, when the graph is showing.
-fn graph_rect(frame: &Frame) -> Option<rustsidian_ui::Rect> {
+fn graph_rect(frame: &Frame) -> Option<metamind_ui::Rect> {
     frame.info.graph.map(|n| frame.dom.nodes[n].rect)
 }

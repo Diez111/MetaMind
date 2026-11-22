@@ -2,7 +2,7 @@
 
 use crate::icons;
 use crate::shell::{App, Panel};
-use rustsidian_ui::{Dom, El, NodeId};
+use metamind_ui::{Dom, El, NodeId};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use vault_core::{fsio, path};

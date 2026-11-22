@@ -2,9 +2,9 @@
 // When started from a terminal, the parent's console is attached so the CLI still prints.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
-use rustsidian_app::cli::{self, Outcome};
+use metamind_app::cli::{self, Outcome};
 #[cfg(feature = "window")]
-use rustsidian_app::instance;
+use metamind_app::instance;
 
 #[cfg(feature = "window")]
 mod a11y;
@@ -68,7 +68,7 @@ fn main() {
         Outcome::Welcome => window::run(None, None, false),
         #[cfg(not(feature = "window"))]
         Outcome::Open { .. } | Outcome::Welcome => {
-            eprintln!("rustsidian: this build has no window support (built without the `window` feature)");
+            eprintln!("metamind: this build has no window support (built without the `window` feature)");
             2
         }
     };

@@ -1,4 +1,4 @@
-use rustsidian_app::App;
+use metamind_app::App;
 use std::fs;
 
 fn vault() -> tempfile::TempDir {

@@ -5,21 +5,44 @@ use std::path::{Path, PathBuf};
 
 const MAX: usize = 12;
 
-/// Where Rustsidian keeps per-user data. `RUSTSIDIAN_CONFIG_DIR` overrides the platform default.
+/// Where MetaMind keeps per-user data. `METAMIND_CONFIG_DIR` overrides the platform default.
+/// Before the rename the data lived under a `rustsidian` folder: when the new folder does not
+/// exist yet but the old one does, keep using the old one so no vault list or setting is lost.
 pub fn config_dir() -> Option<PathBuf> {
+    fn platform(var: &dyn Fn(&str) -> Option<PathBuf>, legacy: bool) -> Option<PathBuf> {
+        let name = if legacy {
+            if cfg!(any(windows, target_os = "macos")) { "Rustsidian" } else { "rustsidian" }
+        } else if cfg!(any(windows, target_os = "macos")) {
+            "MetaMind"
+        } else {
+            "metamind"
+        };
+        if cfg!(windows) {
+            var("APPDATA").map(|d| d.join(name))
+        } else if cfg!(target_os = "macos") {
+            var("HOME").map(|d| d.join(format!("Library/Application Support/{name}")))
+        } else {
+            var("XDG_CONFIG_HOME")
+                .or_else(|| var("HOME").map(|d| d.join(".config")))
+                .map(|d| d.join(name))
+        }
+    }
     let var = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
-    if let Some(dir) = var("RUSTSIDIAN_CONFIG_DIR") {
+    if let Some(dir) = var("METAMIND_CONFIG_DIR") {
         return Some(dir);
     }
-    if cfg!(windows) {
-        var("APPDATA").map(|d| d.join("Rustsidian"))
-    } else if cfg!(target_os = "macos") {
-        var("HOME").map(|d| d.join("Library/Application Support/Rustsidian"))
-    } else {
-        var("XDG_CONFIG_HOME")
-            .or_else(|| var("HOME").map(|d| d.join(".config")))
-            .map(|d| d.join("rustsidian"))
+    let cur = platform(&var, false)?;
+    if !cur.is_dir() {
+        if let Some(old) = var("RUSTSIDIAN_CONFIG_DIR") {
+            return Some(old);
+        }
+        if let Some(old) = platform(&var, true) {
+            if old.is_dir() {
+                return Some(old);
+            }
+        }
     }
+    Some(cur)
 }
 
 /// The user's home folder.

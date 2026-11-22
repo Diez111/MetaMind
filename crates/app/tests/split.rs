@@ -1,6 +1,6 @@
-use rustsidian_app::split::Layout;
-use rustsidian_app::{render, App, Frame};
-use rustsidian_ui::{Fonts, Pixmap};
+use metamind_app::split::Layout;
+use metamind_app::{render, App, Frame};
+use metamind_ui::{Fonts, Pixmap};
 use std::fs;
 
 fn vault() -> tempfile::TempDir {
@@ -132,7 +132,7 @@ fn a_tab_moved_to_a_window_renders_alone_there_and_focus_follows_the_window() {
 
     let mut fonts = Fonts::new();
     let mut pm = Pixmap::new(800, 600).unwrap();
-    let f = rustsidian_app::render_window(&mut app, &mut fonts, &mut pm, 1.0, Some(pane));
+    let f = metamind_app::render_window(&mut app, &mut fonts, &mut pm, 1.0, Some(pane));
     assert_eq!(f.info.panes.iter().map(|p| p.0).collect::<Vec<_>>(), [pane]);
     let main = frame(&mut app, &mut fonts);
     assert_eq!(main.info.panes.iter().map(|p| p.0).collect::<Vec<_>>(), [0]);
@@ -178,7 +178,7 @@ fn closing_a_window_docks_its_pane_and_closing_its_last_tab_closes_it() {
 
 #[test]
 fn stacked_columns_end_at_the_active_tab_and_the_rest_fold() {
-    use rustsidian_app::view::stack_range;
+    use metamind_app::view::stack_range;
     assert_eq!(stack_range(1, 0, 300.0), (0, 0));
     assert_eq!(stack_range(3, 2, 1000.0), (1, 2));
     assert_eq!(stack_range(3, 0, 1000.0), (0, 1));

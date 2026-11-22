@@ -1,4 +1,4 @@
-//! Note graphs for Rustsidian.
+//! Note graphs for MetaMind.
 
 pub mod layout;
 pub mod model;

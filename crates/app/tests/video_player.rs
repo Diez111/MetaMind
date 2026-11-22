@@ -3,9 +3,9 @@
 
 #[cfg(unix)]
 mod unix {
-    use rustsidian_app::video::{find_program, FfmpegPipe, Playback, State, VideoPlayer};
-    use rustsidian_app::{render, App};
-    use rustsidian_ui::{Cmd, Fonts, Pixmap, Rect};
+    use metamind_app::video::{find_program, FfmpegPipe, Playback, State, VideoPlayer};
+    use metamind_app::{render, App};
+    use metamind_ui::{Cmd, Fonts, Pixmap, Rect};
     use std::fs;
     use std::path::Path;
     use std::time::{Duration, Instant};
@@ -226,7 +226,7 @@ mod unix {
         let mut fonts = Fonts::new();
         let mut pm = Pixmap::new(1100, 700).unwrap();
 
-        // The card offers to play the video inside RustSidian, not to hand it to the system.
+        // The card offers to play the video inside MetaMind, not to hand it to the system.
         let card = render(&mut app, &mut fonts, &mut pm, 1.0);
         let action = "video:open:Note.md|clip.mp4";
         let node = card
@@ -236,7 +236,7 @@ mod unix {
             .find(|n| n.el.action.as_deref() == Some(action))
             .expect("the card starts the in-app player");
         assert!(node.el.classes.iter().any(|c| c == "media-card-action"), "{:?}", node.el.classes);
-        assert_eq!(node.el.text.as_deref(), Some("Reproducir en RustSidian"));
+        assert_eq!(node.el.text.as_deref(), Some("Reproducir en MetaMind"));
 
         // Clicking it decodes: the card is replaced by the player once a frame is there.
         app.run(action);
@@ -254,7 +254,7 @@ mod unix {
         let frame = player.expect("the player never drew a frame");
         assert_eq!(app.video.state(), &State::Paused);
 
-        let has = |n: &rustsidian_ui::dom::Node, c: &str| n.el.classes.iter().any(|x| x == c);
+        let has = |n: &metamind_ui::dom::Node, c: &str| n.el.classes.iter().any(|x| x == c);
         assert!(frame.dom.nodes.iter().any(|n| has(n, "video-player")), "no player widget");
         let frame_node =
             frame.dom.nodes.iter().position(|n| has(n, "video-player-frame")).expect("no frame box");
@@ -391,7 +391,7 @@ mod unix {
         assert_eq!(cards, 1, "the player is drawn once");
 
         // Escape goes back to the player in its note.
-        app.key(rustsidian_app::Key::parse("Escape").unwrap());
+        app.key(metamind_app::Key::parse("Escape").unwrap());
         assert!(!app.video_fullscreen);
         let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
         assert!(!frame.dom.nodes.iter().any(|n| n.el.classes.iter().any(|x| x == "mod-video")));

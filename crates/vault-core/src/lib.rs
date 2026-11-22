@@ -1,4 +1,4 @@
-//! Vault model for Rustsidian.
+//! Vault model for MetaMind.
 
 pub mod cache;
 pub mod config;

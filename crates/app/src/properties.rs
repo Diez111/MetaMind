@@ -5,7 +5,7 @@ use crate::shell::{App, Key, ViewMode};
 use editor_core::{Change, EditKind, Sel};
 use md_engine::frontmatter::{self, Value};
 use md_engine::NodeKind;
-use rustsidian_ui::{Dom, El, NodeId};
+use metamind_ui::{Dom, El, NodeId};
 use vault_core::fsio;
 
 pub struct Entry {

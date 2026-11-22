@@ -8,7 +8,7 @@
 use crate::shell::App;
 use dataview_core::{Opts, Table};
 use md_engine::{NodeKind, Tree};
-use rustsidian_ui::{Dom, El, NodeId};
+use metamind_ui::{Dom, El, NodeId};
 use std::collections::HashMap;
 
 /// Computed blocks of the open vault: query text -> (vault revision, table or error).

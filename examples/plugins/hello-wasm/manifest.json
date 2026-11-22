@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "minAppVersion": "1.0.0",
   "description": "Example WASM plugin: a notice, a status bar item and an editor edit.",
-  "author": "Rustsidian",
+  "author": "MetaMind",
   "isDesktopOnly": false,
-  "rustsidian": { "permissions": ["editor.write", "ui"] }
+  "metamind": { "permissions": ["editor.write", "ui"] }
 }

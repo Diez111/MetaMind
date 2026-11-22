@@ -7,7 +7,7 @@ use crate::shell::{App, Panel, RightPanel, Tab, ViewMode};
 use editor_core::Sel;
 use serde_json::{json, Value};
 
-const FILE: &str = "rustsidian-session.json";
+const FILE: &str = "metamind-session.json";
 
 fn mode_name(m: ViewMode) -> &'static str {
     match m {

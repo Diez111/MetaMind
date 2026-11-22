@@ -5,7 +5,7 @@
 use crate::shell::{App, Focus, Key, PromptKind, ViewMode};
 use crate::{clipboard, view, Frame};
 use editor_core::{EditKind, Sel};
-use rustsidian_ui::Fonts;
+use metamind_ui::Fonts;
 use vault_core::{fsio, path};
 
 pub const ITEM_H: f32 = 28.0;
@@ -511,7 +511,7 @@ impl App {
     fn put_clip(&mut self, text: String) {
         if self.system_clipboard {
             if let Err(e) = clipboard::set(&text) {
-                self.notice = Some(format!("Copiado solo dentro de Rustsidian: {e}"));
+                self.notice = Some(format!("Copiado solo dentro de MetaMind: {e}"));
             }
         }
         self.clip = text;

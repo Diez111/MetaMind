@@ -1,9 +1,9 @@
-//! The welcome screen shown when Rustsidian starts without a vault: recent vaults, a folder
+//! The welcome screen shown when MetaMind starts without a vault: recent vaults, a folder
 //! browser to open or create a vault, and a sample vault for a first look.
 
 use crate::anim::{Anims, FAST_MS, SLOW_MS};
 use crate::{icons, recent};
-use rustsidian_ui::{Dom, El, Fonts, NodeId, Pixmap, Theme};
+use metamind_ui::{Dom, El, Fonts, NodeId, Pixmap, Theme};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use theme_engine::Env;
@@ -46,7 +46,7 @@ pub struct Welcome {
     theme: Theme,
 }
 
-const SAMPLE_NAME: &str = "Rustsidian Vault";
+const SAMPLE_NAME: &str = "MetaMind Vault";
 const SAMPLE: &[(&str, &str)] = &[
     ("Welcome.md", include_str!("sample/Welcome.md")),
     ("Getting started/Keyboard shortcuts.md", include_str!("sample/Keyboard shortcuts.md")),
@@ -399,7 +399,7 @@ impl Welcome {
         let card = dom.add(wrap, card);
         let brand = dom.add(card, El::div().class("welcome-brand"));
         dom.add(brand, El::div().class("welcome-logo").image(crate::view::logo()));
-        dom.add(brand, El::div().class("welcome-name").text("Rustsidian"));
+        dom.add(brand, El::div().class("welcome-name").text("MetaMind"));
         dom.add(
             brand,
             El::div().class("welcome-version").text(format!("Versión {}", env!("CARGO_PKG_VERSION"))),
@@ -444,7 +444,7 @@ impl Welcome {
         icons::paint(&mut dom);
         let scene = dom.paint();
         let clear = dom.nodes[0].style.background;
-        rustsidian_ui::render(&scene, fonts, pixmap, scale, clear);
+        metamind_ui::render(&scene, fonts, pixmap, scale, clear);
         dom
     }
 

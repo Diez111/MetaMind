@@ -1,5 +1,5 @@
-use rustsidian_app::shell::{Panel, ViewMode};
-use rustsidian_app::App;
+use metamind_app::shell::{Panel, ViewMode};
+use metamind_app::App;
 use std::fs;
 
 #[test]

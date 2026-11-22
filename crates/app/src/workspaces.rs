@@ -6,7 +6,7 @@
 use crate::shell::{App, PromptItem, PromptKind};
 use serde_json::{Map, Value};
 
-const FILE: &str = "rustsidian-workspaces.json";
+const FILE: &str = "metamind-workspaces.json";
 
 impl App {
     fn read_workspaces(&self) -> Result<Map<String, Value>, String> {

@@ -1,8 +1,8 @@
 //! The AI copilot in the right sidebar: its tab, its input, and the LaTeX of its answers.
 
-use rustsidian_app::shell::RightPanel;
-use rustsidian_app::{render, App, Frame, Key};
-use rustsidian_ui::{Fonts, Pixmap};
+use metamind_app::shell::RightPanel;
+use metamind_app::{render, App, Frame, Key};
+use metamind_ui::{Fonts, Pixmap};
 use std::fs;
 
 const NOTE: &str = "# Home\n\nUna nota cualquiera.\n";
@@ -75,8 +75,8 @@ fn answers_typeset_their_latex() {
     let mut app = App::open(d.path()).unwrap();
     app.open_note("Home.md");
     app.run("ai:open");
-    app.ai.messages.push(rustsidian_app::ai::Message::user("¿Y la energía?"));
-    app.ai.messages.push(rustsidian_app::ai::Message::assistant(
+    app.ai.messages.push(metamind_app::ai::Message::user("¿Y la energía?"));
+    app.ai.messages.push(metamind_app::ai::Message::assistant(
         "La energía en reposo es $E = mc^2$.\n\n$$\\int_0^1 x^2\\,dx = \\frac{1}{3}$$",
     ));
     let mut fonts = Fonts::new();

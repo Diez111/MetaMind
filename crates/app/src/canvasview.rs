@@ -3,7 +3,7 @@
 
 use crate::shell::{App, Focus};
 use canvas_core::{Canvas, Edge, Node, NodeKind, Side};
-use rustsidian_ui::{Cmd, Dom, El, NodeId, Rect, Span, TextStyle};
+use metamind_ui::{Cmd, Dom, El, NodeId, Rect, Span, TextStyle};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use theme_engine::Color;
@@ -52,7 +52,7 @@ struct Press {
 struct FileInfo {
     title: String,
     body: Option<String>,
-    image: Option<rustsidian_ui::Image>,
+    image: Option<metamind_ui::Image>,
     missing: bool,
 }
 
@@ -702,7 +702,7 @@ impl App {
                 v.dirty = false;
             }
             Err(WriteError::Conflict { .. }) => {
-                self.notice = Some(format!("{} se cambió fuera de Rustsidian. No se guardó.", v.path))
+                self.notice = Some(format!("{} se cambió fuera de MetaMind. No se guardó.", v.path))
             }
             Err(WriteError::Io(e)) => self.notice = Some(format!("No se pudo guardar: {e}")),
         }

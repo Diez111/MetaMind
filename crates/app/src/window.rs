@@ -2,10 +2,10 @@
 //! Fully event-driven: the loop sleeps until input, a file change or a deadline (autosave,
 //! a notice timing out), and redraws at display rate only while something is animating.
 
-use rustsidian_app::welcome::Welcome;
-use rustsidian_app::{instance, ospref};
-use rustsidian_app::{recent, App, Frame, Key};
-use rustsidian_ui::{Dom, Fonts, Pixmap};
+use metamind_app::welcome::Welcome;
+use metamind_app::{instance, ospref};
+use metamind_app::{recent, App, Frame, Key};
+use metamind_ui::{Dom, Fonts, Pixmap};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -59,7 +59,7 @@ struct Win {
     profile: bool,
     first_frame_done: bool,
     /// The caret rectangle last given to the input method.
-    ime_area: Option<rustsidian_ui::Rect>,
+    ime_area: Option<metamind_ui::Rect>,
     proxy: EventLoopProxy<UserEvent>,
     access: Option<accesskit_winit::Adapter>,
     /// Counts opened vaults; a watcher stops when its generation is no longer current.
@@ -86,7 +86,7 @@ struct Pop {
     mouse: (f32, f32),
     dragging: bool,
     pointer: bool,
-    ime_area: Option<rustsidian_ui::Rect>,
+    ime_area: Option<metamind_ui::Rect>,
 }
 
 fn new_window(
@@ -95,7 +95,7 @@ fn new_window(
     size: LogicalSize<f64>,
     visible: bool,
 ) -> Result<Arc<Window>, String> {
-    let icon = Icon::from_rgba(rustsidian_app::icon::rgba(64), 64, 64).ok();
+    let icon = Icon::from_rgba(metamind_app::icon::rgba(64), 64, 64).ok();
     let attrs = Window::default_attributes()
         .with_title(title)
         .with_window_icon(icon)
@@ -161,7 +161,7 @@ impl Win {
                 },
                 None => None,
             };
-            self.frame = Some(rustsidian_app::render_window(app, &mut self.fonts, pixmap, scale, solo));
+            self.frame = Some(metamind_app::render_window(app, &mut self.fonts, pixmap, scale, solo));
             if let (true, Some(frame)) = (app.screenshot, &self.frame) {
                 app.copy_screenshot(frame, pixmap, scale);
                 // The notice shows on the next frame; the copied one is this frame, without it.
@@ -288,7 +288,7 @@ impl Win {
                 let (tabs, active) = app.pane_tabs(pane);
                 let note = tabs
                     .get(active)
-                    .map_or("Rustsidian".to_string(), |t| format!("{} - Rustsidian", t.title()));
+                    .map_or("MetaMind".to_string(), |t| format!("{} - MetaMind", t.title()));
                 (id, note)
             })
             .collect();
@@ -337,10 +337,10 @@ impl Win {
     fn title(&self) -> String {
         match &self.app {
             Some(app) => format!(
-                "{} - Rustsidian",
+                "{} - MetaMind",
                 app.store.root.file_name().and_then(|n| n.to_str()).unwrap_or("Vault")
             ),
-            None => "Rustsidian".to_string(),
+            None => "MetaMind".to_string(),
         }
     }
 
@@ -568,7 +568,7 @@ impl ApplicationHandler<UserEvent> for Win {
                 w
             }
             Err(e) => {
-                eprintln!("rustsidian: {e}");
+                eprintln!("metamind: {e}");
                 el.exit();
                 return;
             }
@@ -883,7 +883,7 @@ fn prepare(mut app: App, vault: &Path, note: Option<&str>, profile: bool, starte
     app.set_reduced_motion(ospref::reduced_motion());
     app.high_contrast = ospref::high_contrast();
     app.system_clipboard = true;
-    if rustsidian_app::update::auto_check_due(now_ms()) {
+    if metamind_app::update::auto_check_due(now_ms()) {
         app.update.start_check(false);
     }
     match note {
@@ -897,11 +897,11 @@ fn prepare(mut app: App, vault: &Path, note: Option<&str>, profile: bool, starte
 /// Run the window. With no vault given, the most recent vault is reopened; when there is none,
 /// the welcome screen asks for one.
 pub fn run(vault: Option<&Path>, note: Option<&str>, profile: bool) -> i32 {
-    rustsidian_app::update::clean_old();
+    metamind_app::update::clean_old();
     let started = Instant::now();
     // Fonts load on a worker thread while the vault index loads on this one.
     let fonts = std::thread::spawn(Fonts::new);
-    std::thread::spawn(rustsidian_app::spell::load);
+    std::thread::spawn(metamind_app::spell::load);
     let start = vault.map(Path::to_path_buf).or_else(|| recent::load().into_iter().next());
     // A vault without an index is indexed once the window is up, so its progress can be shown.
     let (initial, pending) = match start {
@@ -909,7 +909,7 @@ pub fn run(vault: Option<&Path>, note: Option<&str>, profile: bool) -> i32 {
         Some(v) => match load(&v, note.filter(|_| vault.is_some()), profile, started) {
             Ok(app) => (Some(app), None),
             Err(e) if vault.is_some() => {
-                eprintln!("rustsidian: {e}");
+                eprintln!("metamind: {e}");
                 return 1;
             }
             Err(_) => (None, None),
@@ -919,7 +919,7 @@ pub fn run(vault: Option<&Path>, note: Option<&str>, profile: bool) -> i32 {
     let event_loop = match EventLoop::<UserEvent>::with_user_event().build() {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("rustsidian: no display available: {e}");
+            eprintln!("metamind: no display available: {e}");
             return 1;
         }
     };
@@ -967,7 +967,7 @@ pub fn run(vault: Option<&Path>, note: Option<&str>, profile: bool) -> i32 {
                         && proxy.send_event(UserEvent::Show(note)).is_ok()
                 });
             }
-            Err(e) => eprintln!("rustsidian: other launches cannot reach this window: {e}"),
+            Err(e) => eprintln!("metamind: other launches cannot reach this window: {e}"),
         }
     }
     match (initial, pending) {
@@ -982,7 +982,7 @@ pub fn run(vault: Option<&Path>, note: Option<&str>, profile: bool) -> i32 {
     match result {
         Ok(()) => 0,
         Err(e) => {
-            eprintln!("rustsidian: {e}");
+            eprintln!("metamind: {e}");
             1
         }
     }

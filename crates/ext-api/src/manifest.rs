@@ -2,7 +2,7 @@ use crate::{Permissions, PluginKind};
 use serde::Deserialize;
 use std::path::Path;
 
-/// `manifest.json` in the community plugin format, plus an optional `rustsidian.permissions` list.
+/// `manifest.json` in the community plugin format, plus an optional `metamind.permissions` list.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
@@ -21,17 +21,17 @@ pub struct Manifest {
     #[serde(default)]
     pub is_desktop_only: bool,
     #[serde(default)]
-    pub rustsidian: RustsidianSection,
+    pub metamind: MetaMindSection,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
-pub struct RustsidianSection {
+pub struct MetaMindSection {
     pub permissions: Option<Vec<String>>,
 }
 
 impl Manifest {
     pub fn permissions(&self, kind: PluginKind) -> Permissions {
-        match (&self.rustsidian.permissions, kind) {
+        match (&self.metamind.permissions, kind) {
             (Some(list), _) => Permissions::from_names(list),
             (None, PluginKind::Wasm) => Permissions::default_set(),
             (None, _) => Permissions::all(),
@@ -135,7 +135,7 @@ mod tests {
         std::fs::create_dir_all(&p).unwrap();
         std::fs::write(
             p.join("manifest.json"),
-            r#"{"id":"hello","name":"Hello","version":"1.0.0","rustsidian":{"permissions":["vault.write"]}}"#,
+            r#"{"id":"hello","name":"Hello","version":"1.0.0","metamind":{"permissions":["vault.write"]}}"#,
         )
         .unwrap();
         std::fs::write(p.join("main.wasm"), b"\0asm").unwrap();

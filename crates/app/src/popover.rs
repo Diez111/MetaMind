@@ -2,7 +2,7 @@
 
 use crate::shell::App;
 use crate::{view, Frame};
-use rustsidian_ui::Fonts;
+use metamind_ui::Fonts;
 use vault_core::path;
 
 const PREVIEW_LINES: usize = 12;

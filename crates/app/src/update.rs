@@ -85,7 +85,7 @@ fn tool(name: &str) -> Command {
 fn curl(url: &str, out: Option<&Path>) -> Result<Vec<u8>, String> {
     let mut cmd = tool("curl");
     cmd.args(["-fsSL", "--max-time", "300", "-H", "Accept: application/vnd.github+json"]);
-    cmd.args(["-A", concat!("rustsidian/", env!("CARGO_PKG_VERSION"))]);
+    cmd.args(["-A", concat!("metamind/", env!("CARGO_PKG_VERSION"))]);
     if let Some(p) = out {
         cmd.arg("-o").arg(p);
     }
@@ -116,7 +116,7 @@ pub fn expected_sum(sums: &str, name: &str) -> Option<String> {
 /// Download, verify and unpack `r`, then put its binary in place of `exe`. The running
 /// program keeps working; the new version starts on the next launch.
 pub fn install(r: &Release, exe: &Path) -> Result<(), String> {
-    let work = std::env::temp_dir().join(format!("rustsidian-update-{}", std::process::id()));
+    let work = std::env::temp_dir().join(format!("metamind-update-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&work);
     std::fs::create_dir_all(&work).map_err(|e| format!("no se pudo crear {}: {e}", work.display()))?;
     let result = install_in(r, exe, &work);
@@ -199,7 +199,7 @@ pub fn clean_old() {
         let old = old_path(&exe);
         if old.exists() {
             if let Err(e) = std::fs::remove_file(&old) {
-                eprintln!("rustsidian: cannot remove {}: {e}", old.display());
+                eprintln!("metamind: cannot remove {}: {e}", old.display());
             }
         }
     }
@@ -253,7 +253,7 @@ pub fn auto_check_due(now_ms: u64) -> bool {
     }
     v["lastCheck"] = now_ms.into();
     if let Err(e) = write_prefs(&v) {
-        eprintln!("rustsidian: {e}");
+        eprintln!("metamind: {e}");
     }
     true
 }
@@ -307,11 +307,11 @@ impl State {
             State::Checking { manual, rx } => match rx.try_recv().ok()? {
                 Ok(Some(r)) => {
                     let msg =
-                        format!("Rustsidian {} está disponible. Instálala desde Ajustes → Acerca de.", r.tag);
+                        format!("MetaMind {} está disponible. Instálala desde Ajustes → Acerca de.", r.tag);
                     (State::Available(r), Some(msg))
                 }
                 Ok(None) => {
-                    let msg = manual.then(|| format!("Rustsidian v{CURRENT} es la última versión."));
+                    let msg = manual.then(|| format!("MetaMind v{CURRENT} es la última versión."));
                     (State::UpToDate, msg)
                 }
                 // Automatic checks fail quietly offline; the error is still in Settings.
@@ -322,7 +322,7 @@ impl State {
             },
             State::Installing { tag, rx } => match rx.try_recv().ok()? {
                 Ok(()) => {
-                    let msg = format!("Rustsidian {tag} está instalada. Reinicia para usarla.");
+                    let msg = format!("MetaMind {tag} está instalada. Reinicia para usarla.");
                     (State::Installed(tag.clone()), Some(msg))
                 }
                 Err(e) => (State::Failed(e.clone()), Some(format!("Falló la actualización: {e}"))),
@@ -341,7 +341,7 @@ impl State {
             State::UpToDate => "Tienes la última versión.".into(),
             State::Available(r) => format!("{} está disponible.", r.tag),
             State::Installing { tag, .. } => format!("Instalando {tag}…"),
-            State::Installed(tag) => format!("{tag} está instalada. Reinicia Rustsidian para usarla."),
+            State::Installed(tag) => format!("{tag} está instalada. Reinicia MetaMind para usarla."),
             State::Failed(e) => e.clone(),
         }
     }
@@ -435,8 +435,8 @@ mod tests {
     #[test]
     fn parses_release_and_sums() {
         let json = r#"{"tag_name":"v0.3.0","html_url":"https://example.invalid/r","assets":[
-            {"name":"rustsidian-v0.3.0-linux-x86_64.tar.gz","browser_download_url":"u1"},
-            {"name":"rustsidian-v0.3.0-windows-x86_64.zip","browser_download_url":"u2"},
+            {"name":"metamind-v0.3.0-linux-x86_64.tar.gz","browser_download_url":"u1"},
+            {"name":"metamind-v0.3.0-windows-x86_64.zip","browser_download_url":"u2"},
             {"name":"SHA256SUMS.txt","browser_download_url":"u3"}]}"#;
         let r = parse_release(json, "windows-x86_64.zip").unwrap();
         assert_eq!((r.tag.as_str(), r.asset_url.as_str(), r.sums_url.as_str()), ("v0.3.0", "u2", "u3"));
@@ -444,8 +444,8 @@ mod tests {
             .unwrap_err()
             .contains("no tiene descarga para macos-arm64"));
         assert!(parse_release(r#"{"message":"Not Found"}"#, "x").unwrap_err().contains("Not Found"));
-        let sums = "abc  rustsidian-v0.3.0-windows-x86_64.zip\nDEF *other.tar.gz\n";
-        assert_eq!(expected_sum(sums, "rustsidian-v0.3.0-windows-x86_64.zip").as_deref(), Some("abc"));
+        let sums = "abc  metamind-v0.3.0-windows-x86_64.zip\nDEF *other.tar.gz\n";
+        assert_eq!(expected_sum(sums, "metamind-v0.3.0-windows-x86_64.zip").as_deref(), Some("abc"));
         assert_eq!(expected_sum(sums, "other.tar.gz").as_deref(), Some("def"));
         assert_eq!(expected_sum(sums, "missing"), None);
     }
@@ -455,12 +455,12 @@ mod tests {
     #[test]
     fn installs_from_archive_and_rejects_bad_checksum() {
         let d = tempfile::tempdir().unwrap();
-        let pkg = d.path().join("rustsidian-v9.0.0-linux-x86_64");
+        let pkg = d.path().join("metamind-v9.0.0-linux-x86_64");
         std::fs::create_dir(&pkg).unwrap();
-        std::fs::write(pkg.join("rustsidian"), b"new build").unwrap();
-        let asset = "rustsidian-v9.0.0-linux-x86_64.tar.gz";
+        std::fs::write(pkg.join("metamind"), b"new build").unwrap();
+        let asset = "metamind-v9.0.0-linux-x86_64.tar.gz";
         let ok = Command::new("tar")
-            .args(["czf", asset, "rustsidian-v9.0.0-linux-x86_64"])
+            .args(["czf", asset, "metamind-v9.0.0-linux-x86_64"])
             .current_dir(d.path())
             .status()
             .unwrap();
@@ -469,7 +469,7 @@ mod tests {
         std::fs::write(d.path().join("SHA256SUMS.txt"), format!("{sum}  {asset}\n")).unwrap();
         let bin = d.path().join("bin");
         std::fs::create_dir(&bin).unwrap();
-        let exe = bin.join("rustsidian");
+        let exe = bin.join("metamind");
         std::fs::write(&exe, b"old build").unwrap();
         let url = |f: &str| format!("file://{}", d.path().join(f).display());
         let mut r = Release {

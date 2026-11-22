@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=Rustsidian
+Name=MetaMind
 Comment=Fast native Markdown knowledge base
-Exec=rustsidian %u
-Icon=rustsidian
+Exec=metamind %u
+Icon=metamind
 Terminal=false
 Categories=Office;Utility;TextEditor;
 Keywords=notes;markdown;wiki;vault;
-MimeType=text/markdown;x-scheme-handler/rustsidian;
+MimeType=text/markdown;x-scheme-handler/metamind;

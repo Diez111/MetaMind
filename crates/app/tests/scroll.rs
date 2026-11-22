@@ -1,5 +1,5 @@
-use rustsidian_app::{render, App, Frame};
-use rustsidian_ui::{Fonts, Pixmap};
+use metamind_app::{render, App, Frame};
+use metamind_ui::{Fonts, Pixmap};
 use std::fs;
 
 fn y_of(frame: &Frame, text: &str) -> Option<f32> {

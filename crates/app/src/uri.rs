@@ -1,15 +1,15 @@
-//! `rustsidian://` links, so other programs and web pages can open or create notes.
+//! `metamind://` links, so other programs and web pages can open or create notes.
 //!
-//! - `rustsidian://open?vault=<name or path>&file=<note>`
-//! - `rustsidian://open?path=<absolute path to a note or vault folder>`
-//! - `rustsidian://new?vault=<name or path>&name=<note path>&content=<text>`
+//! - `metamind://open?vault=<name or path>&file=<note>`
+//! - `metamind://open?path=<absolute path to a note or vault folder>`
+//! - `metamind://new?vault=<name or path>&name=<note path>&content=<text>`
 //!
 //! A vault given by name is looked up among the recently opened vaults by folder name.
 
 use std::path::{Path, PathBuf};
 use vault_core::path;
 
-pub const SCHEME: &str = "rustsidian:";
+pub const SCHEME: &str = "metamind:";
 
 /// What a link asks for, once resolved: the vault to open and the note to show in it.
 #[derive(Debug, PartialEq, Eq)]

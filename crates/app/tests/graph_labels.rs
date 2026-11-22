@@ -1,5 +1,5 @@
-use rustsidian_app::App;
-use rustsidian_ui::{Cmd, Color, Rect, TextStyle};
+use metamind_app::App;
+use metamind_ui::{Cmd, Color, Rect, TextStyle};
 use std::fs;
 
 #[test]

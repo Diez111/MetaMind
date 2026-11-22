@@ -4,7 +4,7 @@ use crate::bases::{self, Base, Item, Row, View, ViewKind};
 use crate::properties::{self, Kind};
 use crate::shell::{App, Focus, PromptItem, PromptKind};
 use md_engine::frontmatter::Value;
-use rustsidian_ui::{Dom, El, NodeId};
+use metamind_ui::{Dom, El, NodeId};
 use vault_core::fsio::{self, Stamp};
 use vault_core::{path, WriteError};
 

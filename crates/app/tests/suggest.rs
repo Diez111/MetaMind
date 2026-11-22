@@ -1,7 +1,7 @@
-use rustsidian_app::shell::Key;
-use rustsidian_app::suggest::SuggestKind;
-use rustsidian_app::{render, App};
-use rustsidian_ui::{Fonts, Pixmap};
+use metamind_app::shell::Key;
+use metamind_app::suggest::SuggestKind;
+use metamind_app::{render, App};
+use metamind_ui::{Fonts, Pixmap};
 use std::fs;
 
 fn vault() -> tempfile::TempDir {

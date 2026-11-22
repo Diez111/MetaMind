@@ -15,7 +15,7 @@ pub fn get() -> Result<String, String> {
 }
 
 /// Put an image on the system clipboard.
-pub fn set_image(pm: &rustsidian_ui::Pixmap) -> Result<(), String> {
+pub fn set_image(pm: &metamind_ui::Pixmap) -> Result<(), String> {
     let png = pm.encode_png().map_err(|e| e.to_string())?;
     imp::set_png(&png, pm)
 }
@@ -59,7 +59,7 @@ fn uri_list(list: &str) -> Vec<PathBuf> {
 
 /// An image as a 32-bit bottom-up `CF_DIB`, for programs that do not read the "PNG" format.
 #[cfg_attr(not(windows), allow(dead_code))]
-fn to_dib(pm: &rustsidian_ui::Pixmap) -> Vec<u8> {
+fn to_dib(pm: &metamind_ui::Pixmap) -> Vec<u8> {
     let (w, h) = (pm.width(), pm.height());
     let mut dib = Vec::with_capacity(40 + w as usize * h as usize * 4);
     for v in [40u32, w, h] {
@@ -106,7 +106,7 @@ fn dib_to_png(dib: &[u8]) -> Result<Vec<u8>, String> {
     let start = header + if compression == 3 && header == 40 { 12 } else { 0 } + colors * 4;
     let stride = (w as usize * bits as usize).div_ceil(32) * 4;
     let pixels = dib.get(start..start + stride * h as usize).ok_or_else(bad)?;
-    let mut pm = rustsidian_ui::Pixmap::new(w, h).ok_or_else(bad)?;
+    let mut pm = metamind_ui::Pixmap::new(w, h).ok_or_else(bad)?;
     let step = bits as usize / 8;
     // 32-bit bitmaps often leave alpha at zero; then the image is opaque.
     let has_alpha = bits == 32 && pixels.chunks(4).any(|p| p.get(3).is_some_and(|&a| a != 0));
@@ -185,7 +185,7 @@ mod imp {
     }
 
     /// The image as "PNG" for programs that keep transparency, and as a bitmap for the rest.
-    pub fn set_png(png: &[u8], pm: &rustsidian_ui::Pixmap) -> Result<(), String> {
+    pub fn set_png(png: &[u8], pm: &metamind_ui::Pixmap) -> Result<(), String> {
         let name: Vec<u16> = "PNG".encode_utf16().chain([0]).collect();
         let dib = super::to_dib(pm);
         open()?;
@@ -365,7 +365,7 @@ mod imp {
     }
 
     #[cfg(not(target_os = "macos"))]
-    pub fn set_png(png: &[u8], _: &rustsidian_ui::Pixmap) -> Result<(), String> {
+    pub fn set_png(png: &[u8], _: &metamind_ui::Pixmap) -> Result<(), String> {
         let mut t: Vec<&[&str]> = Vec::new();
         if std::env::var_os("WAYLAND_DISPLAY").is_some() {
             t.push(&["wl-copy", "--type", "image/png"]);
@@ -394,8 +394,8 @@ mod imp {
 
     /// AppleScript reads the image from a file; a long hex literal could pass the argument limit.
     #[cfg(target_os = "macos")]
-    pub fn set_png(png: &[u8], _: &rustsidian_ui::Pixmap) -> Result<(), String> {
-        let file = std::env::temp_dir().join("rustsidian-screenshot.png");
+    pub fn set_png(png: &[u8], _: &metamind_ui::Pixmap) -> Result<(), String> {
+        let file = std::env::temp_dir().join("metamind-screenshot.png");
         std::fs::write(&file, png).map_err(|e| e.to_string())?;
         let script = format!(
             "set the clipboard to (read (POSIX file \"{}\") as «class PNGf»)",
@@ -480,7 +480,7 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustsidian_ui::Pixmap;
+    use metamind_ui::Pixmap;
 
     #[test]
     fn uri_lists_become_local_paths() {
@@ -509,7 +509,7 @@ mod tests {
     #[test]
     fn images_round_trip_through_bitmaps() {
         let mut pm = Pixmap::new(3, 2).unwrap();
-        pm.fill(rustsidian_ui::SkColor::from_rgba8(10, 20, 30, 255));
+        pm.fill(metamind_ui::SkColor::from_rgba8(10, 20, 30, 255));
         pm.data_mut()[..4].copy_from_slice(&[200, 100, 50, 255]);
         let png = dib_to_png(&to_dib(&pm)).unwrap();
         assert_eq!(rgba(&png, 0, 0), (200, 100, 50, 255));

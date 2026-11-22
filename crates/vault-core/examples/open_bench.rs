@@ -35,13 +35,13 @@ fn main() {
     let root = args
         .next()
         .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::temp_dir().join(format!("rustsidian-bench-{n}")));
+        .unwrap_or_else(|| std::env::temp_dir().join(format!("metamind-bench-{n}")));
     if !root.exists() {
         let t = Instant::now();
         gen(&root, n);
         eprintln!("generated {n} notes in {:?}", t.elapsed());
     }
-    let _ = fs::remove_dir_all(root.join(".rustsidian"));
+    let _ = fs::remove_dir_all(root.join(".metamind"));
     let (mut s, st) = VaultStore::open(&root).unwrap();
     let t = Instant::now();
     s.save_cache().unwrap();

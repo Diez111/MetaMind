@@ -5,7 +5,7 @@
 use crate::icons;
 use crate::plugins::PluginInfo;
 use crate::shell::{default_keymap, load_theme, App, Key, COMMANDS};
-use rustsidian_ui::{Dom, El, NodeId};
+use metamind_ui::{Dom, El, NodeId};
 use serde_json::{json, Value};
 use vault_core::config::JsonFile;
 use vault_core::fsio::TrashMode;
@@ -1388,7 +1388,7 @@ fn search_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, needle
 }
 
 fn general_view(app: &App, dom: &mut Dom, parent: NodeId) {
-    let ctl = row(dom, parent, "Rustsidian", "Base de conocimiento Markdown nativa y rápida.");
+    let ctl = row(dom, parent, "MetaMind", "Base de conocimiento Markdown nativa y rápida.");
     dom.add(ctl, El::div().class("setting-value").text(format!("v{}", env!("CARGO_PKG_VERSION"))));
     // The path is data, not a tooltip, so it wraps under its row instead of being shortened.
     let ctl = row(dom, parent, "Bóveda", "");
@@ -1411,7 +1411,7 @@ fn general_view(app: &App, dom: &mut Dom, parent: NodeId) {
         _ => {}
     }
     let ctl =
-        row(dom, parent, "Buscar actualizaciones automáticamente", "Una vez al día, al iniciar Rustsidian.");
+        row(dom, parent, "Buscar actualizaciones automáticamente", "Una vez al día, al iniciar MetaMind.");
     toggle(dom, ctl, crate::update::auto_check(), "settings:auto-update".into());
 }
 
