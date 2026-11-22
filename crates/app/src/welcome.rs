@@ -438,6 +438,9 @@ impl Welcome {
         let mut card = El::div().class("welcome-card");
         if self.screen != Screen::Home {
             card = card.class("mod-browser");
+        } else if self.recents.len() > 6 {
+            // Past a handful of vaults the list scrolls instead of growing the card off screen.
+            card = card.class("mod-scroll");
         }
         if t < 1.0 {
             card = card.style(&format!("margin-top: {:.1}px", 18.0 * (1.0 - t)));
