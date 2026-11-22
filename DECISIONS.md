@@ -210,7 +210,35 @@ clipped, and their own row already has room. The block height is still reserved 
 font-independent estimate before real fonts exist, so a shrunk formula has some air above and
 below it.
 
-## 11. Known misses
+## 11. Calendar: the secret iCal address instead of OAuth
+
+**Situation.** "Connect Google Calendar" usually means the OAuth consent flow, a client id, a
+redirect URI, refresh tokens and a browser hop. That is a network of credentials the app would
+have to store and rotate, and it is what a subscription already replaces: Google publishes every
+calendar as a `.ics` file at a URL under Settings → Integrate calendar → Secret address in iCal
+format.
+
+**Decision.** The user pastes that address once. The app GETs it with `ureq` on a worker thread
+(timeouts of 15 s, its own user agent), caches the body in `.metamind/cache/calendar.ics`,
+revalidates with `If-None-Match`/`If-Modified-Since`, and paints the month from the cache first.
+`calendar-core` reads the body: line unfolding, properties with parameters, `DTSTART`/`DTEND` with
+`TZID`, `VALUE=DATE` and `DURATION`, and `RRULE` expansion for `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY`
+with `INTERVAL`, `COUNT`, `UNTIL` and, for weekly rules, `BYDAY`. The address is a secret: it is
+never put in a notice, a log or the cache metadata, which keeps only a hash of it, and the error
+messages of a failed fetch are written by hand instead of being taken from the HTTP client's
+`Display`, which carries the URL.
+
+**Consequence.** No OAuth, no credentials, no browser: pasting one URL is the whole setup, and
+`.ics` files in the vault (a Google export, an Apple calendar) are read by the same parser with no
+extra work. The costs: the calendar is read-only in both directions, a revoked address shows as
+HTTP 401/403 until the user pastes a new one, and without a time-zone database a `TZID` is kept as
+a label — the wall clock the file writes is the wall clock that is shown, so an event written in
+another zone is displayed at its own local time. `BYSETPOS`, `BYMONTHDAY`, `BYMONTH`, `WKST`,
+`EXDATE` and `RECURRENCE-ID` are parsed past and ignored: an edited instance of a series shows on
+its original day. The task lines a note carries (`@{YYYY-MM-DD}`) are scanned in slices of 1500
+notes per frame, so the first scan of a 50,000-note vault does not stall a frame.
+
+## 12. Known misses
 
 - **Search uses a native scan, not tantivy** (§6).
 - **The default renderer is the CPU, not wgpu** (§2). No wgpu code exists yet.

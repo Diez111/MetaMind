@@ -97,6 +97,7 @@ struct Meta {
 }
 
 /// What the worker thread sends back.
+#[derive(Debug)]
 struct Fetched {
     not_modified: bool,
     body: String,
@@ -517,7 +518,21 @@ fn task_line(line: &str) -> Option<(Day, String)> {
         .or_else(|| title.strip_prefix("[x]"))
         .or_else(|| title.strip_prefix("[X]"))
         .unwrap_or(title);
-    Some((day, title.trim().to_string()))
+    // The date left a gap where it was: the title reads as one line.
+    let mut out = String::with_capacity(title.len());
+    let mut space = false;
+    for c in title.chars() {
+        if c.is_whitespace() {
+            space = true;
+            continue;
+        }
+        if space && !out.is_empty() {
+            out.push(' ');
+        }
+        space = false;
+        out.push(c);
+    }
+    Some((day, out))
 }
 
 /// `YYYY-MM-DD`, the shape the tasks use.
@@ -713,9 +728,10 @@ const MONTHS: [&str; 12] = [
     "diciembre",
 ];
 
-/// Width below which the grid is replaced by the list of the day: seven columns in a sidebar
-/// narrower than this are too small to read a number in.
-pub const PANE_MIN_GRID: f32 = 320.0;
+/// Width below which the grid is replaced by the list of the day: at the narrowest the sidebar
+/// goes (180 px, see `SIDE_W_MIN`) seven columns cannot hold a day number. The default width
+/// (250 px) keeps the grid, with the events of a day as dots.
+pub const PANE_MIN_GRID: f32 = 210.0;
 
 /// Events drawn in one cell before the rest is counted as "+N".
 const DOTS_PER_CELL: usize = 4;
@@ -910,6 +926,72 @@ const DAYS: [&str; 7] = ["domingo", "lunes", "martes", "miércoles", "jueves", "
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A loopback server that answers one GET with `status`, `body` and the headers given. Returns
+    /// the URL and the request head the server saw.
+    fn mock_server(
+        status: &'static str,
+        headers: &'static str,
+        body: &'static str,
+    ) -> (String, std::thread::JoinHandle<String>) {
+        use std::io::{BufRead, BufReader, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("puerto libre");
+        let addr = listener.local_addr().expect("dirección local");
+        let handle = std::thread::spawn(move || {
+            let (mut sock, _) = listener.accept().expect("una conexión");
+            let mut reader = BufReader::new(sock.try_clone().expect("clon del socket"));
+            let mut head = String::new();
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                    break;
+                }
+                head.push_str(&line);
+            }
+            let reply = format!(
+                "HTTP/1.1 {status}\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = sock.write_all(reply.as_bytes());
+            head
+        });
+        (format!("http://{addr}/secret-address/basic.ics"), handle)
+    }
+
+    #[test]
+    fn a_304_keeps_the_cached_body() {
+        let (url, server) = mock_server("304 Not Modified", "", "");
+        let meta = Meta { etag: "\"v1\"".to_string(), ..Meta::default() };
+        let fetched = fetch(&url, &meta).expect("304 es una respuesta");
+        assert!(fetched.not_modified);
+        assert!(fetched.body.is_empty());
+        // The cache's validator is what the request asked for.
+        assert!(server.join().expect("el hilo del servidor").contains("if-none-match: \"v1\""));
+    }
+
+    #[test]
+    fn the_body_and_its_validators_come_back() {
+        let body = "BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART;VALUE=DATE:20250916\nEND:VEVENT\nEND:VCALENDAR\n";
+        let (url, server) =
+            mock_server("200 OK", "ETag: \"v2\"\r\nLast-Modified: Tue, 16 Sep 2025 09:00:00 GMT\r\n", body);
+        let fetched = fetch(&url, &Meta::default()).expect("la respuesta llega");
+        assert!(!fetched.not_modified);
+        assert_eq!(fetched.body, body);
+        assert_eq!(fetched.etag, "\"v2\"");
+        assert_eq!(fetched.modified, "Tue, 16 Sep 2025 09:00:00 GMT");
+        server.join().expect("el hilo del servidor");
+    }
+
+    #[test]
+    fn a_failed_fetch_never_repeats_the_address() {
+        let (url, server) = mock_server("403 Forbidden", "", "");
+        let error = fetch(&url, &Meta::default()).expect_err("403 no es una respuesta válida");
+        assert!(error.contains("403") || error.contains("rechaz"), "{error}");
+        // The address is a secret: the message says what happened, not where.
+        assert!(!error.contains("secret-address"), "{error}");
+        assert!(!error.contains("127.0.0.1"), "{error}");
+        server.join().expect("el hilo del servidor");
+    }
 
     #[test]
     fn a_task_line_gives_its_day_and_title() {

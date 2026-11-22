@@ -18,19 +18,19 @@ fn main() {
     let note = std::env::args()
         .nth(2)
         .unwrap_or_else(|| "Facultad/Materias/1° Año/Análisis Matemático I/Unidades/U4c-Taylor.md".into());
-    let (W, H) = (1920u32, 1080u32);
+    let (w, h) = (1920u32, 1080u32);
     let mut app = App::open(std::path::Path::new(&vault)).unwrap();
-    app.window_w = W as f32;
-    app.window_h = H as f32;
+    app.window_w = w as f32;
+    app.window_h = h as f32;
     if app.store.index.id(&note).is_some() {
         app.open_note(&note);
     }
     app.right_open = true;
     let mut fonts = Fonts::new();
-    let mut pm = Pixmap::new(W, H).unwrap();
+    let mut pm = Pixmap::new(w, h).unwrap();
     app.refresh_derived();
     let _ = render(&mut app, &mut fonts, &mut pm, 1.0);
-    println!("ventana {W}x{H} · escala 1.0 · nota abierta + panel derecho");
+    println!("ventana {w}x{h} · escala 1.0 · nota abierta + panel derecho");
 
     // Baseline frame at 1x.
     let t = Instant::now();
@@ -41,7 +41,7 @@ fn main() {
     println!("frame 1x    {:>7.2} ms promedio", ms(t.elapsed()) / 20.0);
 
     // The HiDPI bill: the same frame at 2x (a 200 % display rasters 4x the pixels).
-    let mut pm2 = Pixmap::new(W * 2, H * 2).unwrap();
+    let mut pm2 = Pixmap::new(w * 2, h * 2).unwrap();
     let t = Instant::now();
     for _ in 0..20 {
         app.refresh_derived();
