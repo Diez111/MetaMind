@@ -3011,15 +3011,17 @@ fn video_fullscreen(app: &App, dom: &mut Dom, parent: NodeId) {
 /// the backdrop and Escape close it.
 fn diagram_zoom(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate::rich::Item>) {
     let Some(src) = &app.diagram_zoom else { return };
-    let w = (app.window_w - 120.0).max(160.0);
-    let h = (viewport_h - 120.0).max(120.0);
+    // The diagram takes the whole window: it is what the reader asked to see, and the note behind
+    // it is of no use while it is open.
+    let w = app.window_w.max(160.0);
+    let h = viewport_h.max(120.0);
     let backdrop = dom.add(0, El::div().class("modal-container mod-dim").action("mermaid:zoom-close"));
     let modal = dom.add(
         backdrop,
         El::div()
-            .class("modal mod-diagram")
+            .class("modal mod-diagram is-full")
             .action("mermaid:zoom-close")
-            .style(&format!("width: {w:.0}px; height: {h:.0}px")),
+            .style(&format!("width: {w:.0}px; height: {h:.0}px; max-width: none")),
     );
     if app.diagram_zoom_source {
         crate::rich::add_zoom_source(dom, modal, src, w - 36.0, h - 64.0);
@@ -3037,6 +3039,9 @@ fn diagram_zoom(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate:
             },
         );
     }
+    let close = dom.add(modal, El::div().class("diagram-zoom-close").action("mermaid:zoom-close"));
+    dom.nodes[close].el.attrs.push(("aria-label".into(), "Cerrar el diagrama".into()));
+    dom.add(close, icons::el("x"));
     let hint = if app.diagram_zoom_source {
         "Doble clic para ver el diagrama · Esc o clic fuera para cerrar"
     } else {

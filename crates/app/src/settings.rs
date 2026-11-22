@@ -178,6 +178,9 @@ pub struct SettingsUi {
     pub ai_edit: Option<usize>,
     /// In a phone-sized panel, whether the page is in front (the list of categories behind it).
     pub page: bool,
+    /// Set when a list was just opened: after layout, the panel scrolls so the whole list is in
+    /// sight. A list below the edge of the viewport cannot be clicked: the click lands on the veil.
+    pub scroll_menu: bool,
     /// The open dropdown: which control it belongs to, its options and the highlighted one.
     pub menu: Option<SettingsMenu>,
 }
@@ -326,6 +329,7 @@ impl SettingsUi {
             nav: None,
             ai_edit: None,
             page: false,
+            scroll_menu: false,
             menu: None,
         };
         s.scan(app);
@@ -817,7 +821,18 @@ impl App {
             }
         }
         match op {
-            "close" => self.settings = None,
+            // A click outside closes the open list first: choosing a provider must never take the
+            // panel away from the reader, and the list is drawn over the part the veil covers.
+            "close" => {
+                let had_menu = self.settings.as_ref().is_some_and(|s| s.menu.is_some());
+                if let Some(s) = &mut self.settings {
+                    if had_menu {
+                        s.menu = None;
+                    } else {
+                        self.settings = None;
+                    }
+                }
+            }
             "back" => {
                 if let Some(s) = &mut self.settings {
                     s.page = false;
@@ -1229,6 +1244,7 @@ impl App {
                 let at = cur.and_then(|c| options.iter().position(|(v, _)| *v == c)).unwrap_or(0);
                 if let Some(s) = &mut self.settings {
                     s.menu = Some(SettingsMenu { key: arg.to_string(), options, at });
+                    s.scroll_menu = true;
                 }
             }
             "menu-move" => {
@@ -1528,7 +1544,7 @@ fn dropdown(dom: &mut Dom, ctl: NodeId, ui: &SettingsUi, key: &str, label: &str,
     let main = dom.nodes[ctl].parent.unwrap_or(ctl);
     let row = dom.nodes[main].parent.unwrap_or(main);
     let wrap = dom.add(row, El::div().class("setting-menu-wrap"));
-    let menu = dom.add(wrap, El::div().class("setting-menu").attr("role", "listbox"));
+    let menu = dom.add(wrap, El::div().class("setting-menu").id("settings-menu").attr("role", "listbox"));
     for (i, (value, text)) in m.options.iter().enumerate() {
         dom.add(
             menu,

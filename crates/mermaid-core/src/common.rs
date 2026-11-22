@@ -93,6 +93,9 @@ pub(crate) struct Draw {
     items: Vec<Item>,
     lo: (f32, f32),
     hi: (f32, f32),
+    /// The boxes the labels already took, in diagram coordinates. A label is text nobody can
+    /// read if another one lands on it, so every new one looks for a free spot first.
+    labels: Vec<(f32, f32, f32, f32)>,
 }
 
 /// A finished drawing whose top left corner is `(0, 0)`.
@@ -110,7 +113,7 @@ impl Default for Draw {
 
 impl Draw {
     pub fn new() -> Self {
-        Draw { items: Vec::new(), lo: (f32::MAX, f32::MAX), hi: (f32::MIN, f32::MIN) }
+        Draw { items: Vec::new(), lo: (f32::MAX, f32::MAX), hi: (f32::MIN, f32::MIN), labels: Vec::new() }
     }
 
     pub fn grow(&mut self, x0: f32, y0: f32, x1: f32, y1: f32) {
@@ -586,11 +589,68 @@ pub(crate) fn mid_label(d: &mut Draw, m: &mut dyn Measure, pts: &[(f32, f32)], t
     if text.is_empty() {
         return;
     }
-    let (x, y) = mid(pts);
     let size = 12.0;
     let w = m.width(text, size, false) + 10.0;
+    let h = size * 1.5;
+    let total = length(pts);
+    // The middle of the line, then along it and off to the sides: a fan of links leaving one node
+    // shares its middle, and that is exactly where two labels used to land on top of each other.
+    let mut best: Option<((f32, f32), f32)> = None;
+    for dy in [0.0, -1.0, 1.0, -2.0, 2.0] {
+        for frac in [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74] {
+            let (x, y) = at(pts, total * frac);
+            let y = y + dy * (h + 2.0);
+            let over = d.overlap(x - w / 2.0, y - h / 2.0, w, h);
+            if over <= 0.0 {
+                best = Some(((x, y), over));
+                break;
+            }
+            if best.is_none_or(|(_, b)| over < b) {
+                best = Some(((x, y), over));
+            }
+        }
+        if best.is_some_and(|(_, over)| over <= 0.0) {
+            break;
+        }
+    }
+    let (x, y) = best.map_or_else(|| mid(pts), |(p, _)| p);
+    d.labels.push((x - w / 2.0, y - h / 2.0, w, h));
     d.band(x - w / 2.0, y - size * 0.75, w, size * 1.5, 3.0, Fill::Background);
     d.text(m, x, y, text, false, size);
+}
+
+impl Draw {
+    /// How much of a box lands on a label already placed, in square units.
+    fn overlap(&self, x: f32, y: f32, w: f32, h: f32) -> f32 {
+        let mut sum = 0.0;
+        for &(lx, ly, lw, lh) in &self.labels {
+            let dx = (x + w).min(lx + lw) - x.max(lx);
+            let dy = (y + h).min(ly + lh) - y.max(ly);
+            if dx > 0.0 && dy > 0.0 {
+                sum += dx * dy;
+            }
+        }
+        sum
+    }
+}
+
+/// The length of a polyline.
+fn length(pts: &[(f32, f32)]) -> f32 {
+    pts.windows(2).map(|w| ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt()).sum()
+}
+
+/// The point `walk` units along a polyline from its start.
+fn at(pts: &[(f32, f32)], walk: f32) -> (f32, f32) {
+    let mut left = walk.max(0.0);
+    for w in pts.windows(2) {
+        let l = ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt();
+        if left <= l && l > 0.0 {
+            let t = left / l;
+            return (w[0].0 + (w[1].0 - w[0].0) * t, w[0].1 + (w[1].1 - w[0].1) * t);
+        }
+        left -= l;
+    }
+    pts.last().copied().unwrap_or((0.0, 0.0))
 }
 
 /// Writes the text of one end of a link beside its endpoint, `angle` pointing inwards.

@@ -642,6 +642,23 @@ fn the_copilot_sheet_slides_in_and_reduced_motion_skips_it() {
     let (sheet, ws) =
         (classed(&now, "ai-sheet").expect("the sheet"), classed(&now, "workspace").expect("the workspace"));
     assert!((now.dom.nodes[sheet].rect.x - now.dom.nodes[ws].rect.x).abs() < 1.0);
+
+    // And it leaves the way it came: the frame after the close still draws it, on its way out.
+    app.set_reduced_motion(false);
+    app.run("ai:open");
+    let _ = frame(&mut app, &mut fonts, 360, 640);
+    std::thread::sleep(std::time::Duration::from_millis(260));
+    let _ = frame(&mut app, &mut fonts, 360, 640);
+    app.run("ai:close");
+    let leaving = frame(&mut app, &mut fonts, 360, 640);
+    assert!(app.anims.active(), "closing the sheet starts its clock too");
+    let sheet = classed(&leaving, "ai-sheet").expect("it is still drawn while it leaves");
+    let ws = classed(&leaving, "workspace").expect("the workspace");
+    let away = leaving.dom.nodes[sheet].rect.x - leaving.dom.nodes[ws].rect.x;
+    assert!(away > 1.0, "it has left its place: {away}");
+    std::thread::sleep(std::time::Duration::from_millis(260));
+    let gone = frame(&mut app, &mut fonts, 360, 640);
+    assert!(classed(&gone, "ai-sheet").is_none(), "and it is gone once the clock is done");
 }
 
 #[test]
@@ -834,11 +851,14 @@ fn the_copilot_sheet_takes_the_editing_keys_from_the_note_behind_it() {
         assert!(app.ai.editing, "{name} gives the field the caret, like a typed letter");
     }
 
-    // The palette opens over the sheet, so it is the palette the keyboard speaks to, and Escape
-    // closes the one on top.
+    // The palette opens over the sheet, so it is the palette the keyboard speaks to: the letters
+    // and the keys that edit text are the palette's, and Escape closes the one on top.
     app.run("command-palette:open");
-    app.text_input("a");
-    assert!(!app.ai.input.contains('a'), "typing reaches the palette, not the question: {:?}", app.ai.input);
+    app.text_input("zzzz");
+    assert!(!app.ai.input.contains('z'), "typing reaches the palette, not the question: {:?}", app.ai.input);
+    app.key(Key::parse("Enter").unwrap());
+    assert!(!app.ai.editing, "Enter is the palette's, not the field's behind it");
+    assert!(app.ai.input.is_empty(), "the question is untouched: {:?}", app.ai.input);
     app.key(Key::parse("Escape").unwrap());
     assert!(app.ai_sheet(), "Escape closes the palette, not the sheet under it");
     app.key(Key::parse("Escape").unwrap());

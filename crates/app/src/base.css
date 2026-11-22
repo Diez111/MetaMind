@@ -982,3 +982,15 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .settings-back { width: 26px; height: 26px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-s); color: var(--text-muted); cursor: pointer }
 .settings-back:hover { background-color: var(--background-modifier-hover); color: var(--text-normal) }
 .settings-back-icon { width: 16px; height: 16px; transform: scaleX(-1) }
+
+/* A diagram open for reading takes the window, with its way out in the corner. */
+.modal.mod-diagram.is-full { border-radius: 0; border-left: none; border-right: none; border-top: none; padding: 44px 12px 12px 12px }
+.diagram-zoom-close { position: absolute; top: 8px; right: 10px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-s); color: var(--text-muted); background-color: var(--background-secondary); cursor: pointer }
+.diagram-zoom-close:hover { background-color: var(--background-modifier-hover); color: var(--text-normal) }
+
+/* An open list takes the width it is given and centres its rows: a menu that sat at the left of
+   a column left empty space beside it and read as a table of leftovers. */
+.modal.mod-settings.is-single .setting-menu,
+.modal.mod-settings.is-narrow .setting-menu { width: 100%; max-width: none }
+.modal.mod-settings.is-single .setting-menu-item,
+.modal.mod-settings.is-narrow .setting-menu-item { text-align: center }

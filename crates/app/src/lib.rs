@@ -116,6 +116,27 @@ pub fn render_window(
     if let Some(ws) = info.workspace.and_then(|n| dom.nodes.get(n)) {
         app.video_area = (ws.rect.w, ws.rect.h);
     }
+    // A list opened in the settings panel is brought into view before anything is drawn over it:
+    // a row below the edge of the scrollport cannot be clicked, and the click lands on the veil.
+    if app.settings.as_ref().is_some_and(|s| s.scroll_menu) {
+        if let Some(s) = &mut app.settings {
+            s.scroll_menu = false;
+        }
+        if let (Some(menu), Some(view)) = (dom.by_id("settings-menu"), dom.by_id("settings-content")) {
+            let (m, v) = (dom.nodes[menu].rect, dom.nodes[view].rect);
+            let over = (m.y + m.h) - (v.y + v.h);
+            if over > 0.0 {
+                let max = dom.max_scroll(view);
+                let now = dom.nodes[view].scroll_y;
+                let want = (now + over + 8.0).min(max);
+                app.scrolls.insert("settings-content".to_string(), want);
+                // The tree is already built: the scroll has to land on the node itself before the
+                // second layout, which is what the reader (and the pointer) see.
+                dom.nodes[view].scroll_y = want;
+                dom.layout(fonts, pixmap.width() as f32 / scale, pixmap.height() as f32 / scale);
+            }
+        }
+    }
     view::scroll_views(app, &mut dom, &info);
     // The suggestion and the composing text sit at the caret, which is only known after layout.
     let caret = view::caret_rect(app, &dom, &info, fonts);
@@ -567,12 +588,29 @@ impl App {
             return;
         }
         let Some((_, action)) = frame.dom.action_at(x, y) else { return };
+        // The middle button of an editor opens in a split, the way it does everywhere: a note of
+        // the explorer or of a search result, or the note of the tab under the pointer.
+        if let Some(rel) = action.strip_prefix("open:") {
+            let rel = rel.to_string();
+            if self.tab().is_some_and(|t| t.path != rel) {
+                self.run("workspace:split-vertical");
+                self.open_note(&rel);
+                return;
+            }
+        }
+        if let Some(i) = action.strip_prefix("tab:") {
+            if let Ok(i) = i.parse::<usize>() {
+                self.active = i;
+                self.run("workspace:split-vertical");
+                return;
+            }
+        }
         match action {
             "graph:focus" => self.run("graph:close"),
             "canvas:focus" => self.run("canvas:close"),
             "base:focus" => self.run("base:close"),
             a => {
-                if let Some(i) = a.strip_prefix("tab:").or_else(|| a.strip_prefix("close-tab:")) {
+                if let Some(i) = a.strip_prefix("close-tab:") {
                     let cmd = format!("close-tab:{i}");
                     self.run(&cmd);
                 }

@@ -890,3 +890,45 @@ fn a_skill_rides_along_with_every_question_of_its_profile() {
     let cfg = metamind_app::ai::AiConfig::from_config(&app.config);
     assert!(cfg.profiles.first().unwrap().skills.is_empty());
 }
+
+#[test]
+fn picking_a_provider_keeps_the_panel_open() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    app.run("settings:section:ai");
+    app.run("settings:menu:ai.preset:0");
+    app.run("settings:pick:ai.preset:0:1");
+    assert!(app.settings.is_some(), "picking a provider must not close the panel");
+    let cfg = metamind_app::ai::AiConfig::from_config(&app.config);
+    let first = cfg.profiles.first().cloned().unwrap();
+    assert_eq!(first.base_url, "https://opencode.ai/inference/go/openai/v1", "the provider was applied");
+}
+
+#[test]
+fn a_click_on_a_provider_row_keeps_the_panel_open() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    let mut fonts = metamind_ui::Fonts::new();
+    app.run("app:open-settings");
+    app.run("settings:section:ai");
+    app.run("settings:menu:ai.preset:0");
+    let frame = draw(&mut app);
+    let row = frame
+        .dom
+        .nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| n.el.classes.iter().any(|c| c == "setting-menu-item"))
+        .map(|(i, n)| (i, n.rect))
+        .find(|(i, _)| frame.dom.nodes[*i].el.text.as_deref() == Some("OpenCode Go"))
+        .expect("the provider is a row of the open list");
+    let at = (row.1.x + row.1.w / 2.0, row.1.y + row.1.h / 2.0);
+    app.click(&frame, &mut fonts, at.0, at.1, false);
+    assert!(app.settings.is_some(), "the panel stays open after choosing a provider");
+    let cfg = metamind_app::ai::AiConfig::from_config(&app.config);
+    assert_eq!(
+        cfg.profiles.first().map(|p| p.base_url.clone()).unwrap_or_default(),
+        "https://opencode.ai/inference/go/openai/v1"
+    );
+}

@@ -2368,8 +2368,9 @@ impl App {
             return true;
         }
         // A key that would edit text belongs to the question, never to the note the sheet hides:
-        // it gives the field back its caret, which is what a typed letter does.
-        if self.ai_sheet() && !key.ctrl && !key.alt && edits_text(&key.key) {
+        // it gives the field back its caret, which is what a typed letter does. With the palette
+        // over the sheet, the palette keeps its keys.
+        if self.ai_sheet() && self.prompt.is_none() && !key.ctrl && !key.alt && edits_text(&key.key) {
             self.ai.editing = true;
             self.suggest = None;
             return true;
