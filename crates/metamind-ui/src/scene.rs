@@ -339,19 +339,15 @@ fn thin_line(rows: &mut [u8], stride: usize, band: &DevClip, s: [f32; 4], c: [u3
     // `u` runs along the major axis, `v` across it.
     let (u0, u1, v0, v1) =
         if steep { (band.y0, band.y1, band.x0, band.x1) } else { (band.x0, band.x1, band.y0, band.y1) };
-    let (mut from, mut to) = (xs.max(u0), (xe + 1).min(u1));
-    if !steep && grad.abs() > 1e-6 {
-        // Only the stretch of a shallow line that crosses this band.
-        let at = |v: f32| xs as f32 + (v - y) / grad;
-        let (a, b) = (at(v0 as f32 - 1.5), at(v1 as f32 + 0.5));
-        from = from.max(a.min(b).floor() as i32);
-        to = to.min(a.max(b).ceil() as i32 + 1);
-    }
+    let (from, to) = (xs, xe + 1);
     if from >= to {
         return;
     }
-    // 16.16 fixed point across the minor axis: no float rounding per pixel.
-    let mut yf = ((y + grad * (from - xs) as f32) * 65536.0) as i32;
+    // 16.16 fixed point across the minor axis: no float rounding per pixel. The walk always starts
+    // at the same end of the line and every write is filtered by the band, so a line rasterized in
+    // bands (or in a dirty rect) lands on exactly the same pixels as one rasterized whole: the
+    // fixed point step truncates, and starting mid-line would shift every fraction by one.
+    let mut yf = (y * 65536.0) as i32;
     let step = (grad * 65536.0) as i32;
     let alpha = alpha as u32;
     for u in from..to {
@@ -359,7 +355,7 @@ fn thin_line(rows: &mut [u8], stride: usize, band: &DevClip, s: [f32; 4], c: [u3
         let far = (alpha * ((yf & 0xffff) as u32 >> 8)) >> 8;
         yf = yf.wrapping_add(step);
         for (v, a) in [(v, alpha - far), (v + 1, far)] {
-            if v >= v0 && v < v1 {
+            if v >= v0 && v < v1 && u >= u0 && u < u1 {
                 let (px, py) = if steep { (v, u) } else { (u, v) };
                 let o = ((py - band.y0) as usize * stride + px as usize) * 4;
                 blend(&mut rows[o..o + 4], c, a);
