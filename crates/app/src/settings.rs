@@ -625,6 +625,9 @@ impl App {
             } else {
                 self.prompt = None;
                 self.prop_edit = None;
+                // The editor's suggestion popover is drawn after the window's overlays, so it
+                // would sit on top of the settings scrim: nothing of the editor stays on.
+                self.suggest = None;
                 self.settings = Some(SettingsUi::new(self));
                 self.scrolls.remove("settings-content");
             }
@@ -641,8 +644,14 @@ impl App {
         }
         match op {
             "close" => self.settings = None,
-            "section" => {
-                if let Some(sec) = section_for_slug(arg) {
+            "section" | "badge" => {
+                // The count on the Plugins nav item opens that page too, so the badge is a
+                // shortcut with a hint rather than a number nobody can place.
+                let sec = match op {
+                    "badge" => Some(Section::Plugins),
+                    _ => section_for_slug(arg),
+                };
+                if let Some(sec) = sec {
                     let at = SECTIONS.iter().position(|s| s.0 == sec);
                     if let Some(s) = &mut self.settings {
                         s.section = sec;
@@ -1058,15 +1067,42 @@ fn button(dom: &mut Dom, ctl: NodeId, label: &str, action: String, cta: bool) {
     dom.add(ctl, El::div().class("setting-button").class_if(cta, "mod-cta").text(label).action(action));
 }
 
+/// The value a text setting takes while its field is empty: the default the app already
+/// applies, so the control says what is in force instead of looking broken.
+fn text_placeholder(key: &str) -> Option<&'static str> {
+    match key {
+        // `--font-text` in the base sheet, which is what the notes are set in until one is picked.
+        "textFontFamily" => Some("sans-serif"),
+        // hsl(258, 88%, 66%): the accent of the default scheme, the one the chip beside the
+        // field shows.
+        "accentColor" => Some("#8a5cf5"),
+        _ => None,
+    }
+}
+
 /// A text control. While it is the one being edited it gets the keyboard focus ring.
-fn input(dom: &mut Dom, ctl: NodeId, key: &str, shown: &str, edit: Option<&(String, String)>) -> NodeId {
+/// `placeholder` is what an empty field shows, in the faint colour of a hint.
+fn input(
+    dom: &mut Dom,
+    ctl: NodeId,
+    key: &str,
+    shown: &str,
+    edit: Option<&(String, String)>,
+    placeholder: Option<&str>,
+) -> NodeId {
     let editing = edit.filter(|e| e.0 == key);
-    let text = editing.map_or_else(|| shown.to_string(), |e| format!("{}▏", e.1));
+    let placeholder = placeholder.filter(|p| !p.is_empty() && shown.trim().is_empty() && editing.is_none());
+    let text = match (editing, placeholder) {
+        (Some(e), _) => format!("{}▏", e.1),
+        (None, Some(p)) => p.to_string(),
+        (None, None) => shown.to_string(),
+    };
     let id = dom.add(
         ctl,
         El::div()
             .class("setting-input")
             .class_if(editing.is_some(), "is-editing")
+            .class_if(placeholder.is_some(), "is-placeholder")
             .text(text)
             .action(format!("settings:edit:{key}")),
     );
@@ -1127,8 +1163,7 @@ fn theme_swatches(dom: &mut Dom, ctl: NodeId, current: &str) {
             item,
             El::div()
                 .class("theme-swatch")
-                .class_if(s.value == current, "is-active")
-                .style(&format!("background-color: {}; border-color: {};", s.bg, s.bar))
+                .style(&format!("background-color: {};", s.bg))
                 .attr("data-value", s.value)
                 .action(format!("settings:set:theme:{}", s.value)),
         );
@@ -1176,7 +1211,14 @@ fn items_view(
                 );
             }
             Text => {
-                input(dom, ctl, it.key, file.str(it.key).unwrap_or(""), ui.edit.as_ref());
+                input(
+                    dom,
+                    ctl,
+                    it.key,
+                    file.str(it.key).unwrap_or(""),
+                    ui.edit.as_ref(),
+                    text_placeholder(it.key),
+                );
                 match it.key {
                     "accentColor" => {
                         let color = file
@@ -1206,7 +1248,7 @@ fn items_view(
             }
             Number(d, ..) => {
                 let n = file.get(it.key).and_then(Value::as_f64).unwrap_or(*d);
-                input(dom, ctl, it.key, &vault_core_num(n), ui.edit.as_ref());
+                input(dom, ctl, it.key, &vault_core_num(n), ui.edit.as_ref(), None);
             }
         }
     }
@@ -1235,7 +1277,7 @@ fn appearance_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, pr
 fn hotkeys_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     let ctl = row(dom, parent, "Filtrar", "Muestra los comandos cuyo nombre contiene este texto.");
     let shown = if ui.filter.is_empty() { "Filtrar comandos…" } else { &ui.filter };
-    input(dom, ctl, "hk-filter", shown, ui.edit.as_ref());
+    input(dom, ctl, "hk-filter", shown, ui.edit.as_ref(), None);
     let needle = ui.filter.to_lowercase();
     let custom = app.config.hotkeys.value.as_object();
     for (id, name, _) in COMMANDS.iter().filter(|c| c.1.to_lowercase().contains(&needle)) {
@@ -1414,7 +1456,7 @@ fn plugin_detail_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi,
             }
             crate::plugins::SettingKind::Text(_) => {
                 let shown = current.as_str().unwrap_or("");
-                input(dom, ctl, &format!("@{}:{}", p.id, s.key), shown, ui.edit.as_ref());
+                input(dom, ctl, &format!("@{}:{}", p.id, s.key), shown, ui.edit.as_ref(), None);
             }
         }
     }
@@ -1663,9 +1705,15 @@ pub fn modal(app: &App, dom: &mut Dom) {
     let search_box = dom.add(bar, El::div().class("settings-search"));
     dom.add(search_box, icons::el("search").class("settings-search-icon"));
     let search = ui.edit.as_ref().filter(|e| e.0 == "search").map_or(ui.search.as_str(), |e| e.1.as_str());
-    let shown = if ui.search.is_empty() { "Buscar ajustes…" } else { &ui.search };
-    input(dom, search_box, "search", shown, ui.edit.as_ref());
-    dom.add(bar, El::div().class("settings-topbar-hint").text("Ctrl+, · Esc cierra"));
+    input(dom, search_box, "search", search, ui.edit.as_ref(), Some("Buscar ajustes…"));
+    // The hint only says how to close: Ctrl+, is what opens this window, and it is in the
+    // command list and the ribbon already.
+    dom.add(bar, El::div().class("settings-topbar-hint").text("Esc cierra"));
+    let close = dom.add(
+        bar,
+        El::div().class("settings-topbar-close").attr("aria-label", "Cerrar ajustes").action("settings:close"),
+    );
+    dom.add(close, icons::el("x"));
 
     let body = dom.add(modal, El::div().class("settings-body"));
     let tabs = dom.add(body, El::div().class("vertical-tab-header"));
@@ -1683,7 +1731,15 @@ pub fn modal(app: &App, dom: &mut Dom) {
         dom.add(item, El::div().class("vertical-tab-nav-label").text(*name));
         if *sec == Section::Plugins {
             let n = app.plugin_registry().enabled_count();
-            dom.add(item, El::div().class("vertical-tab-nav-badge").text(n.to_string()));
+            // Its own action, so hovering the badge explains the number in the status bar
+            // instead of leaving it as a mark with no meaning; it opens the same page.
+            dom.add(
+                item,
+                El::div()
+                    .class("vertical-tab-nav-badge")
+                    .text(n.to_string())
+                    .action(format!("settings:badge:{n}")),
+            );
         }
         if ui.nav == Some(i) {
             dom.nodes[item].focus = true;

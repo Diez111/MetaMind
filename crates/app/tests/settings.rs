@@ -451,3 +451,205 @@ fn the_settings_sidebar_has_an_icon_for_every_category() {
     assert_eq!(notes, ["Los cambios se guardan al instante."], "{notes:?}");
     assert!(texts(&frame, "setting-footer").is_empty());
 }
+
+/// The `.setting-item` row whose name is `name`.
+fn setting_row(frame: &metamind_app::Frame, name: &str) -> Option<usize> {
+    let name = frame.dom.nodes.iter().position(|n| {
+        n.el.classes.iter().any(|c| c == "setting-item-name") && n.el.text.as_deref() == Some(name)
+    })?;
+    let mut cur = frame.dom.nodes[name].parent;
+    while let Some(id) = cur {
+        if frame.dom.nodes[id].el.classes.iter().any(|c| c == "setting-item") {
+            return Some(id);
+        }
+        cur = frame.dom.nodes[id].parent;
+    }
+    None
+}
+
+/// As many snippets as it takes for the appearance page to be taller than the box it scrolls in.
+fn vault_with_a_long_appearance_page() -> tempfile::TempDir {
+    let d = vault();
+    fs::create_dir_all(d.path().join(".obsidian/snippets")).unwrap();
+    for i in 1..=8 {
+        fs::write(d.path().join(format!(".obsidian/snippets/s{i}.css")), "").unwrap();
+    }
+    d
+}
+
+/// Scrolled to the end, the last row of the appearance page stays inside the box the modal gives
+/// it. It used to sit on the bottom edge: the scroller's bottom padding was not part of the
+/// height its content was measured at, so the last rows of a long list looked cut.
+#[test]
+fn settings_last_row_stays_inside_the_scroll_box() {
+    let d = vault_with_a_long_appearance_page();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    let frame = draw(&mut app);
+    let content = frame.dom.by_id("settings-content").expect("the settings page scrolls");
+    let max = frame.dom.max_scroll(content);
+    assert!(max > 0.0, "the appearance page must be taller than its box for this test");
+    app.scrolls.insert("settings-content".into(), max);
+
+    let frame = draw(&mut app);
+    let content = frame.dom.by_id("settings-content").unwrap();
+    let box_ = frame.dom.nodes[content].rect;
+    let row = setting_row(&frame, "Mostrar barra de título de la pestaña").expect("the last appearance row");
+    let r = frame.dom.nodes[row].rect;
+    assert!(
+        r.y + r.h <= box_.y + box_.h,
+        "the last row ({:.1}..{:.1}) reached past its box ({:.1}..{:.1})",
+        r.y,
+        r.y + r.h,
+        box_.y,
+        box_.y + box_.h
+    );
+}
+
+/// The settings window dims the whole window and nothing of the note reads through it: the scrim
+/// is the window's rectangle, it is painted after every node of the window under it, and it is
+/// opaque enough to hide the bright parts of the editor (a callout's bar) at the modal's edges.
+#[test]
+fn settings_scrim_covers_the_whole_window() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("Home");
+    app.dark = true;
+    app.run("app:open-settings");
+    let frame = draw(&mut app);
+    let scrim = frame
+        .dom
+        .nodes
+        .iter()
+        .position(|n| n.el.classes.iter().any(|c| c == "modal-container"))
+        .expect("the settings window has a scrim");
+    let r = frame.dom.nodes[scrim].rect;
+    assert_eq!((r.x, r.y, r.w, r.h), (0.0, 0.0, 1280.0, 900.0), "the scrim must be the window");
+    let bg = frame.dom.nodes[scrim].style.background;
+    assert!(bg.a >= 178, "the scrim lets {} of 255 through", 255 - bg.a);
+    // In document order, which is paint order here: only menus, notices and the perf overlay are
+    // drawn over it.
+    let over: Vec<&str> = frame.dom.nodes[0].children[frame.dom.nodes[0].children.iter().position(|&c| c == scrim).unwrap()..]
+        .iter()
+        .filter_map(|&c| frame.dom.nodes[c].el.classes.first().map(String::as_str))
+        .collect();
+    for class in over {
+        assert!(
+            ["modal-container", "menu", "notice", "perf-overlay"].contains(&class),
+            "{class} paints over the scrim"
+        );
+    }
+}
+
+/// One selection indicator for the three scheme previews, and three previews of one width.
+#[test]
+fn theme_swatches_share_one_selection_ring() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    let frame = draw(&mut app);
+    let items: Vec<usize> = (0..frame.dom.nodes.len())
+        .filter(|&i| frame.dom.nodes[i].el.classes.iter().any(|c| c == "theme-swatch-item"))
+        .collect();
+    assert_eq!(items.len(), 3);
+    let widths: Vec<f32> = items.iter().map(|&i| frame.dom.nodes[i].rect.w).collect();
+    let swatches: Vec<f32> = frame
+        .dom
+        .nodes
+        .iter()
+        .filter(|n| n.el.classes.iter().any(|c| c == "theme-swatch"))
+        .map(|n| n.rect.w)
+        .collect();
+    assert_eq!(swatches.len(), 3);
+    for (a, b) in [(widths[0], widths[1]), (widths[1], widths[2])] {
+        assert!((a - b).abs() < 0.01, "the previews are not one width: {widths:?}");
+    }
+    for (a, b) in [(swatches[0], swatches[1]), (swatches[1], swatches[2])] {
+        assert!((a - b).abs() < 0.01, "the boxes are not one width: {swatches:?}");
+    }
+    // One ring, the same width on all three, and only the current scheme lights it.
+    let rings: Vec<f32> = items.iter().map(|&i| frame.dom.nodes[i].style.border[0]).collect();
+    assert_eq!(rings, [2.0, 2.0, 2.0], "the ring must not resize the selected preview");
+    let lit: Vec<usize> =
+        items.iter().copied().filter(|&i| frame.dom.nodes[i].style.border_color[0].a > 128).collect();
+    assert_eq!(lit.len(), 1, "exactly one scheme is marked as current");
+}
+
+/// The two text settings that were blank say what applies while they are empty, and that value is
+/// the one the theme really uses.
+#[test]
+fn empty_text_settings_show_their_default() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    let frame = draw(&mut app);
+    let placeholders: Vec<(&str, usize)> = frame
+        .dom
+        .nodes
+        .iter()
+        .filter(|n| n.el.classes.iter().any(|c| c == "is-placeholder"))
+        .filter_map(|n| Some((n.el.text.as_deref()?, n.el.classes.len())))
+        .collect();
+    let shown: Vec<&str> = placeholders.iter().map(|(t, _)| *t).collect();
+    assert!(shown.contains(&"sans-serif"), "the font field shows the default font: {shown:?}");
+    assert!(shown.contains(&"#8a5cf5"), "the accent field shows the default accent: {shown:?}");
+    // The font default is the one the notes are set in, and the accent is the colour of the chip.
+    let vars = &frame.dom.nodes[0].computed;
+    assert_eq!(vars.var("--font-text").as_deref(), Some("sans-serif"));
+    assert_eq!(vars.var("--interactive-accent").as_deref(), Some("hsl(258, 88%, 66%)"));
+}
+
+/// The header says how to close the window (Ctrl+, opens it, it does not close it) and the × on
+/// the right closes it.
+#[test]
+fn settings_header_says_esc_and_has_a_close_button() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    let frame = draw(&mut app);
+    assert_eq!(texts(&frame, "settings-topbar-hint"), ["Esc cierra"]);
+    let close = frame
+        .dom
+        .nodes
+        .iter()
+        .position(|n| n.el.classes.iter().any(|c| c == "settings-topbar-close"))
+        .expect("the header has a close button");
+    assert_eq!(frame.dom.nodes[close].el.action.as_deref(), Some("settings:close"));
+    let icon = frame.dom.nodes[close].children[0];
+    assert_eq!(
+        frame.dom.nodes[icon].el.attrs.iter().find(|(k, _)| k == "data-icon").map(|(_, v)| v.as_str()),
+        Some("x")
+    );
+    assert!(!frame.dom.nodes[icon].draw.is_empty(), "the × is drawn, not a hole");
+    app.run("settings:close");
+    assert!(app.settings.is_none(), "the × closes the window");
+}
+
+/// The number beside Plugins is the count of active built-in plugins: it opens that page and the
+/// status bar says what it is while the pointer is on it.
+#[test]
+fn plugins_badge_explains_itself() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    let frame = draw(&mut app);
+    let badge = frame
+        .dom
+        .nodes
+        .iter()
+        .position(|n| n.el.classes.iter().any(|c| c == "vertical-tab-nav-badge"))
+        .expect("Plugins carries its count");
+    let action = frame.dom.nodes[badge].el.action.clone().expect("the badge has an action");
+    let n: usize = action.strip_prefix("settings:badge:").expect(&action).parse().unwrap();
+    assert!(n > 0);
+    app.hover_action = Some(action.clone());
+    let frame = draw(&mut app);
+    let hint = texts(&frame, "status-bar-hint");
+    assert!(
+        hint.iter().any(|h| h.contains(&format!("{n} plugins integrados activos"))),
+        "the status bar explains the badge: {hint:?}"
+    );
+    app.run(&action);
+    let frame = draw(&mut app);
+    assert!(texts(&frame, "settings-section-title").contains(&"Plugins"), "{action} opens Plugins");
+}

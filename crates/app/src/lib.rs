@@ -54,6 +54,12 @@ pub const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 pub const MIN_DIAGRAM_ZOOM: f32 = 0.4;
 pub const MAX_DIAGRAM_ZOOM: f32 = 4.0;
 
+/// The scrollbar colour the theme asks for (`--scrollbar-thumb`), so the bar of the note and
+/// the bar of a modal are painted alike and follow the scheme.
+pub(crate) fn scrollbar_thumb(dom: &Dom) -> Option<theme_engine::Color> {
+    dom.nodes.first()?.computed.var("--scrollbar-thumb").and_then(|v| theme_engine::parse_color(&v))
+}
+
 /// One rendered frame and the information needed to map input back onto it.
 pub struct Frame {
     pub dom: Dom,
@@ -88,6 +94,7 @@ pub fn render_window(
     let (mut dom, info) = view::build(app, pixmap.height() as f32 / scale, solo);
     let env = app.env();
     dom.style(&app.theme, env);
+    dom.scrollbar_thumb = scrollbar_thumb(&dom);
     dom.layout(fonts, pixmap.width() as f32 / scale, pixmap.height() as f32 / scale);
     // The box the over-window overlays live in, once it has been laid out: the workspace, with
     // the status bar already out of it. The video player asks for a frame that fits it.

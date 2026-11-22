@@ -21,6 +21,8 @@
     --code-normal: #ffffff !important;
     --tag-color: #ffe600 !important;
     --caret-color: #ffffff !important;
+    --scrollbar-thumb: rgba(255, 255, 255, 0.6) !important;
+    --background-modifier-cover: rgba(0, 0, 0, 0.85) !important;
   }
   .theme-light {
     --background-primary: #ffffff !important;
@@ -43,5 +45,7 @@
     --code-normal: #000000 !important;
     --tag-color: #0000c0 !important;
     --caret-color: #000000 !important;
+    --scrollbar-thumb: rgba(0, 0, 0, 0.6) !important;
+    --background-modifier-cover: rgba(255, 255, 255, 0.8) !important;
   }
 }
