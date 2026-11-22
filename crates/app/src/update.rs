@@ -84,7 +84,11 @@ fn tool(name: &str) -> Command {
 
 fn curl(url: &str, out: Option<&Path>) -> Result<Vec<u8>, String> {
     let mut cmd = tool("curl");
-    cmd.args(["-fsSL", "--max-time", "300", "-H", "Accept: application/vnd.github+json"]);
+    // `-q` first: the user's `~/.curlrc` cannot add flags (an `--insecure` there would turn
+    // certificate checking off for the update) and a redirect cannot drop to `file://` or another
+    // protocol. TLS verification itself is curl's default and is never disabled here.
+    cmd.args(["-q", "-fsSL", "--proto-redir", "=https,http", "--max-time", "300"]);
+    cmd.args(["-H", "Accept: application/vnd.github+json"]);
     cmd.args(["-A", concat!("metamind/", env!("CARGO_PKG_VERSION"))]);
     if let Some(p) = out {
         cmd.arg("-o").arg(p);
