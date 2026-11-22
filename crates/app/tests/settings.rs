@@ -864,3 +864,29 @@ fn the_ai_section_offers_prompt_presets_and_the_provider_models() {
     let first = profiles.first().cloned().unwrap_or_default();
     assert_eq!(first.get("model").and_then(|m| m.as_str()), Some("modelo-b"));
 }
+
+#[test]
+fn a_skill_rides_along_with_every_question_of_its_profile() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    app.run("settings:section:ai");
+    let frame = draw(&mut app);
+    let acts = actions(&frame);
+    for (id, _, _) in metamind_app::ai::SKILLS {
+        assert!(
+            acts.contains(&format!("settings:ai-skill:0:{id}").as_str()),
+            "the {id} skill has its toggle"
+        );
+    }
+    app.run("settings:ai-skill:0:pedagogia");
+    let cfg = metamind_app::ai::AiConfig::from_config(&app.config);
+    let profile = cfg.profiles.first().cloned().unwrap();
+    assert_eq!(profile.skills, vec!["pedagogia".to_string()]);
+    // The system message carries it, and turning it off takes it out again.
+    assert!(profile.instructions_with_skills().contains("reproducirlo"));
+    assert!(!metamind_app::ai::DEFAULT_SYSTEM_PROMPT.contains("reproducirlo"));
+    app.run("settings:ai-skill:0:pedagogia");
+    let cfg = metamind_app::ai::AiConfig::from_config(&app.config);
+    assert!(cfg.profiles.first().unwrap().skills.is_empty());
+}

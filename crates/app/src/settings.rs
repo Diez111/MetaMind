@@ -1052,6 +1052,13 @@ impl App {
                     self.ai_toggle_model(at, model);
                 }
             }
+            "ai-skill" => {
+                if let Some((at, skill)) =
+                    arg.split_once(':').and_then(|(a, s)| Some((a.parse::<usize>().ok()?, s)))
+                {
+                    self.ai_toggle_skill(at, skill);
+                }
+            }
             "ai-select" => {
                 if let Ok(at) = arg.parse::<usize>() {
                     if let Some(s) = &mut self.settings {
@@ -1279,6 +1286,19 @@ impl App {
             && listed.iter().all(|m| enabled.iter().any(|e| e == m))
             && enabled.len() == listed.len();
         cfg.profiles[at].enabled = if all { Vec::new() } else { enabled };
+        self.set_ai_config(&cfg);
+    }
+
+    /// Turns a skill on or off for profile `at`. The skill only changes the instructions; nothing
+    /// else of the request moves.
+    fn ai_toggle_skill(&mut self, at: usize, skill: &str) {
+        let mut cfg = AiConfig::from_config(&self.config);
+        let Some(p) = cfg.profiles.get_mut(at) else { return };
+        if let Some(i) = p.skills.iter().position(|s| s == skill) {
+            p.skills.remove(i);
+        } else if crate::ai::skill_text(skill).is_some() {
+            p.skills.push(skill.to_string());
+        }
         self.set_ai_config(&cfg);
     }
 
@@ -2193,6 +2213,20 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
         "Escribe el texto del prompt; después se puede editar a mano.",
     );
     dropdown(dom, ctl, ui, &format!("ai.prompt:{at}"), preset, preset);
+    // The skills: standing instructions that ride along with every question of this profile.
+    heading(dom, parent, "Skills del copiloto");
+    dom.add(
+        parent,
+        El::div().class("settings-note").text(
+            "Cada skill agrega instrucciones fijas al mensaje de sistema de este perfil. Se combinan \
+             entre sí y con el prompt de arriba.",
+        ),
+    );
+    for (id, label, text) in crate::ai::SKILLS {
+        let ctl = row(dom, parent, label, text);
+        let on = p.skills.iter().any(|s| s == id);
+        toggle(dom, ctl, on, format!("settings:ai-skill:{at}:{id}"));
+    }
     let ctl = row(dom, parent, "Tiempo de espera", "Segundos antes de cortar la conexión (1 a 600).");
     input(dom, ctl, &format!("ai.p:timeout_s:{at}"), &p.timeout_s.to_string(), ui.edit.as_ref(), Some("30"));
 }

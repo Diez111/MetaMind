@@ -22,6 +22,65 @@ pub const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
 /// The model used by the default profile and the DeepSeek preset: a cheap one, as the panel is
 /// for quick questions.
 pub const DEFAULT_MODEL: &str = "deepseek-v4.1-flash";
+/// The skills Ajustes → IA turns on: an id (what a vault stores), the name the row shows and the
+/// instructions the skill adds to the system message. A skill changes the voice of every answer;
+/// it does not add tools.
+pub const SKILLS: [(&str, &str, &str); 7] = [
+    (
+        "pedagogia",
+        "Pedagogía: enseñar antes que responder",
+        "Antes de dar el resultado, hacé que el lector pueda reproducirlo: nombrá el concepto que \
+se usa, mostrá un paso intermedio y cerrá con una pregunta corta que compruebe si se entendió. \
+Nada de «obviamente» ni de saltar pasos.",
+    ),
+    (
+        "latex",
+        "LaTeX: fórmulas y notación prolija",
+        "Toda expresión matemática va en LaTeX: $...$ en línea y $$...$$ destacada, con un entorno \
+alineado para los desarrollos de varios pasos. Nada de ASCII para fórmulas. Cuidá que los \
+paréntesis y las fracciones cierren.",
+    ),
+    (
+        "tablas",
+        "Tablas comparativas",
+        "Cuando haya dos o más cosas para comparar, usá una tabla markdown con una columna por cosa \
+y una fila por criterio. Si la comparación tiene un ganador, decilo en una línea después de la \
+tabla, no dentro.",
+    ),
+    (
+        "diagramas",
+        "Diagramas Mermaid",
+        "Para flujos, estados o secuencias, además de explicarlo, dibujalo en un bloque ```mermaid \
+con la sintaxis correcta. El diagrama no repite la prosa: la reemplaza.",
+    ),
+    (
+        "economia",
+        "Economía y trading",
+        "En temas de mercado separé hecho, interpretación y supuesto, y nombralos. Da el escenario \
+en contra y el riesgo antes de la conclusión. No des recomendaciones de compra ni de venta: \
+describí el mecanismo y qué evidencia lo sostiene.",
+    ),
+    (
+        "analisis",
+        "Análisis de datos y series",
+        "Al analizar datos decí primero qué mide cada serie y en qué unidad, después el patrón, y \
+recién al final qué se puede concluir. Si falta un dato para concluir, pedilo en vez de \
+estimarlo.",
+    ),
+    (
+        "fuentes",
+        "Fuentes científicas verificadas",
+        "Citá el origen de cada afirmación con su autor o institución y el año. Distinguí lo que \
+está en la nota de lo que viene de fuera. Si no podés nombrar la fuente de un dato, decí que \
+no lo tenés en vez de presentarlo como verificado.",
+    ),
+];
+
+/// The instructions of one skill, by id.
+pub fn skill_text(id: &str) -> Option<&'static str> {
+    SKILLS.iter().find(|(k, _, _)| *k == id).map(|(_, _, text)| *text)
+}
+
 /// The instructions the panel sends when a profile has none, and the starting points the settings
 /// form offers. Each preset writes a different voice, not a different model.
 pub const PROMPT_PRESETS: [(&str, &str); 5] = [
@@ -200,6 +259,8 @@ pub struct AiProfile {
     pub api_key: String,
     /// Set, the panel may only use these models; empty means every model the provider serves.
     pub enabled: Vec<String>,
+    /// The skills the panel applies: ids of [`SKILLS`], in the order they were turned on.
+    pub skills: Vec<String>,
     /// The model the panel asks for by default.
     pub model: String,
     /// Instructions for this profile. Empty means [`DEFAULT_SYSTEM_PROMPT`].
@@ -216,6 +277,7 @@ impl Default for AiProfile {
             api_key: String::new(),
             model: DEFAULT_MODEL.to_string(),
             enabled: Vec::new(),
+            skills: Vec::new(),
             system_prompt: String::new(),
             timeout_s: 30,
         }
@@ -235,6 +297,18 @@ impl AiProfile {
         } else {
             &self.system_prompt
         }
+    }
+
+    /// The instructions plus whatever the enabled skills add, in the order they were turned on.
+    pub fn instructions_with_skills(&self) -> String {
+        let mut out = self.instructions().trim_end().to_string();
+        for id in &self.skills {
+            if let Some(text) = skill_text(id) {
+                out.push_str("\n\n");
+                out.push_str(text.trim());
+            }
+        }
+        out
     }
 
     /// The preset this profile's URL belongs to.
@@ -258,6 +332,7 @@ impl AiProfile {
             "api_key": self.api_key,
             "model": self.model,
             "models": self.enabled,
+            "skills": self.skills,
             "system_prompt": self.system_prompt,
             "timeout_s": self.timeout_s,
         })
@@ -281,6 +356,11 @@ impl AiProfile {
             model: text("model", &d.model),
             enabled: v
                 .get("models")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_str).map(|s| s.trim().to_string()).collect())
+                .unwrap_or_default(),
+            skills: v
+                .get("skills")
                 .and_then(Value::as_array)
                 .map(|a| a.iter().filter_map(Value::as_str).map(|s| s.trim().to_string()).collect())
                 .unwrap_or_default(),
@@ -412,6 +492,7 @@ fn legacy_profile(a: &JsonFile) -> AiProfile {
         api_key: a.str(KEY_API_KEY).map(str::trim).unwrap_or("").to_string(),
         model: text(KEY_MODEL, &d.model),
         enabled: Vec::new(),
+        skills: Vec::new(),
         system_prompt: text(KEY_SYSTEM_PROMPT, ""),
         timeout_s: a.get(KEY_TIMEOUT).and_then(Value::as_u64).map_or(d.timeout_s, |n| n.clamp(1, 600)),
     }
@@ -580,9 +661,10 @@ pub enum Event {
     Error(String),
 }
 
-/// The system message: the instructions plus the note context, when there is one.
+/// The system message: the instructions plus the skills the profile has on, plus the note
+/// context when there is one.
 pub fn system_content(cfg: &AiProfile, note_context: &str) -> String {
-    let mut out = cfg.instructions().trim_end().to_string();
+    let mut out = cfg.instructions_with_skills();
     if !note_context.trim().is_empty() {
         out.push_str("\n\n## Contexto de la bóveda\n\n");
         out.push_str(note_context.trim());
@@ -1014,6 +1096,7 @@ mod tests {
             api_key: "sk-test".into(),
             model: model.into(),
             enabled: Vec::new(),
+            skills: Vec::new(),
             system_prompt: "Sé breve.".into(),
             timeout_s: 20,
         }
