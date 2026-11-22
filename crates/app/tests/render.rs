@@ -61,7 +61,9 @@ fn math_blocks(f: &Frame) -> Vec<(String, String)> {
         .rich
         .iter()
         .filter_map(|it| match &it.kind {
-            metamind_app::rich::Kind::Math { src, display: true } => Some((src.clone(), drawn(f, it.node))),
+            metamind_app::rich::Kind::Math { src, display: true } => {
+                Some((src.clone(), drawn(f, it.node)))
+            }
             _ => None,
         })
         .collect()
@@ -167,7 +169,9 @@ fn empty_callouts_have_one_height() {
         .dom
         .nodes
         .iter()
-        .filter(|n| n.el.classes.iter().any(|c| c == "cm-callout" || c == "cm-callout-block"))
+        .filter(|n| {
+            n.el.classes.iter().any(|c| c == "cm-callout" || c == "cm-callout-block")
+        })
         .map(|n| n.rect.h)
         .collect();
     assert_eq!(boxes.len(), 2, "two callouts: {boxes:?}");
@@ -232,7 +236,12 @@ fn a_note_opens_at_its_first_line_and_ends_above_the_status_bar() {
     let view = f.info.editor.unwrap();
     let cb = f.dom.content_rect(view);
     let vb = f.dom.nodes[view].rect;
-    let status = f.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == "status-bar")).unwrap();
+    let status = f
+        .dom
+        .nodes
+        .iter()
+        .find(|n| n.el.classes.iter().any(|c| c == "status-bar"))
+        .unwrap();
     let last = f.info.blocks.last().map(|b| b.node).expect("the end of the note is laid out");
     let lr = f.dom.nodes[last].rect;
     assert!(lr.y + lr.h <= cb.y + cb.h + 0.5, "the last line is inside the view: {lr:?} against {cb:?}");
@@ -248,10 +257,8 @@ fn a_formula_without_delimiters_is_left_as_the_reader_wrote_it() {
     let (mut app, mut fonts) = open(&d, ViewMode::Reading);
     let f = frame(&mut app, &mut fonts);
     let texts = shown(&f);
-    assert!(
-        texts.iter().any(|t| t == "La derivada queda g(x)=\\operatorname{sen}(3x) en texto plano."),
-        "{texts:?}"
-    );
+    assert!(texts.iter().any(|t| t == "La derivada queda g(x)=\\operatorname{sen}(3x) en texto plano."),
+        "{texts:?}");
     assert!(f.info.rich.is_empty(), "no block formula was invented");
     assert!(f.info.inline.is_empty(), "no inline formula was invented");
 }

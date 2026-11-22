@@ -56,7 +56,8 @@ fn pane(f: &Frame) -> Rect {
 
 /// The board as Excalidraw would read it back, from the file on disk.
 fn saved(d: &tempfile::TempDir) -> excalidraw_core::Scene {
-    excalidraw_core::Scene::parse(&fs::read_to_string(d.path().join("Tablero.excalidraw")).unwrap()).unwrap()
+    excalidraw_core::Scene::parse(&fs::read_to_string(d.path().join("Tablero.excalidraw")).unwrap())
+        .unwrap()
 }
 
 /// An application with a note open in reading mode, the way the screenshots show it.
@@ -352,7 +353,7 @@ fn a_just_drawn_element_fades_in_and_reduced_motion_skips_the_fade() {
         f.dom.nodes[*f.info.excview.first().unwrap()]
             .draw
             .iter()
-            .any(|c| matches!(c, Cmd::Fill { color, .. } if color.a < 250))
+            .any(|c| matches!(c, Cmd::Fill { color, .. } if color.a < 250) )
     };
     // The animation clock on: the first frame of the new shape is dimmer than the final one.
     app.anims.enabled = true;

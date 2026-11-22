@@ -83,15 +83,10 @@ fn main() {
     results.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
     let total: f64 = results.iter().map(|r| r.0).sum();
     println!("\nclicks reales (hit-test + toggle + rebuild + render 1x): {} carpetas", results.len());
-    println!(
-        "promedio {:>6.2} ms · p95 {:>6.2} ms · total {:.0} ms",
-        total / results.len() as f64,
-        {
-            let n = results.len();
-            results[n * 95 / 100].0
-        },
-        total
-    );
+    println!("promedio {:>6.2} ms · p95 {:>6.2} ms · total {:.0} ms", total / results.len() as f64, {
+        let n = results.len();
+        results[n * 95 / 100].0
+    }, total);
     println!("peor 8:");
     for (t, name, _) in results.iter().take(8) {
         println!("  {:>7.2} ms  {}", t, name);

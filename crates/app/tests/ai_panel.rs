@@ -19,7 +19,9 @@ fn render_frame(app: &mut App, fonts: &mut Fonts, pm: &mut Pixmap) -> Frame {
 
 /// Indices of the nodes carrying `class`.
 fn classed(frame: &Frame, class: &str) -> Vec<usize> {
-    (0..frame.dom.nodes.len()).filter(|&i| frame.dom.nodes[i].el.classes.iter().any(|c| c == class)).collect()
+    (0..frame.dom.nodes.len())
+        .filter(|&i| frame.dom.nodes[i].el.classes.iter().any(|c| c == class))
+        .collect()
 }
 
 #[test]
@@ -83,11 +85,9 @@ fn answers_typeset_their_latex() {
 
     // The display formula became a rich block and the inline one kept blanks in its line.
     assert!(!frame.info.rich.is_empty(), "$$…$$ is a display block");
-    let inline = frame
-        .info
-        .inline
-        .iter()
-        .find(|it| frame.dom.nodes[it.node].el.text.as_deref().is_some_and(|t| t.contains('\u{a0}')));
+    let inline = frame.info.inline.iter().find(|it| {
+        frame.dom.nodes[it.node].el.text.as_deref().is_some_and(|t| t.contains('\u{a0}'))
+    });
     assert!(inline.is_some(), "$…$ is typeset inside the line");
     let line = frame.dom.nodes[inline.unwrap().node].el.text.clone().unwrap();
     assert!(line.starts_with("La energía en reposo es"));

@@ -203,7 +203,15 @@ pub(crate) fn surface(saved: Option<Rgba>, c: &[Color; 12], dark: bool) -> Color
 /// The faint dot grid of a board surface, in scene multiples of [`GRID`], clipped to `rect`.
 /// `s` is the scale, `(ox, oy)` where scene `(0, 0)` lands: the embed's fit and the editor's
 /// camera both paint through here, so a board's surface looks the same in both.
-pub(crate) fn grid(rect: Rect, s: f32, ox: f32, oy: f32, board: Color, dark: bool, cmds: &mut Vec<Cmd>) {
+pub(crate) fn grid(
+    rect: Rect,
+    s: f32,
+    ox: f32,
+    oy: f32,
+    board: Color,
+    dark: bool,
+    cmds: &mut Vec<Cmd>,
+) {
     if s <= 0.0 || rect.w <= 0.0 || rect.h <= 0.0 {
         return;
     }

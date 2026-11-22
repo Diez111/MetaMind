@@ -592,7 +592,8 @@ impl ExcView {
                         self.band.clear();
                     }
                     self.band_to = None;
-                    self.press = Some(Press { drag: Drag::Move { last: w }, at: (x, y), moved: false });
+                    self.press =
+                        Some(Press { drag: Drag::Move { last: w }, at: (x, y), moved: false });
                 }
                 None => {
                     // An empty spot starts the rubber band, the way Excalidraw's arrow does.
@@ -721,13 +722,7 @@ impl ExcView {
         if p.moved {
             let nonce = self.next_seed();
             let now = fsio::now_ms();
-            let ids = if drawn.is_some() {
-                Vec::new()
-            } else if moved {
-                self.ids()
-            } else {
-                Vec::new()
-            };
+            let ids = if drawn.is_some() { Vec::new() } else if moved { self.ids() } else { Vec::new() };
             for id in drawn.iter().chain(ids.iter()) {
                 if let Some(e) = self.scene.element_mut(id) {
                     e.bump(now, nonce);
@@ -902,7 +897,11 @@ impl ExcView {
                 (box_.x, box_.y + box_.h),
                 (box_.x, box_.y),
             ];
-            cmds.push(Cmd::Lines { segs: crate::rich::dashed(&pts, 4.0, 3.0), width: 1.0, color: c[5] });
+            cmds.push(Cmd::Lines {
+                segs: crate::rich::dashed(&pts, 4.0, 3.0),
+                width: 1.0,
+                color: c[5],
+            });
         }
     }
 
@@ -1027,12 +1026,16 @@ fn controls(v: &ExcView, dom: &mut Dom, parent: NodeId) {
                     .class_if((v.width - w).abs() < 0.01, "is-active")
                     .action(format!("exc:width:{i}")),
             );
-            dom.add(b, El::div().class("exc-width-dot").style(&format!("height: {}px", (w * 1.6).round())));
+            dom.add(
+                b,
+                El::div().class("exc-width-dot").style(&format!("height: {}px", (w * 1.6).round())),
+            );
         }
     }
     let zoom = dom.add(parent, El::div().class("exc-zoombar").action("exc:none"));
     for (icon, cmd, on) in [("undo", "exc:undo", v.can_undo()), ("redo", "exc:redo", v.can_redo())] {
-        let b = dom.add(zoom, El::div().class("exc-zoom").class_if(!on, "is-off").action(cmd));
+        let b = dom
+            .add(zoom, El::div().class("exc-zoom").class_if(!on, "is-off").action(cmd));
         dom.add(b, crate::icons::el(icon));
     }
     for (icon, cmd) in [("minus", "exc:zoom-out"), ("plus", "exc:zoom-in")] {
@@ -1071,8 +1074,10 @@ pub fn pane(v: &ExcView, dom: &mut Dom, parent: NodeId, info: &mut crate::view::
         dom.add(header, El::div().class("graph-control").text(label).action(cmd));
     }
     // The full-screen button shows what it will do: maximize while the board is in its pane.
-    let full =
-        dom.add(header, El::div().class("graph-control exc-fullscreen-button").action("exc:fullscreen"));
+    let full = dom.add(
+        header,
+        El::div().class("graph-control exc-fullscreen-button").action("exc:fullscreen"),
+    );
     dom.add(full, crate::icons::el("maximize"));
     board_node(v, dom, parent, info);
 }
@@ -1241,8 +1246,13 @@ impl App {
             "editor:redo" => self.run_exc("exc:redo"),
             "editor:select-all" => {
                 let Some(v) = &mut self.exc_view else { return true };
-                let mut ids: Vec<String> =
-                    v.scene.elements.iter().filter(|e| e.painted()).map(|e| e.id.clone()).collect();
+                let mut ids: Vec<String> = v
+                    .scene
+                    .elements
+                    .iter()
+                    .filter(|e| e.painted())
+                    .map(|e| e.id.clone())
+                    .collect();
                 v.selected = ids.pop();
                 v.band = ids;
                 true
