@@ -176,3 +176,58 @@ fn sidebar_widths_are_clamped_when_restored() {
     assert_eq!(app.left_w, metamind_app::shell::SIDE_W_MAX);
     assert_eq!(app.right_w, metamind_app::shell::SIDE_W_MIN);
 }
+
+#[test]
+fn dragging_a_sidebar_edge_resizes_it() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    let mut fonts = metamind_ui::Fonts::new();
+    let mut pm = metamind_ui::Pixmap::new(1200, 700).unwrap();
+    let (frame, x, y) = edge(&mut app, &mut fonts, &mut pm, "side-resize:left");
+    app.click(&frame, &mut fonts, x, y, false);
+    app.drag(&frame, &mut fonts, x + 90.0, y);
+    app.release();
+    assert_eq!(app.left_w, 340.0);
+    // The panel is drawn at the width it was dragged to.
+    let frame = metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+    let split = frame
+        .dom
+        .nodes
+        .iter()
+        .find(|n| n.el.classes.iter().any(|c| c == "mod-left-split"))
+        .expect("left sidebar");
+    assert_eq!(split.rect.w, 340.0);
+
+    // Past its limits the sidebar stops: the drag is clamped, not the pointer.
+    let (frame, x, y) = edge(&mut app, &mut fonts, &mut pm, "side-resize:left");
+    app.click(&frame, &mut fonts, x, y, false);
+    app.drag(&frame, &mut fonts, x + 5_000.0, y);
+    app.release();
+    assert_eq!(app.left_w, metamind_app::shell::SIDE_W_MAX);
+
+    // The right sidebar grows toward the left.
+    app.right_open = true;
+    let (frame, x, y) = edge(&mut app, &mut fonts, &mut pm, "side-resize:right");
+    app.click(&frame, &mut fonts, x, y, false);
+    app.drag(&frame, &mut fonts, x - 60.0, y);
+    app.release();
+    assert_eq!(app.right_w, 310.0);
+}
+
+/// The frame, and the middle of the 6px strip on a sidebar's inner edge.
+fn edge(
+    app: &mut App,
+    fonts: &mut metamind_ui::Fonts,
+    pm: &mut metamind_ui::Pixmap,
+    action: &str,
+) -> (metamind_app::Frame, f32, f32) {
+    let frame = metamind_app::render(app, fonts, pm, 1.0);
+    let r = frame
+        .dom
+        .nodes
+        .iter()
+        .find(|n| n.el.action.as_deref() == Some(action))
+        .expect("the sidebar edge is drawn")
+        .rect;
+    (frame, r.x + r.w / 2.0, r.y + 40.0)
+}
