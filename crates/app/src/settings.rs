@@ -644,6 +644,9 @@ impl App {
             } else {
                 self.prompt = None;
                 self.prop_edit = None;
+                // The editor's suggestion popover is drawn after the window's overlays, so it
+                // would sit on top of the settings scrim: nothing of the editor stays on.
+                self.suggest = None;
                 self.settings = Some(SettingsUi::new(self));
                 self.scrolls.remove("settings-content");
             }
