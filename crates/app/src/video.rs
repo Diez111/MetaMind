@@ -1250,6 +1250,20 @@ mod tests {
         assert_eq!((info.duration, info.fps), (0.0, 0.0));
     }
 
+    /// Everything goes through argv: no argument ever reaches a shell, so a file name with
+    /// quotes, `;`, a pipe or a `$(…)` is only a file name, and one that looks like an option is
+    /// still the value of `-i`.
+    #[test]
+    fn ffmpeg_arguments_are_never_interpreted_by_a_shell() {
+        let hostile = "/v/a; rm -rf ~ $(id) `id` | tee.png";
+        let args = ffmpeg_args(&Source::file(hostile), (2, 2), 0.0);
+        let input = args.iter().position(|a| a == "-i").unwrap() + 1;
+        assert_eq!(args[input], hostile);
+        assert_eq!(args.iter().filter(|a| *a == hostile).count(), 1);
+        let dash = ffmpeg_args(&Source::file("-vf"), (2, 2), 0.0);
+        assert_eq!(dash[dash.iter().position(|a| a == "-i").unwrap() + 1], "-vf");
+    }
+
     #[test]
     fn ffmpeg_argv_seeks_before_the_input_and_scales_to_the_asked_size() {
         let args = ffmpeg_args(&Source::file("/v/clip.mp4"), (320, 180), 12.5);

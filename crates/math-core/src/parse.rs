@@ -187,12 +187,14 @@ impl Parser {
         self.i += 1;
         let s = self.i;
         let mut d = 1;
+        let mut closed = false;
         while let Some(c) = self.peek() {
             match c {
                 '{' => d += 1,
                 '}' => {
                     d -= 1;
                     if d == 0 {
+                        closed = true;
                         break;
                     }
                 }
@@ -201,7 +203,12 @@ impl Parser {
             self.i += 1;
         }
         let r = self.c[s..self.i.min(self.c.len())].iter().collect();
-        self.i += 1;
+        // Only step over a closing brace that is actually there: an unterminated group leaves the
+        // cursor at the end of the input, and moving it one past would index out of bounds on the
+        // next token (`\begin{matrix` cut short in a note is enough).
+        if closed {
+            self.i += 1;
+        }
         r
     }
 

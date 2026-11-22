@@ -55,6 +55,18 @@ impl From<io::Error> for WriteError {
     }
 }
 
+/// The part of `rel` that stays inside a vault: plain components only.
+fn contained(rel: &str) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for part in Path::new(rel).components() {
+        if let Component::Normal(part) = part {
+            out.push(part);
+        }
+    }
+    out
+}
+
 pub struct VaultStore {
     pub root: PathBuf,
     pub index: Vault,
@@ -216,8 +228,15 @@ impl VaultStore {
         }
     }
 
+    /// The absolute path of a vault-relative path.
+    ///
+    /// Only the plain components of `rel` are used: `..`, a leading `/` and a Windows drive
+    /// prefix (from a crafted `[[link]]`, a `metamind://` URI or a plugin request) are dropped
+    /// instead of followed, so the result is always inside the vault. Names that merely contain
+    /// a backslash on a system where it is a legal file-name character are kept as one
+    /// component, which is how the index stores them.
     pub fn abs(&self, rel: &str) -> PathBuf {
-        self.root.join(rel)
+        self.root.join(contained(rel))
     }
 
     /// Persist the index if it changed since it was loaded or last saved.
@@ -539,5 +558,37 @@ mod tests {
         fs::remove_file(d.path().join("ext.md")).unwrap();
         assert_eq!(s.refresh("ext.md"), Some(Change::Removed("ext.md".into())));
         assert_eq!(s.refresh(".obsidian/app.json"), None);
+    }
+
+    #[test]
+    fn vault_paths_from_links_cannot_climb_out() {
+        let d = make(&[("A.md", "")]);
+        let (s, _) = VaultStore::open(d.path()).unwrap();
+        let root = d.path();
+        assert_eq!(s.abs("../../etc/passwd"), root.join("etc/passwd"));
+        assert_eq!(s.abs("/etc/passwd"), root.join("etc/passwd"));
+        // On Windows a backslash separates; elsewhere it is a legal file-name character, so the
+        // whole thing is one harmless name inside the vault. Either way it stays inside.
+        #[cfg(windows)]
+        assert_eq!(s.abs("..\\..\\Windows\\System32\\x.dll"), root.join("Windows/System32/x.dll"));
+        assert!(s.abs("..\\..\\Windows\\System32\\x.dll").starts_with(root));
+        assert_eq!(s.abs("a/../../../b.md"), root.join("a/b.md"), "`..` is dropped, not resolved");
+        assert_eq!(s.abs(".."), root);
+        // Everything the guard returns is under the root, whatever the input.
+        for hostile in ["../../x", "/x", "..\\x", "C:/x", "a/../../../../x", "//server/share/x"] {
+            assert!(s.abs(hostile).starts_with(root), "{hostile}");
+        }
+    }
+
+    #[test]
+    fn reading_a_path_that_climbs_out_fails_instead_of_leaving() {
+        let vault = tempfile::tempdir().unwrap();
+        let secret = vault.path().parent().unwrap().join(format!("mm-{}.md", std::process::id()));
+        fs::write(&secret, "SECRET").unwrap();
+        let (s, _) = VaultStore::open(vault.path()).unwrap();
+        let name = secret.file_name().unwrap().to_string_lossy().to_string();
+        assert!(s.read(&format!("../{name}")).is_err(), "a `..` link does not reach the parent folder");
+        assert!(s.read(&secret.to_string_lossy()).is_err(), "an absolute path is read as vault-relative");
+        let _ = fs::remove_file(&secret);
     }
 }

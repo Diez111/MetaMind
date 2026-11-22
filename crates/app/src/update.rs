@@ -84,7 +84,11 @@ fn tool(name: &str) -> Command {
 
 fn curl(url: &str, out: Option<&Path>) -> Result<Vec<u8>, String> {
     let mut cmd = tool("curl");
-    cmd.args(["-fsSL", "--max-time", "300", "-H", "Accept: application/vnd.github+json"]);
+    // `-q` first: the user's `~/.curlrc` cannot add flags (an `--insecure` there would turn
+    // certificate checking off for the update) and a redirect cannot drop to `file://` or another
+    // protocol. TLS verification itself is curl's default and is never disabled here.
+    cmd.args(["-q", "-fsSL", "--proto-redir", "=https,http", "--max-time", "300"]);
+    cmd.args(["-H", "Accept: application/vnd.github+json"]);
     cmd.args(["-A", concat!("metamind/", env!("CARGO_PKG_VERSION"))]);
     if let Some(p) = out {
         cmd.arg("-o").arg(p);
@@ -125,6 +129,24 @@ pub fn install(r: &Release, exe: &Path) -> Result<(), String> {
     result
 }
 
+/// Every member of a release archive has to stay inside the folder it is unpacked into.
+///
+/// The archive is verified against the published checksum first, so what this stops is a
+/// corrupted or hostile archive (or a `tar` that would follow a `-C` target out of the way)
+/// writing outside the temporary folder: `tar` alone happily honours `../` members.
+fn safe_members(list: &str) -> Result<(), String> {
+    use std::path::Component;
+    for name in list.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let escapes = Path::new(name)
+            .components()
+            .any(|c| !matches!(c, Component::Normal(_) | Component::CurDir));
+        if escapes {
+            return Err(format!("la descarga trae {name:?}, que sale de la carpeta de trabajo"));
+        }
+    }
+    Ok(())
+}
+
 fn install_in(r: &Release, exe: &Path, work: &Path) -> Result<(), String> {
     let archive = work.join(&r.asset);
     curl(&r.asset_url, Some(&archive))?;
@@ -139,6 +161,19 @@ fn install_in(r: &Release, exe: &Path, work: &Path) -> Result<(), String> {
             r.asset
         ));
     }
+    let listing = tool("tar")
+        .arg("-tf")
+        .arg(&archive)
+        .output()
+        .map_err(|e| format!("no se pudo ejecutar tar: {e}"))?;
+    if !listing.status.success() {
+        return Err(format!(
+            "no se pudo leer el contenido de {}: {}",
+            r.asset,
+            String::from_utf8_lossy(&listing.stderr).trim()
+        ));
+    }
+    safe_members(&String::from_utf8_lossy(&listing.stdout))?;
     let o = tool("tar")
         .arg("-xf")
         .arg(&archive)
@@ -416,8 +451,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sha256_vectors() {
-        assert_eq!(hex(&sha256(b"")), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    fn sha256_vectors() {        assert_eq!(hex(&sha256(b"")), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
         assert_eq!(hex(&sha256(b"abc")), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
         let long = b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
         assert_eq!(hex(&sha256(long)), "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
@@ -433,8 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_release_and_sums() {
-        let json = r#"{"tag_name":"v0.3.0","html_url":"https://example.invalid/r","assets":[
+    fn parses_release_and_sums() {        let json = r#"{"tag_name":"v0.3.0","html_url":"https://example.invalid/r","assets":[
             {"name":"metamind-v0.3.0-linux-x86_64.tar.gz","browser_download_url":"u1"},
             {"name":"metamind-v0.3.0-windows-x86_64.zip","browser_download_url":"u2"},
             {"name":"SHA256SUMS.txt","browser_download_url":"u3"}]}"#;
@@ -448,6 +481,21 @@ mod tests {
         assert_eq!(expected_sum(sums, "metamind-v0.3.0-windows-x86_64.zip").as_deref(), Some("abc"));
         assert_eq!(expected_sum(sums, "other.tar.gz").as_deref(), Some("def"));
         assert_eq!(expected_sum(sums, "missing"), None);
+    }
+
+    /// A hostile or corrupted archive must not be unpacked outside the work folder.
+    #[test]
+    fn an_archive_that_climbs_out_of_the_work_folder_is_refused() {
+        assert!(safe_members("").is_ok());
+        assert!(safe_members("metamind-v9.0.0-linux-x86_64/\nmetamind-v9.0.0-linux-x86_64/metamind\n")
+            .is_ok());
+        for bad in ["../evil", "../../.bashrc", "/etc/cron.d/job", "pkg/../../evil", "pkg/.."] {
+            assert!(safe_members(bad).is_err(), "{bad}");
+        }
+        #[cfg(windows)]
+        for bad in ["C:/Windows/evil.dll", "\\\\server\\share\\evil", "c:evil"] {
+            assert!(safe_members(bad).is_err(), "{bad}");
+        }
     }
 
     /// The full download, verify, unpack and replace path against local `file://` URLs.

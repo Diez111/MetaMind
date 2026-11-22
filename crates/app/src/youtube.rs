@@ -108,8 +108,38 @@ pub fn first_url(stdout: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Whether `url` is a plain web link to YouTube itself: an `http`/`https` scheme, no user
+/// info, and a host of YouTube (or one of its subdomains). This is the gate in front of
+/// `yt-dlp`, which is handed nothing else.
+pub fn is_youtube_url(url: &str) -> bool {
+    let Some((scheme, rest)) = url.split_once("://") else { return false };
+    if !scheme.eq_ignore_ascii_case("http") && !scheme.eq_ignore_ascii_case("https") {
+        return false;
+    }
+    // `user:pass@host` would let the real host hide after the `@`.
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if authority.contains('@') || authority.contains('\\') {
+        return false;
+    }
+    // Port and an empty host are not accepted either.
+    let host = match authority.rsplit_once(':') {
+        Some((h, port)) if port.chars().all(|c| c.is_ascii_digit()) && !port.is_empty() => h,
+        _ => authority,
+    };
+    let host = host.to_ascii_lowercase();
+    let host = host
+        .strip_prefix("www.")
+        .or_else(|| host.strip_prefix("music."))
+        .or_else(|| host.strip_prefix("m."))
+        .unwrap_or(&host);
+    host == "youtube.com" || host == "youtu.be" || host.ends_with(".youtube.com")
+}
+
 /// Run `yt-dlp` for `url` and wait for the stream URL. Blocking: the caller runs it on a thread.
 pub fn resolve(tool: &Path, url: &str) -> Result<String, String> {
+    if !is_youtube_url(url) {
+        return Err(format!("no es una dirección de YouTube: {url}"));
+    }
     let out = std::process::Command::new(tool)
         .args(resolve_args(url))
         .stdin(std::process::Stdio::null())
@@ -278,6 +308,41 @@ mod tests {
         assert_eq!(args.last().map(String::as_str), Some("https://www.youtube.com/watch?v=aaaaaaaaaaa"));
         let f = args.iter().position(|a| a == "-f").expect("a format is asked for");
         assert_eq!(args[f + 1], "bv*[ext=mp4][height<=720]/bv*[height<=720]/bv*/best[ext=mp4]/best");
+    }
+
+    #[test]
+    fn only_a_youtube_link_reaches_yt_dlp() {
+        for good in [
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "https://youtube.com/watch?v=dQw4w9WgXcQ",
+            "http://youtu.be/dQw4w9WgXcQ",
+            "https://music.youtube.com/watch?v=dQw4w9WgXcQ",
+            "https://m.youtube.com/shorts/dQw4w9WgXcQ",
+            "HTTPS://WWW.YOUTUBE.COM/watch?v=dQw4w9WgXcQ",
+            "https://www.youtube.com:443/watch?v=dQw4w9WgXcQ",
+        ] {
+            assert!(is_youtube_url(good), "{good}");
+        }
+        for bad in [
+            "",
+            "file:///etc/passwd",
+            "javascript://youtube.com/x",
+            "ftp://youtube.com/x",
+            "https://example.com/watch?v=dQw4w9WgXcQ",
+            "https://youtube.com.evil.example/watch?v=dQw4w9WgXcQ",
+            "https://notyoutube.com/watch?v=dQw4w9WgXcQ",
+            "https://youtube.com@evil.example/watch?v=dQw4w9WgXcQ",
+            "https://evil.example\\@youtube.com/x",
+            "https://",
+            "--help",
+            "https://youtube.com.evil:80/x",
+        ] {
+            assert!(!is_youtube_url(bad), "{bad}");
+        }
+        // A tool that is not there is never asked, but a URL that is not YouTube is refused
+        // before the spawn anyway (here `true` is the tool: it would succeed if it ran).
+        let err = resolve(Path::new("/bin/true"), "file:///etc/passwd").unwrap_err();
+        assert!(err.contains("YouTube"), "{err}");
     }
 
     #[test]

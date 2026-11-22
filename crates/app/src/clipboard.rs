@@ -61,14 +61,17 @@ fn uri_list(list: &str) -> Vec<PathBuf> {
 #[cfg_attr(not(windows), allow(dead_code))]
 fn to_dib(pm: &metamind_ui::Pixmap) -> Vec<u8> {
     let (w, h) = (pm.width(), pm.height());
-    let mut dib = Vec::with_capacity(40 + w as usize * h as usize * 4);
+    // A pixmap this large cannot exist (the allocation would have failed first); saturating keeps
+    // the arithmetic well defined on a 32-bit target all the same.
+    let image_bytes = w.saturating_mul(h).saturating_mul(4);
+    let mut dib = Vec::with_capacity(40 + image_bytes as usize);
     for v in [40u32, w, h] {
         dib.extend(v.to_le_bytes());
     }
     dib.extend(1u16.to_le_bytes());
     dib.extend(32u16.to_le_bytes());
     dib.extend(0u32.to_le_bytes());
-    dib.extend((w * h * 4).to_le_bytes());
+    dib.extend(image_bytes.to_le_bytes());
     dib.extend([0u8; 16]);
     for row in pm.pixels().chunks(w as usize).rev() {
         for p in row {
@@ -103,9 +106,21 @@ fn dib_to_png(dib: &[u8]) -> Result<Vec<u8>, String> {
         return Err(format!("las imágenes del portapapeles de {bits} bits no son compatibles"));
     }
     let (w, h) = (width.unsigned_abs(), height.unsigned_abs());
-    let start = header + if compression == 3 && header == 40 { 12 } else { 0 } + colors * 4;
-    let stride = (w as usize * bits as usize).div_ceil(32) * 4;
-    let pixels = dib.get(start..start + stride * h as usize).ok_or_else(bad)?;
+    // The header comes from another program, so every size in it is checked before it is used:
+    // a hostile width, height, palette size or header length must not overflow the slice
+    // arithmetic (which would panic and take the app down with it).
+    let start = header
+        .checked_add(if compression == 3 && header == 40 { 12 } else { 0 })
+        .and_then(|s| colors.checked_mul(4).and_then(|c| s.checked_add(c)))
+        .ok_or_else(bad)?;
+    let stride = (w as usize)
+        .checked_mul(bits as usize)
+        .map(|bits| bits.div_ceil(32))
+        .and_then(|rows| rows.checked_mul(4))
+        .ok_or_else(bad)?;
+    let len = stride.checked_mul(h as usize).ok_or_else(bad)?;
+    let end = start.checked_add(len).ok_or_else(bad)?;
+    let pixels = dib.get(start..end).ok_or_else(bad)?;
     let mut pm = metamind_ui::Pixmap::new(w, h).ok_or_else(bad)?;
     let step = bits as usize / 8;
     // 32-bit bitmaps often leave alpha at zero; then the image is opaque.
@@ -160,104 +175,113 @@ mod imp {
     }
 
     /// Another program may hold the clipboard for a moment, so opening is retried briefly.
-    fn open() -> Result<(), String> {
+    fn open() -> Result<Open, String> {
         for _ in 0..10 {
             // SAFETY: no pointers are passed; a null owner is allowed.
             if unsafe { OpenClipboard(std::ptr::null_mut()) } != 0 {
-                return Ok(());
+                return Ok(Open(()));
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         Err("otro programa está usando el portapapeles".into())
     }
 
+    /// The clipboard while this program holds it open.
+    ///
+    /// Dropping the guard closes it, so an early return (the usual `?` in the middle of a copy)
+    /// cannot leave the clipboard locked against every other program until the app exits. There
+    /// is no way to obtain the window between `OpenClipboard` and this guard, and a copy that
+    /// fails to put its data only closes early.
+    struct Open(());
+
+    impl Drop for Open {
+        fn drop(&mut self) {
+            // SAFETY: the only way to get an `Open` is `open()`, which calls `OpenClipboard`, and
+            // nothing else closes it; the guard is neither `Copy` nor `Clone`.
+            unsafe { CloseClipboard() };
+        }
+    }
+
     pub fn set(text: &str) -> Result<(), String> {
         let wide: Vec<u8> = text.encode_utf16().chain([0]).flat_map(u16::to_le_bytes).collect();
-        open()?;
-        // SAFETY: the clipboard is open.
-        let result = unsafe {
-            EmptyClipboard();
-            put(CF_UNICODETEXT, &wide)
-        };
-        // SAFETY: opened above.
-        unsafe { CloseClipboard() };
-        result
+        let open = open()?;
+        // SAFETY: the clipboard is open and stays open until `open` is dropped at the end.
+        unsafe { EmptyClipboard() };
+        put(&open, CF_UNICODETEXT, &wide)
     }
 
     /// The image as "PNG" for programs that keep transparency, and as a bitmap for the rest.
     pub fn set_png(png: &[u8], pm: &metamind_ui::Pixmap) -> Result<(), String> {
         let name: Vec<u16> = "PNG".encode_utf16().chain([0]).collect();
         let dib = super::to_dib(pm);
-        open()?;
+        let open = open()?;
         // SAFETY: the clipboard is open; `name` is zero-terminated.
-        let result = unsafe {
-            EmptyClipboard();
-            let format = RegisterClipboardFormatW(name.as_ptr());
-            if format != 0 {
-                put(format, png)?;
-            }
-            put(CF_DIB, &dib)
-        };
-        // SAFETY: opened above.
-        unsafe { CloseClipboard() };
-        result
+        unsafe { EmptyClipboard() };
+        // SAFETY: same; a zero return means the format is not available and is skipped.
+        let format = unsafe { RegisterClipboardFormatW(name.as_ptr()) };
+        if format != 0 {
+            put(&open, format, png)?;
+        }
+        put(&open, CF_DIB, &dib)
     }
 
     /// Hand a copy of `data` to the clipboard as `format`.
     ///
-    /// # Safety
-    /// The clipboard must be open. The block is allocated with the size of `data` and only
-    /// written while locked; after SetClipboardData succeeds the system owns it.
-    unsafe fn put(format: u32, data: &[u8]) -> Result<(), String> {
-        let mem = GlobalAlloc(GMEM_MOVEABLE, data.len());
-        if mem.is_null() {
-            return Err("sin memoria".to_string());
-        }
-        let dst = GlobalLock(mem) as *mut u8;
-        if dst.is_null() {
-            GlobalFree(mem);
-            return Err("no se pudo bloquear la memoria del portapapeles".to_string());
-        }
-        std::ptr::copy_nonoverlapping(data.as_ptr(), dst, data.len());
-        GlobalUnlock(mem);
-        if SetClipboardData(format, mem).is_null() {
-            GlobalFree(mem);
-            return Err("no se pudieron establecer los datos del portapapeles".to_string());
+    /// Takes the open-clipboard guard, so the precondition is enforced by the type rather than
+    /// by a comment. The block is allocated with the size of `data`, only written while locked,
+    /// and freed on every path where the system does not take ownership of it.
+    fn put(_open: &Open, format: u32, data: &[u8]) -> Result<(), String> {
+        // SAFETY: plain Win32 calls with no aliasing: the destination is freshly allocated and
+        // only the source slice is read.
+        unsafe {
+            let mem = GlobalAlloc(GMEM_MOVEABLE, data.len());
+            if mem.is_null() {
+                return Err("sin memoria".to_string());
+            }
+            let dst = GlobalLock(mem) as *mut u8;
+            if dst.is_null() {
+                GlobalFree(mem);
+                return Err("no se pudo bloquear la memoria del portapapeles".to_string());
+            }
+            std::ptr::copy_nonoverlapping(data.as_ptr(), dst, data.len());
+            GlobalUnlock(mem);
+            if SetClipboardData(format, mem).is_null() {
+                // The system took nothing, so the block is still ours to free.
+                GlobalFree(mem);
+                return Err("no se pudieron establecer los datos del portapapeles".to_string());
+            }
         }
         Ok(())
     }
 
     pub fn get() -> Result<String, String> {
-        open()?;
-        // SAFETY: the clipboard is open; the handle is only read while locked, up to the
-        // terminating zero that CF_UNICODETEXT data always has.
-        let result = unsafe {
+        let _open = open()?;
+        // SAFETY: the clipboard is open; the handle is only read while locked, and the scan is
+        // bounded by the size of the block, so an owner that never writes the terminating zero
+        // cannot make this read past the end of the allocation.
+        unsafe {
             let mem = GetClipboardData(CF_UNICODETEXT);
             if mem.is_null() {
-                Ok(String::new())
-            } else {
-                let src = GlobalLock(mem) as *const u16;
-                if src.is_null() {
-                    Err("no se pudo bloquear la memoria del portapapeles".to_string())
-                } else {
-                    let mut len = 0;
-                    while *src.add(len) != 0 {
-                        len += 1;
-                    }
-                    let text = String::from_utf16_lossy(std::slice::from_raw_parts(src, len));
-                    GlobalUnlock(mem);
-                    Ok(text)
-                }
+                return Ok(String::new());
             }
-        };
-        // SAFETY: opened above.
-        unsafe { CloseClipboard() };
-        result
+            let src = GlobalLock(mem) as *const u16;
+            if src.is_null() {
+                return Err("no se pudo bloquear la memoria del portapapeles".to_string());
+            }
+            let max = GlobalSize(mem) / 2;
+            let mut len = 0;
+            while len < max && *src.add(len) != 0 {
+                len += 1;
+            }
+            let text = String::from_utf16_lossy(std::slice::from_raw_parts(src, len));
+            GlobalUnlock(mem);
+            Ok(text)
+        }
     }
 
     /// Files copied in Explorer (`CF_HDROP`).
     pub fn files() -> Result<Vec<std::path::PathBuf>, String> {
-        open()?;
+        let _open = open()?;
         // SAFETY: the clipboard is open, so the drop handle stays valid until it is closed. Each
         // name is written into a buffer one longer than the length reported for it.
         let files = unsafe {
@@ -269,6 +293,9 @@ mod imp {
                 (0..count)
                     .filter_map(|i| {
                         let len = DragQueryFileW(drop, i, std::ptr::null_mut(), 0);
+                        if len == 0 || len > 32_768 {
+                            return None;
+                        }
                         let mut buf = vec![0u16; len as usize + 1];
                         let got = DragQueryFileW(drop, i, buf.as_mut_ptr(), len + 1) as usize;
                         (got > 0).then(|| String::from_utf16_lossy(&buf[..got]).into())
@@ -276,25 +303,21 @@ mod imp {
                     .collect()
             }
         };
-        // SAFETY: opened above.
-        unsafe { CloseClipboard() };
         Ok(files)
     }
 
     /// An image: the "PNG" format browsers and the Snipping Tool offer, else the bitmap.
     pub fn png() -> Result<Option<Vec<u8>>, String> {
         let name: Vec<u16> = "PNG".encode_utf16().chain([0]).collect();
-        open()?;
+        let open = open()?;
         // SAFETY: the clipboard is open; `name` is zero-terminated.
         let (png, dib) = unsafe {
             let format = RegisterClipboardFormatW(name.as_ptr());
-            match (format != 0).then(|| bytes(format)).flatten() {
+            match (format != 0).then(|| bytes(&open, format)).flatten() {
                 Some(png) => (Some(png), None),
-                None => (None, bytes(CF_DIB)),
+                None => (None, bytes(&open, CF_DIB)),
             }
         };
-        // SAFETY: opened above.
-        unsafe { CloseClipboard() };
         match (png, dib) {
             (Some(png), _) => Ok(Some(png)),
             (None, Some(dib)) => super::dib_to_png(&dib).map(Some),
@@ -302,22 +325,24 @@ mod imp {
         }
     }
 
-    /// A copy of the data in `format`.
-    ///
-    /// # Safety
-    /// The clipboard must be open.
-    unsafe fn bytes(format: u32) -> Option<Vec<u8>> {
-        let mem = GetClipboardData(format);
-        if mem.is_null() {
-            return None;
+    /// A copy of the data in `format`, while the open-clipboard guard proves it can be read.
+    fn bytes(_open: &Open, format: u32) -> Option<Vec<u8>> {
+        // SAFETY: the clipboard is open and the block is read while locked, for exactly the
+        // number of bytes the system reports for it.
+        unsafe {
+            let mem = GetClipboardData(format);
+            if mem.is_null() {
+                return None;
+            }
+            let src = GlobalLock(mem) as *const u8;
+            if src.is_null() {
+                return None;
+            }
+            let size = GlobalSize(mem);
+            let data = if size == 0 { Vec::new() } else { std::slice::from_raw_parts(src, size).to_vec() };
+            GlobalUnlock(mem);
+            Some(data)
         }
-        let src = GlobalLock(mem) as *const u8;
-        if src.is_null() {
-            return None;
-        }
-        let data = std::slice::from_raw_parts(src, GlobalSize(mem)).to_vec();
-        GlobalUnlock(mem);
-        Some(data)
     }
 }
 
@@ -487,6 +512,43 @@ mod tests {
         let list =
             "# copied\r\nfile:///home/me/My%20Pic.png\r\nfile://localhost/tmp/a.txt\r\nhttps://x.org/b\r\n";
         assert_eq!(uri_list(list), [PathBuf::from("/home/me/My Pic.png"), PathBuf::from("/tmp/a.txt")]);
+    }
+
+    /// The list is whatever another program put on the clipboard: a `..` in it is kept as part of
+    /// a local path (the paste handler copies the file in), never resolved into a different host
+    /// and never turned into something that is not a path.
+    #[test]
+    fn a_file_uri_with_dots_or_a_remote_host_is_not_mistaken_for_a_local_file() {
+        let list = "file://remote.example/etc/passwd\nfile://../../etc/passwd\nfile://\nfile:///a/../b.png\n";
+        assert_eq!(uri_list(list), [PathBuf::from("/a/../b.png")]);
+    }
+
+    /// The bitmap header comes from another program. None of these may panic: an oversized
+    /// width, height, palette or header length is an error, like a truncated bitmap.
+    #[test]
+    fn hostile_bitmaps_do_not_panic() {
+        let mut huge = header(i32::MIN, i32::MIN, 32, 3);
+        huge.extend([0u8; 12]);
+        huge.extend([0u8; 8]);
+        assert!(dib_to_png(&huge).is_err());
+
+        let mut palette = header(2, 2, 8, 0);
+        palette[32..36].copy_from_slice(&0xffff_ffffu32.to_le_bytes());
+        palette.extend([0u8; 64]);
+        assert!(dib_to_png(&palette).is_err());
+
+        let mut far = header(2, 2, 24, 0);
+        far[0..4].copy_from_slice(&0xffff_fff0u32.to_le_bytes());
+        far.extend([0u8; 64]);
+        assert!(dib_to_png(&far).is_err());
+
+        let mut pm = Pixmap::new(4, 4).unwrap();
+        pm.fill(metamind_ui::SkColor::from_rgba8(1, 2, 3, 255));
+        let dib = to_dib(&pm);
+        for n in 0..dib.len() {
+            assert!(dib_to_png(&dib[..n]).is_err(), "truncated to {n} of {}", dib.len());
+        }
+        assert!(dib_to_png(&dib).is_ok());
     }
 
     fn header(w: i32, h: i32, bits: u16, compression: u32) -> Vec<u8> {
