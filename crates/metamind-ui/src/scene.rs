@@ -52,6 +52,66 @@ impl Rect {
     }
 }
 
+/// A rectangle in device pixels, half open: `x0..x1` × `y0..y1`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct DevRect {
+    pub x0: i32,
+    pub y0: i32,
+    pub x1: i32,
+    pub y1: i32,
+}
+
+impl DevRect {
+    /// The device pixels a logical rectangle can touch, rounded outwards and grown by a pixel so
+    /// that anti-aliased edges and pixel snapping stay inside.
+    pub fn from_rect(r: &Rect, scale: f32) -> DevRect {
+        DevRect {
+            x0: (r.x * scale).floor() as i32 - 1,
+            y0: (r.y * scale).floor() as i32 - 1,
+            x1: ((r.x + r.w) * scale).ceil() as i32 + 1,
+            y1: ((r.y + r.h) * scale).ceil() as i32 + 1,
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.x1 <= self.x0 || self.y1 <= self.y0
+    }
+    pub fn area(&self) -> u64 {
+        if self.is_empty() {
+            0
+        } else {
+            (self.x1 - self.x0) as u64 * (self.y1 - self.y0) as u64
+        }
+    }
+    pub fn intersect(&self, o: &DevRect) -> DevRect {
+        DevRect {
+            x0: self.x0.max(o.x0),
+            y0: self.y0.max(o.y0),
+            x1: self.x1.min(o.x1),
+            y1: self.y1.min(o.y1),
+        }
+    }
+    pub fn union(&self, o: &DevRect) -> DevRect {
+        DevRect {
+            x0: self.x0.min(o.x0),
+            y0: self.y0.min(o.y0),
+            x1: self.x1.max(o.x1),
+            y1: self.y1.max(o.y1),
+        }
+    }
+    /// Grown by `px` on every side.
+    pub fn grow(&self, px: i32) -> DevRect {
+        DevRect { x0: self.x0 - px, y0: self.y0 - px, x1: self.x1 + px, y1: self.y1 + px }
+    }
+    /// Whether the gap between the two is at most `gap` device pixels on both axes.
+    pub fn near(&self, o: &DevRect, gap: i32) -> bool {
+        self.x0 - gap <= o.x1 && o.x0 - gap <= self.x1 && self.y0 - gap <= o.y1 && o.y0 - gap <= self.y1
+    }
+    /// Clipped to a `w`×`h` pixmap.
+    pub fn clamped(&self, w: u32, h: u32) -> DevRect {
+        self.intersect(&DevRect { x0: 0, y0: 0, x1: w as i32, y1: h as i32 })
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub enum Cmd {
     Fill {
@@ -85,6 +145,49 @@ pub enum Cmd {
     },
     PushClip(Rect),
     PopClip,
+}
+
+impl Cmd {
+    /// The logical rectangle this command can paint into: a superset, never a subset. Text is
+    /// measured with the same shaped buffer the renderer will use, then padded for the ink that
+    /// hangs outside the line box (ascenders, italics, underlines).
+    pub fn bounds(&self, fonts: &mut Fonts) -> Rect {
+        match self {
+            Cmd::Fill { rect, .. } | Cmd::Image { rect, .. } => *rect,
+            Cmd::Lines { segs, width, .. } => {
+                let mut r = Rect::default();
+                for s in segs {
+                    let (x0, x1) = (s[0].min(s[2]), s[0].max(s[2]));
+                    let (y0, y1) = (s[1].min(s[3]), s[1].max(s[3]));
+                    let part = Rect::new(x0, y0, x1 - x0, y1 - y0);
+                    let (ux0, uy0) = (r.x.min(part.x), r.y.min(part.y));
+                    let (ux1, uy1) = ((r.x + r.w).max(part.x + part.w), (r.y + r.h).max(part.y + part.h));
+                    r = Rect::new(ux0, uy0, ux1 - ux0, uy1 - uy0);
+                }
+                let pad = width * 0.5 + 1.5;
+                Rect::new(r.x - pad, r.y - pad, r.w + pad * 2.0, r.h + pad * 2.0)
+            }
+            Cmd::Circles { items, .. } => {
+                let mut r = Rect::default();
+                for it in items {
+                    let part = Rect::new(it[0] - it[2], it[1] - it[2], it[2] * 2.0, it[2] * 2.0);
+                    let (x0, y0) = (r.x.min(part.x), r.y.min(part.y));
+                    let (x1, y1) = ((r.x + r.w).max(part.x + part.w), (r.y + r.h).max(part.y + part.h));
+                    r = Rect::new(x0, y0, x1 - x0, y1 - y0);
+                }
+                r
+            }
+            Cmd::Text { x, y, width, text, spans, style } => {
+                let (w, h) = fonts.measure(text, spans, style, *width);
+                let pad = (style.size * 0.6).max(3.0);
+                Rect::new(x - pad, y - pad, w + pad * 2.0, h + pad * 2.0)
+            }
+            // A clip call paints nothing itself, but everything inside it is bounded by it: when
+            // the clip moves, the pixels that change are the ones the old and the new rect cover.
+            Cmd::PushClip(r) => *r,
+            Cmd::PopClip => Rect::default(),
+        }
+    }
 }
 
 /// Clip a segment to a rectangle (Liang-Barsky). `None` when it lies outside.
@@ -151,6 +254,28 @@ impl DevClip {
             y1: (((clip.y + clip.h) * scale).ceil() as i32).min(pixmap.height() as i32),
         }
     }
+    fn within(&self, l: &DevRect) -> DevClip {
+        DevClip {
+            x0: self.x0.max(l.x0),
+            y0: self.y0.max(l.y0),
+            x1: self.x1.min(l.x1),
+            y1: self.y1.min(l.y1),
+        }
+    }
+}
+
+/// A device rect cut down to `limit` (the stencil of a partial repaint); `None` when the result
+/// holds no pixels. All the numbers are whole pixels, so cutting a rectangle this way leaves the
+/// surviving pixels exactly as a full paint would.
+fn within(r: Option<tiny_skia::Rect>, limit: Option<DevRect>) -> Option<tiny_skia::Rect> {
+    let r = r?;
+    let Some(l) = limit else { return Some(r) };
+    tiny_skia::Rect::from_ltrb(
+        r.left().max(l.x0 as f32),
+        r.top().max(l.y0 as f32),
+        r.right().min(l.x1 as f32),
+        r.bottom().min(l.y1 as f32),
+    )
 }
 
 /// Blend `c` over an opaque pixel with coverage `a` (0..=256).
@@ -268,7 +393,41 @@ fn disc(rows: &mut [u8], stride: usize, band: &DevClip, [cx, cy, r]: [f32; 3], c
 
 /// Rasterize a scene. `scale` is the device pixel ratio; scene coordinates are logical pixels.
 pub fn render(scene: &Scene, fonts: &mut Fonts, pixmap: &mut Pixmap, scale: f32, clear: Color) {
-    pixmap.fill(tiny_skia::Color::from_rgba8(clear.r, clear.g, clear.b, 255));
+    paint(scene, fonts, pixmap, scale, clear, None);
+}
+
+/// Rasterize a scene but only inside `limit`: the rest of the pixmap is left as it is, and every
+/// command is clipped to the rectangle as if it were a stencil. The pixels inside `limit` come out
+/// exactly as a full [`render`] would leave them, which is what makes dirty-rect painting safe.
+pub(crate) fn paint(
+    scene: &Scene,
+    fonts: &mut Fonts,
+    pixmap: &mut Pixmap,
+    scale: f32,
+    clear: Color,
+    limit: Option<DevRect>,
+) {
+    match limit {
+        None => pixmap.fill(tiny_skia::Color::from_rgba8(clear.r, clear.g, clear.b, 255)),
+        Some(l) => {
+            let mut paint = Paint::default();
+            paint.set_color_rgba8(clear.r, clear.g, clear.b, 255);
+            paint.anti_alias = false;
+            let w = (l.x1 - l.x0).max(0) as f32;
+            let h = (l.y1 - l.y0).max(0) as f32;
+            if let Some(r) = tiny_skia::Rect::from_xywh(l.x0 as f32, l.y0 as f32, w, h) {
+                pixmap.fill_rect(r, &paint, Transform::identity(), None);
+            }
+        }
+    }
+    // The stencil, in device pixels, that every drawing call is restricted to.
+    let stencil = limit.and_then(|l| {
+        let mut m = tiny_skia::Mask::new(pixmap.width(), pixmap.height())?;
+        let path = tiny_skia::Rect::from_ltrb(l.x0 as f32, l.y0 as f32, l.x1 as f32, l.y1 as f32)
+            .map(PathBuilder::from_rect)?;
+        m.fill_path(&path, FillRule::Winding, false, Transform::identity());
+        Some(m)
+    });
     let full = Rect::new(0.0, 0.0, pixmap.width() as f32 / scale, pixmap.height() as f32 / scale);
     let mut clips = vec![full];
     for cmd in &scene.cmds {
@@ -301,7 +460,7 @@ pub fn render(scene: &Scene, fonts: &mut Fonts, pixmap: &mut Pixmap, scale: f32,
                                 &paint,
                                 FillRule::Winding,
                                 Transform::from_scale(scale, scale),
-                                None,
+                                stencil.as_ref(),
                             );
                         }
                         continue;
@@ -309,12 +468,13 @@ pub fn render(scene: &Scene, fonts: &mut Fonts, pixmap: &mut Pixmap, scale: f32,
                 }
                 let r = rect.intersect(&clip);
                 paint.anti_alias = false;
-                if let Some(tr) = tiny_skia::Rect::from_xywh(
+                let tr = tiny_skia::Rect::from_xywh(
                     (r.x * scale).round(),
                     (r.y * scale).round(),
                     (r.w * scale).round(),
                     (r.h * scale).round(),
-                ) {
+                );
+                if let Some(tr) = within(tr, limit) {
                     pixmap.fill_rect(tr, &paint, Transform::identity(), None);
                 }
             }
@@ -322,7 +482,13 @@ pub fn render(scene: &Scene, fonts: &mut Fonts, pixmap: &mut Pixmap, scale: f32,
                 if color.a == 0 || clip.w <= 0.0 || clip.h <= 0.0 {
                     continue;
                 }
-                let dev = DevClip::new(&clip, scale, pixmap);
+                let mut dev = DevClip::new(&clip, scale, pixmap);
+                if let Some(l) = limit {
+                    dev = dev.within(&l);
+                    if dev.x1 <= dev.x0 || dev.y1 <= dev.y0 {
+                        continue;
+                    }
+                }
                 if *width * scale <= 1.5 {
                     // Thin lines are drawn straight into the buffer: a path stroke of a whole
                     // graph costs seconds, this costs milliseconds.
@@ -353,13 +519,25 @@ pub fn render(scene: &Scene, fonts: &mut Fonts, pixmap: &mut Pixmap, scale: f32,
                 paint.set_color_rgba8(color.r, color.g, color.b, color.a);
                 paint.anti_alias = true;
                 let stroke = tiny_skia::Stroke { width: *width, ..Default::default() };
-                pixmap.stroke_path(&path, &paint, &stroke, Transform::from_scale(scale, scale), None);
+                pixmap.stroke_path(
+                    &path,
+                    &paint,
+                    &stroke,
+                    Transform::from_scale(scale, scale),
+                    stencil.as_ref(),
+                );
             }
             Cmd::Circles { items, color } => {
                 if color.a == 0 {
                     continue;
                 }
-                let dev = DevClip::new(&clip, scale, pixmap);
+                let mut dev = DevClip::new(&clip, scale, pixmap);
+                if let Some(l) = limit {
+                    dev = dev.within(&l);
+                    if dev.x1 <= dev.x0 || dev.y1 <= dev.y0 {
+                        continue;
+                    }
+                }
                 let stride = pixmap.width() as usize;
                 let alpha = color.a as f32 * (256.0 / 255.0);
                 let rgb = [color.r as u32, color.g as u32, color.b as u32];
@@ -378,16 +556,28 @@ pub fn render(scene: &Scene, fonts: &mut Fonts, pixmap: &mut Pixmap, scale: f32,
                 if vis.w <= 0.0 || vis.h <= 0.0 || iw == 0 || ih == 0 {
                     continue;
                 }
-                let mask = if vis == *rect {
-                    None
-                } else {
+                let mask = if limit.is_some() || vis != *rect {
                     let clip_path =
                         tiny_skia::Rect::from_xywh(vis.x, vis.y, vis.w, vis.h).map(PathBuilder::from_rect);
                     let mut m = tiny_skia::Mask::new(pixmap.width(), pixmap.height());
                     if let (Some(m), Some(path)) = (m.as_mut(), clip_path) {
                         m.fill_path(&path, FillRule::Winding, false, Transform::from_scale(scale, scale));
+                        if let Some(l) = limit {
+                            let stencil = tiny_skia::Rect::from_ltrb(
+                                l.x0 as f32,
+                                l.y0 as f32,
+                                l.x1 as f32,
+                                l.y1 as f32,
+                            )
+                            .map(PathBuilder::from_rect);
+                            if let Some(p) = stencil {
+                                m.intersect_path(&p, FillRule::Winding, false, Transform::identity());
+                            }
+                        }
                     }
                     m
+                } else {
+                    None
                 };
                 let (sx, sy) = (rect.w * scale / iw as f32, rect.h * scale / ih as f32);
                 let paint = tiny_skia::PixmapPaint {
@@ -403,10 +593,17 @@ pub fn render(scene: &Scene, fonts: &mut Fonts, pixmap: &mut Pixmap, scale: f32,
             }
             Cmd::Text { x, y, width, text, spans, style } => {
                 let (pw, ph) = (pixmap.width() as i32, pixmap.height() as i32);
-                let cx0 = (clip.x * scale).floor() as i32;
-                let cy0 = (clip.y * scale).floor() as i32;
-                let cx1 = (((clip.x + clip.w) * scale).ceil() as i32).min(pw);
-                let cy1 = (((clip.y + clip.h) * scale).ceil() as i32).min(ph);
+                let (mut cx0, mut cy0) = ((clip.x * scale).floor() as i32, (clip.y * scale).floor() as i32);
+                let (mut cx1, mut cy1) = (
+                    (((clip.x + clip.w) * scale).ceil() as i32).min(pw),
+                    (((clip.y + clip.h) * scale).ceil() as i32).min(ph),
+                );
+                if let Some(l) = limit {
+                    cx0 = cx0.max(l.x0);
+                    cy0 = cy0.max(l.y0);
+                    cx1 = cx1.min(l.x1);
+                    cy1 = cy1.min(l.y1);
+                }
                 if cx1 <= cx0 || cy1 <= cy0 {
                     continue;
                 }

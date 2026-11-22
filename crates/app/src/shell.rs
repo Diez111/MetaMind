@@ -509,6 +509,9 @@ pub struct App {
     pub notice: Option<String>,
     pub perf: bool,
     pub last_frame_us: u64,
+    /// What the last frame repainted: the window diffs its display list and paints only what
+    /// changed. `reset` it to force a full repaint.
+    pub damage: metamind_ui::DamageTracker,
     /// Copy screenshot was chosen: the window copies the pane from the next frame it draws.
     pub screenshot: bool,
     pub quit: bool,
@@ -786,6 +789,7 @@ impl App {
             notice: None,
             perf: false,
             last_frame_us: 0,
+            damage: metamind_ui::DamageTracker::new(),
             screenshot: false,
             quit: false,
             scrolls: HashMap::new(),

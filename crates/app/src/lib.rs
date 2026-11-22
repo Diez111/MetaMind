@@ -66,6 +66,8 @@ pub struct Frame {
     pub info: view::ViewInfo,
     /// Where the editor caret is, for placing the input method's candidate window.
     pub caret: Option<metamind_ui::Rect>,
+    /// What the rasterizer repainted for this frame: empty means the window already showed it.
+    pub damage: metamind_ui::Damage,
 }
 
 /// Build, style, lay out and paint the window into `pixmap`.
@@ -123,9 +125,9 @@ pub fn render_window(
     excalidrawview::add_exc(app, &mut dom, &info, fonts);
     let scene = dom.paint();
     let clear = dom.nodes[0].style.background;
-    metamind_ui::render(&scene, fonts, pixmap, scale, clear);
+    let damage = metamind_ui::render_damaged(scene, fonts, pixmap, scale, clear, &mut app.damage);
     app.last_frame_us = t.elapsed().as_micros() as u64;
-    Frame { dom, info, caret }
+    Frame { dom, info, caret, damage }
 }
 
 /// The open pane of a drawn frame, without the tab bar and sidebars, at the pixmap's resolution.
