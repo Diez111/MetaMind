@@ -214,9 +214,14 @@ impl App {
             if action != "ai:focus-input" {
                 self.ai.editing = false;
             }
-            if action == "file-explorer:sort-menu" {
+            if matches!(action.as_str(), "file-explorer:sort-menu" | "ai:profile-menu") {
                 let r = frame.dom.nodes[node].rect;
-                return self.sort_menu(r.x, r.y + r.h);
+                if action == "file-explorer:sort-menu" {
+                    self.sort_menu(r.x, r.y + r.h);
+                } else {
+                    self.ai_profile_menu(r.x, r.y + r.h);
+                }
+                return;
             }
             if let Some((k, path)) = action.strip_prefix("pane-resize:").and_then(|a| a.split_once(':')) {
                 let path = path.split('.').filter_map(|i| i.parse().ok()).collect();
