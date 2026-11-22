@@ -1045,17 +1045,18 @@ fn vault_core_num(n: f64) -> String {
     md_engine::frontmatter::fmt_number(n)
 }
 
-/// A setting row: name and control on one line, the one-line description below the whole row.
+/// A setting row: the name and its description in the label column, the control beside them.
 fn row(dom: &mut Dom, parent: NodeId, name: &str, desc: &str) -> NodeId {
     let item = dom.add(parent, El::div().class("setting-item"));
     let main = dom.add(item, El::div().class("setting-item-main"));
     let info = dom.add(main, El::div().class("setting-item-info"));
     dom.add(info, El::div().class("setting-item-name").text(name));
-    let ctl = dom.add(main, El::div().class("setting-item-control"));
+    // The description belongs to the label column: it wraps inside it, so a long one never runs
+    // under the control, and the control centers against the whole block of text.
     if !desc.is_empty() {
-        dom.add(item, El::div().class("setting-item-description").text(desc));
+        dom.add(info, El::div().class("setting-item-description").text(desc));
     }
-    ctl
+    dom.add(main, El::div().class("setting-item-control"))
 }
 
 fn toggle(dom: &mut Dom, ctl: NodeId, on: bool, action: String) {
@@ -1347,6 +1348,11 @@ fn community_plugins_view(app: &App, dom: &mut Dom, parent: NodeId) {
     }
     for p in &list {
         let state = match (&p.error, p.loaded, p.enabled) {
+            // A plugin without a native port is expected to sit there until its port arrives:
+            // the row says so without the word the list uses for real failures.
+            (Some(e), _, _) if e == crate::plugins::NO_PORT => {
+                format!("v{} · {} · {e}", p.version, kind_label(p.kind))
+            }
             (Some(e), _, _) => format!("Error: {e}"),
             (_, true, _) => format!("v{} · {} · en ejecución", p.version, kind_label(p.kind)),
             (_, _, true) => format!("v{} · {} · se cargará al recargar", p.version, kind_label(p.kind)),
@@ -1354,6 +1360,14 @@ fn community_plugins_view(app: &App, dom: &mut Dom, parent: NodeId) {
         };
         let ctl = row(dom, parent, &p.name, &state);
         toggle(dom, ctl, p.enabled, format!("settings:community:{}", p.id));
+    }
+    if list.iter().any(|p| p.error.as_deref() == Some(crate::plugins::NO_PORT)) {
+        dom.add(
+            parent,
+            El::div()
+                .class("settings-note")
+                .text("Los plugins sin port nativo aún quedan en la lista: llegarán los que hagan falta."),
+        );
     }
 }
 
@@ -1695,15 +1709,18 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     input(dom, ctl, &format!("ai.p:timeout_s:{at}"), &p.timeout_s.to_string(), ui.edit.as_ref(), Some("30"));
 }
 
-/// The settings window, drawn over everything else.
+/// The settings window, drawn over everything else. The status bar is painted over the bottom
+/// edge of the window, so the panel carries that height as a bottom margin: it ends up centered
+/// on what the reader sees, while the veil behind it still covers the whole window.
 pub fn modal(app: &App, dom: &mut Dom) {
     let Some(ui) = &app.settings else { return };
     let t = app.anims.t("settings");
     let backdrop = El::div().class("modal-container mod-dim").action("settings:close");
-    let mut modal = El::div().class("modal mod-settings").action("settings:noop");
+    let mut style = format!("margin-bottom: {:.0}px; ", crate::view::STATUS_BAR_H);
     if t < 1.0 {
-        modal = modal.style(&format!("margin-top: {:.1}px", 14.0 * (1.0 - t)));
+        style.push_str(&format!("margin-top: {:.1}px; ", 14.0 * (1.0 - t)));
     }
+    let modal = El::div().class("modal mod-settings").style(&style).action("settings:noop");
     let backdrop = dom.add(0, backdrop);
     let modal = dom.add(backdrop, modal);
 

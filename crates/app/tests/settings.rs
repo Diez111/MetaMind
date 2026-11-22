@@ -286,12 +286,8 @@ fn theme_swatches_preview_and_apply_the_scheme() {
     app.run("settings:edit:search");
     typed(&mut app, "tema");
     let frame = draw(&mut app);
-    let swatches: Vec<_> = frame
-        .dom
-        .nodes
-        .iter()
-        .filter(|n| n.el.classes.iter().any(|c| c == "theme-swatch"))
-        .collect();
+    let swatches: Vec<_> =
+        frame.dom.nodes.iter().filter(|n| n.el.classes.iter().any(|c| c == "theme-swatch")).collect();
     assert_eq!(swatches.len(), 3);
     let value = |n: &&metamind_ui::dom::Node| {
         n.el.attrs.iter().find(|(k, _)| k == "data-value").map(|(_, v)| v.clone()).unwrap()
@@ -338,12 +334,8 @@ fn search_field_and_category_list_show_the_keyboard_focus_ring() {
     // Editing the search paints the accent focus ring on the field.
     app.run("settings:edit:search");
     let frame = draw(&mut app);
-    let search = frame
-        .dom
-        .nodes
-        .iter()
-        .find(|n| n.el.action.as_deref() == Some("settings:edit:search"))
-        .unwrap();
+    let search =
+        frame.dom.nodes.iter().find(|n| n.el.action.as_deref() == Some("settings:edit:search")).unwrap();
     assert!(search.focus && search.el.classes.iter().any(|c| c == "is-editing"));
     // TODO: theme_var access needs a public API method
     // assert!(search.style.border_color[3].a > 0);
@@ -356,12 +348,8 @@ fn status_bar_shows_a_spinner_while_the_vault_loads() {
     app.start_busy("Indexando bóveda…");
     let frame = draw(&mut app);
     assert!(frame.dom.nodes.iter().any(|n| n.el.classes.iter().any(|c| c == "status-bar-busy")));
-    let spinner = frame
-        .dom
-        .nodes
-        .iter()
-        .find(|n| n.el.classes.iter().any(|c| c == "status-bar-spinner"))
-        .unwrap();
+    let spinner =
+        frame.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == "status-bar-spinner")).unwrap();
     assert!(["|", "/", "-", "\\"].contains(&spinner.el.text.as_deref().unwrap()));
     assert!(texts(&frame, "status-bar-busy-label").contains(&"Indexando bóveda…"));
     for _ in 0..40 {
@@ -392,21 +380,14 @@ fn every_control_in_the_panel_sits_on_one_axis() {
         .nodes
         .iter()
         .filter(|n| has(n, "setting-input"))
-        .filter(|n| {
-            n.parent.is_some_and(|p| has(&frame.dom.nodes[p], "setting-item-control"))
-        })
+        .filter(|n| n.parent.is_some_and(|p| has(&frame.dom.nodes[p], "setting-item-control")))
         .map(|n| n.rect.w)
         .collect();
     assert!(widths.len() >= 3, "{widths:?}");
     let (min, max) = widths.iter().fold((f32::MAX, f32::MIN), |(a, b), &r| (a.min(r), b.max(r)));
     assert!(max - min < 0.5, "the inputs are not one width: {widths:?}");
     // The colour chip sits inside its control instead of hanging off the column.
-    let chip = frame
-        .dom
-        .nodes
-        .iter()
-        .find(|n| has(n, "color-chip"))
-        .expect("the accent colour has a chip");
+    let chip = frame.dom.nodes.iter().find(|n| has(n, "color-chip")).expect("the accent colour has a chip");
     let owner = frame.dom.nodes[chip.parent.expect("the chip has a parent")].rect;
     assert!(
         chip.rect.x >= owner.x && chip.rect.x + chip.rect.w <= owner.x + owner.w + 0.5,
@@ -529,7 +510,8 @@ fn settings_scrim_covers_the_whole_window() {
     assert!(bg.a >= 178, "the scrim lets {} of 255 through", 255 - bg.a);
     // In document order, which is paint order here: only menus, notices and the perf overlay are
     // drawn over it.
-    let over: Vec<&str> = frame.dom.nodes[0].children[frame.dom.nodes[0].children.iter().position(|&c| c == scrim).unwrap()..]
+    let over: Vec<&str> = frame.dom.nodes[0].children
+        [frame.dom.nodes[0].children.iter().position(|&c| c == scrim).unwrap()..]
         .iter()
         .filter_map(|&c| frame.dom.nodes[c].el.classes.first().map(String::as_str))
         .collect();
@@ -652,4 +634,181 @@ fn plugins_badge_explains_itself() {
     app.run(&action);
     let frame = draw(&mut app);
     assert!(texts(&frame, "settings-section-title").contains(&"Plugins"), "{action} opens Plugins");
+}
+
+/// The rect of the first node that has all of these classes.
+fn node_at<'a>(frame: &'a metamind_app::Frame, classes: &[&str]) -> Option<(usize, &'a metamind_ui::Rect)> {
+    frame
+        .dom
+        .nodes
+        .iter()
+        .position(|n| classes.iter().all(|c| n.el.classes.iter().any(|x| x == c)))
+        .map(|i| (i, &frame.dom.nodes[i].rect))
+}
+
+/// Where the first node with this class is, if any.
+fn node_with(frame: &metamind_app::Frame, class: &str) -> Option<metamind_ui::NodeId> {
+    frame.dom.nodes.iter().position(|n| n.el.classes.iter().any(|c| c == class))
+}
+
+fn all_with(frame: &metamind_app::Frame, class: &str) -> Vec<metamind_ui::NodeId> {
+    frame
+        .dom
+        .nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| n.el.classes.iter().any(|c| c == class))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// The settings rows are one grid: the label column wraps its text inside its own width, every
+/// control in the panel ends on the same right edge, and a toggle sits on the optical centre of
+/// the two lines beside it. The panel scrolls inside the modal, so the last row of Apariencia is
+/// reachable instead of being cut by the bottom edge.
+#[test]
+fn appearance_is_one_measured_column_inside_a_scrolling_modal() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    app.run("settings:section:appearance");
+    let mut fonts = metamind_ui::Fonts::new();
+    let mut pm = metamind_ui::Pixmap::new(1600, 1000).unwrap();
+    let mut f = metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+
+    let rect = |f: &metamind_app::Frame, c: &str| f.dom.nodes[node_with(f, c).expect(c)].rect;
+    let modal = *node_at(&f, &["modal", "mod-settings"]).expect("the settings panel").1;
+    let scrim = rect(&f, "modal-container");
+
+    // The veil covers the whole window and the panel is centered on what the reader sees: the
+    // status bar is drawn over the bottom of the window and is not part of that area.
+    assert_eq!((scrim.x, scrim.y, scrim.w, scrim.h), (0.0, 0.0, 1600.0, 1000.0), "the veil is the window");
+    let visible = 1000.0 - metamind_app::view::STATUS_BAR_H;
+    assert!((modal.x + modal.w / 2.0 - 800.0).abs() <= 1.0, "centered across: {modal:?}");
+    assert!(
+        (modal.y + modal.h / 2.0 - visible / 2.0).abs() <= 1.0,
+        "centered on the visible area ({visible}), not on the window: {modal:?}"
+    );
+    let veil = f.dom.nodes[node_with(&f, "modal-container").unwrap()].style.background;
+    assert!(veil.a > 0, "the modal dims what is behind it: {veil:?}");
+
+    // The panel is a real scroller inside the modal, and its content is taller than its box: the
+    // last row of Apariencia is reached by scrolling, never by being cut by the modal's edge.
+    let content = node_with(&f, "vertical-tab-content").expect("the panel scroller");
+    let (crect, scrollable, content_h) = {
+        let n = &f.dom.nodes[content];
+        (n.rect, n.style.scroll, n.content_h)
+    };
+    assert!(scrollable, "the appearance panel scrolls");
+    assert!(crect.y + crect.h <= modal.y + modal.h, "the scroller ends with the modal: {crect:?}");
+    assert!(content_h > crect.h, "the section is taller than its box: {content_h} vs {}", crect.h);
+
+    // Nothing inside is clipped: every part fits once the panel is scrolled to its end, and its
+    // start is visible at the top before scrolling.
+    let inside: Vec<usize> = f
+        .dom
+        .nodes
+        .iter()
+        .enumerate()
+        .filter(|(i, n)| *i != content && n.rect.h > 0.0 && is_descendant(&f, *i, content))
+        .map(|(i, _)| i)
+        .collect();
+    assert!(inside.len() > 20, "the panel has its rows: {}", inside.len());
+    for &i in &inside {
+        let r = f.dom.nodes[i].rect;
+        assert!(r.y >= crect.y - 0.5, "row above the panel at the top: {r:?}");
+    }
+    app.scrolls.insert("settings-content".to_string(), content_h - crect.h);
+    f = metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+    let crect = f.dom.nodes[node_with(&f, "vertical-tab-content").unwrap()].rect;
+    for &i in &inside {
+        let r = f.dom.nodes[i].rect;
+        assert!(r.y + r.h <= crect.y + crect.h + 0.5, "row cut by the bottom: {r:?}");
+    }
+    app.scrolls.remove("settings-content");
+
+    // One right edge for every control in the column, and the small extras stay inside it.
+    f = metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+    let controls = all_with(&f, "setting-item-control");
+    assert!(controls.len() >= 8, "the appearance rows: {}", controls.len());
+    let edge = f.dom.nodes[controls[0]].rect.x + f.dom.nodes[controls[0]].rect.w;
+    for &c in &controls {
+        let r = f.dom.nodes[c].rect;
+        assert!((r.x + r.w - edge).abs() <= 0.5, "one right edge: {r:?} vs {edge}");
+        for &kid in &f.dom.nodes[c].children {
+            let k = &f.dom.nodes[kid];
+            if k.style.absolute || k.style.display_none {
+                continue;
+            }
+            assert!(
+                (k.rect.x + k.rect.w - edge).abs() <= 0.5,
+                "{} ends on the column's edge: {:?}",
+                k.el.classes.join("."),
+                k.rect
+            );
+        }
+    }
+    // The accent swatch is a chip inset in its field, not a circle on the border.
+    let field = all_with(&f, "setting-input");
+    let chip = rect(&f, "color-chip");
+    assert!(field.iter().any(|&i| {
+        let r = f.dom.nodes[i].rect;
+        chip.x >= r.x && chip.x + chip.w <= r.x + r.w - 2.0 && chip.y >= r.y && chip.y + chip.h <= r.y + r.h
+    }));
+
+    // A description wraps inside the label column and never runs under the control of its row.
+    let descriptions = all_with(&f, "setting-item-description");
+    assert!(descriptions.len() >= 8, "{}", descriptions.len());
+    for &i in &descriptions {
+        let r = f.dom.nodes[i].rect;
+        let ctl = all_with(&f, "setting-item-control")
+            .into_iter()
+            .find(|&c| f.dom.nodes[c].rect.y < r.y && f.dom.nodes[c].rect.y + f.dom.nodes[c].rect.h > r.y)
+            .expect("the control of the same row");
+        let c = f.dom.nodes[ctl].rect;
+        assert!(r.x + r.w <= c.x, "a description crosses into the control column: {r:?} and {c:?}");
+    }
+
+    // The toggles sit on the optical centre of the text block of their row.
+    let toggles = all_with(&f, "checkbox-container");
+    assert!(toggles.len() >= 2, "the appearance rows with a toggle: {}", toggles.len());
+    for &t in &toggles {
+        let tr = f.dom.nodes[t].rect;
+        let info = all_with(&f, "setting-item-info")
+            .into_iter()
+            .find(|&i| {
+                let r = f.dom.nodes[i].rect;
+                tr.y >= r.y && tr.y + tr.h <= r.y + r.h
+            })
+            .expect("the text block of the same row");
+        let ir = f.dom.nodes[info].rect;
+        let (a, b) = (tr.y + tr.h / 2.0, ir.y + ir.h / 2.0);
+        assert!((a - b).abs() <= 1.0, "a toggle is off its row: {a} vs {b}");
+    }
+
+    // The category is called Apariencia, and the list's highlight keeps the column's left axis.
+    let labels: Vec<&str> = all_with(&f, "vertical-tab-nav-label")
+        .iter()
+        .filter_map(|&i| f.dom.nodes[i].el.text.as_deref())
+        .collect();
+    assert!(labels.contains(&"Apariencia"), "{labels:?}");
+    let active_id = node_at(&f, &["vertical-tab-nav-item", "is-active"]).expect("the selected category").0;
+    let active = f.dom.nodes[active_id].rect;
+    let icon = f.dom.nodes[f.dom.nodes[active_id].children[0]].rect;
+    assert!(
+        active.x <= icon.x && icon.x - active.x <= 2.0,
+        "the highlight starts at the icon: {active:?} {icon:?}"
+    );
+}
+
+/// Whether `id` is inside `root` in the tree.
+fn is_descendant(frame: &metamind_app::Frame, id: usize, root: usize) -> bool {
+    let mut cur = frame.dom.nodes[id].parent;
+    while let Some(p) = cur {
+        if p == root {
+            return true;
+        }
+        cur = frame.dom.nodes[p].parent;
+    }
+    false
 }

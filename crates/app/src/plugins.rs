@@ -10,11 +10,20 @@ use md_engine::frontmatter::Value as Fm;
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use vault_core::{fsio, FileKind};
 
 /// Rounds of event delivery per pump; events raised by plugins while handling events are
 /// delivered in the next round, so a plugin that modifies a note on every modify cannot spin.
 const MAX_ROUNDS: usize = 4;
+
+/// What a plugin of the JS kind carries as its state here: the native core has no port for it
+/// yet, which is not a failure of the plugin. The settings list shows this line under the
+/// plugin and the launch notice groups them instead of repeating one toast per plugin.
+pub const NO_PORT: &str = "Sin port nativo aún";
+
+/// The launch notice about plugins without a native port is a session-wide, once-only thing.
+static NO_PORT_ANNOUNCED: AtomicBool = AtomicBool::new(false);
 
 // ---- Built-in plugins ----------------------------------------------------------------
 //
@@ -348,6 +357,9 @@ pub struct PluginState {
     pub ext: Extensions,
     pub statuses: Vec<PluginStatus>,
     pub loaded: bool,
+    /// The launch notice about the plugins the native core cannot run yet, while it is the one
+    /// on screen: the toast takes its tone from it (it informs, it does not warn).
+    pub no_port_notice: Option<String>,
     frames: u32,
     events: VecDeque<Event>,
     commands: Vec<String>,
@@ -570,11 +582,7 @@ fn instantiate(d: &Discovered, root: &Path) -> Result<Box<dyn Extension>, String
             .map(|p| Box::new(p) as Box<dyn Extension>),
         _kind => {
             let _ = root;
-            Err(format!(
-                "Esta compilación nativa no ejecuta plugins JS: {} ({})",
-                d.manifest.name,
-                d.entry.trim_start_matches(".obsidian/plugins/")
-            ))
+            Err(NO_PORT.to_string())
         }
     }
 }
@@ -637,6 +645,7 @@ impl App {
             self.config.enabled_community_plugins().into_iter().map(str::to_string).collect();
         let root = self.store.root.clone();
         let mut statuses = Vec::new();
+        let mut no_port = 0usize;
         for d in ext_api::discover(&root) {
             let on = enabled.contains(&d.manifest.id);
             let mut st = status_of(&d, on);
@@ -650,10 +659,17 @@ impl App {
                 if on {
                     // A plugin that cannot run says so once, in the toast; the settings list
                     // keeps the error next to the plugin.
-                    self.notice = Some(e.clone());
+                    if e == NO_PORT {
+                        no_port += 1;
+                    } else {
+                        self.notice = Some(e.clone());
+                    }
                 }
             }
             statuses.push(st);
+        }
+        if no_port > 0 {
+            self.announce_no_port(no_port);
         }
         self.plugins.ext = ext;
         self.plugins.statuses = statuses;
@@ -664,6 +680,23 @@ impl App {
         if let Some(t) = self.tab().map(|t| t.path.clone()) {
             self.plugins.push(Event::FileOpen { path: t });
         }
+    }
+
+    /// Say, once per session, that some Obsidian plugins have no native port yet. One line for
+    /// all of them: a toast per plugin reads like a queue of failures, and the point is the other
+    /// way round — the native core runs everything else.
+    fn announce_no_port(&mut self, n: usize) {
+        if NO_PORT_ANNOUNCED.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        let text = if n == 1 {
+            "Algunos plugins de Obsidian aún no tienen port nativo; los necesarios llegarán con el tiempo."
+                .to_string()
+        } else {
+            format!("{n} plugins de Obsidian sin port nativo aún; los necesarios llegarán con el tiempo.")
+        };
+        self.plugins.no_port_notice = Some(text.clone());
+        self.notice = Some(text);
     }
 
     /// Load an extension that was built in-process (used by tests and embedders).
@@ -760,4 +793,11 @@ impl App {
     pub fn plugin_palette(&self) -> Vec<(String, String)> {
         self.plugins.ext.reg.commands.iter().map(|c| (c.id.clone(), c.name.clone())).collect()
     }
+}
+
+/// Forget that the launch notice about plugins without a native port was shown. The flag lives
+/// for the whole process, which is the session it covers; a test that loads plugins twice resets
+/// it instead of depending on the order the tests run in.
+pub fn reset_no_port_notice() {
+    NO_PORT_ANNOUNCED.store(false, Ordering::Relaxed);
 }
