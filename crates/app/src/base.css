@@ -154,6 +154,9 @@ body {
 .cm-line[aria-level="4"], .cm-line[aria-level="5"], .cm-line[aria-level="6"] { margin-top: 16px; margin-bottom: 6px }
 .markdown-source-view.is-readable-line-width .cm-line { max-width: var(--file-line-width) }
 .cm-line.cm-codeblock { background-color: var(--code-background); font-family: monospace; color: var(--code-normal); padding: 10px 16px; margin: 0 0 12px 0; border-radius: var(--radius-s); font-size: 0.88em }
+/* Raw HTML (`<svg>`, `<div>`) is shown as code: a tag is one token, so the line never wraps
+   inside one — the pane clips what does not fit instead of breaking it in the middle. */
+.cm-line.cm-htmlblock { white-space: pre; overflow: hidden }
 .cm-line.cm-quote { border-left: 3px solid var(--interactive-accent); padding: 2px 0 2px 15px; color: var(--text-muted) }
 .cm-line.cm-callout { border-left: 3px solid var(--interactive-accent); margin: 0 0 16px 0; padding: 11px 16px 11px 25px; border-radius: var(--radius-m); line-height: 1.65 }
 /* A callout that holds a list is a box with one child per line, so its title, its paragraphs and

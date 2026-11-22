@@ -200,6 +200,8 @@ pub struct Scrolled {
     /// The first and last blocks of the note are in the view.
     pub start: bool,
     pub end: bool,
+    /// How many blocks the note has: an anchor past that is stale.
+    pub blocks: usize,
 }
 
 /// Syntax-highlight spans for a fenced code block, appended to `spans`. `map` is the
@@ -248,13 +250,19 @@ fn code_spans(
 /// Turn a block's source and decorations into display text and styled spans.
 ///
 /// `math` are the block's inline formulas: each one keeps its place in the text as blanks, which
-/// the painter fills once the line's real metrics are known.
+/// the painter fills once the line's real metrics are known. A display formula (`$$..$$`) is given
+/// a line of its own: no text may sit beside it.
+///
+/// `verbatim` keeps the source as it is: a raw HTML block is shown as code, so the tags that
+/// carry meaning inside a line of prose (`<div>`, `<br>`) are content there and must not be
+/// stripped.
 pub fn block_display(
     src: &str,
     src_start: usize,
     decos: &[Deco],
     math: &[crate::rich::Inline],
     pal: &Palette,
+    verbatim: bool,
 ) -> (String, Vec<Span>, Vec<(usize, usize, usize)>) {
     let end = src_start + src.len();
     let mut cuts: Vec<usize> = vec![src_start, end];
@@ -271,6 +279,8 @@ pub fn block_display(
     let mut display = String::with_capacity(src.len());
     let mut spans = Vec::new();
     let mut map = Vec::new();
+    // A display formula that was just placed: the next text starts on a line of its own.
+    let mut break_after_math = false;
     for w in cuts.windows(2) {
         let (a, b) = (w[0], w[1]);
         let (ra, rb) = (a - src_start, b - src_start);
@@ -281,16 +291,7 @@ pub fn block_display(
         // for is not shown at all here (it comes back when the caret enters the block).
         if let Some(m) = math.iter().find(|m| m.start <= a && m.end >= b) {
             if a == m.start {
-                let at = display.len();
-                display.push_str(&m.filler);
-                spans.push(Span {
-                    start: at,
-                    end: display.len(),
-                    scale: m.scale,
-                    lh_scale: m.lh,
-                    ..Span::default()
-                });
-                map.push((m.start, at, m.end - m.start));
+                break_after_math = place_math(&mut display, &mut spans, &mut map, m);
             }
             continue;
         }
@@ -348,19 +349,16 @@ pub fn block_display(
         map.push((a, display.len(), b - a));
         // HTML tags (center, div, span, br) are markup: they carry alignment, not content.
         let raw = &src[ra..rb];
-        if raw.contains('<') && raw.contains('>') {
-            // Strip common HTML tags from the display: the content between them is what matters.
-            let cleaned = raw
-                .replace("<center>", "")
-                .replace("</center>", "")
-                .replace("<div>", "")
-                .replace("</div>", "")
-                .replace("<span>", "")
-                .replace("</span>", "")
-                .replace("<br>", "\n")
-                .replace("<br/>", "\n")
-                .replace("<hr>", "\n---\n");
-            display.push_str(&cleaned);
+        if break_after_math {
+            break_after_math = false;
+            // The source's own line break already ended the formula's line unless the formula
+            // shared its line with text; then the text starts a new line here.
+            if !raw.is_empty() && !raw.starts_with('\n') && !display.ends_with('\n') {
+                display.push('\n');
+            }
+        }
+        if !verbatim && raw.contains('<') && raw.contains('>') {
+            display.push_str(&strip_html(raw));
         } else {
             display.push_str(raw);
         }
@@ -369,6 +367,56 @@ pub fn block_display(
         }
     }
     (display, spans, map)
+}
+
+/// Give a formula its place in the display: the blanks that stand for it, the span that makes the
+/// line tall enough to hold it, and the source range it maps back to. Returns whether the formula
+/// is a display one, whose line has to end before any text that follows it.
+fn place_math(
+    display: &mut String,
+    spans: &mut Vec<Span>,
+    map: &mut Vec<(usize, usize, usize)>,
+    m: &crate::rich::Inline,
+) -> bool {
+    // A display formula is never set beside words: it starts a line of its own.
+    if m.display && !display.is_empty() && !display.ends_with('\n') {
+        display.push('\n');
+    }
+    let at = display.len();
+    display.push_str(&m.filler);
+    spans.push(Span { start: at, end: display.len(), scale: m.scale, lh_scale: m.lh, ..Span::default() });
+    map.push((m.start, at, m.end - m.start));
+    m.display
+}
+
+/// The display text of a run of source that holds HTML: the tags that only carry alignment are
+/// dropped, since the words between them are what a reader wants.
+fn strip_html(raw: &str) -> String {
+    [
+        ("<center>", ""),
+        ("</center>", ""),
+        ("<div>", ""),
+        ("</div>", ""),
+        ("<span>", ""),
+        ("</span>", ""),
+        ("<br>", "\n"),
+        ("<br/>", "\n"),
+        ("<hr>", "\n---\n"),
+    ]
+    .iter()
+    .fold(raw.to_string(), |s, (tag, with)| s.replace(tag, with))
+}
+
+/// Whether a line of the display holds nothing but the blanks of a display formula.
+fn is_filler_line(line: &str) -> bool {
+    !line.is_empty() && line.chars().all(|c| c == '\u{a0}')
+}
+
+/// Drop the empty lines a container leaves at the end of its body (`>` alone on the last line):
+/// they are not content, and an empty paragraph makes a callout taller than the one beside it.
+fn trim_empty_lines(display: &mut String) {
+    let end = display.trim_end_matches(['\n', ' ', '\t', '\r']).len();
+    display.truncate(end);
 }
 
 /// One line of a rendered block, ready to become an element of its own.
@@ -524,12 +572,19 @@ fn join_soft_breaks(display: &str, keep_first: bool) -> Option<(String, Vec<usiz
     }
     // Whether the break before each line survives, and how much indent a joined line loses.
     let mut kept = vec![true; lines.len()];
+    let filler = |l: &str| is_filler_line(l.trim_matches([' ', '\t']));
     for i in 1..lines.len() {
         let line = lines[i].1;
         let prev = lines[i - 1].1;
         let t = line.trim_start_matches([' ', '\t']);
         let starts = t.is_empty() || list_marker(line).is_some() || t.starts_with(['#', '>', '|', '`', '~']);
-        kept[i] = prev.ends_with(' ') || prev.ends_with('\\') || starts || (i == 1 && keep_first);
+        // A display formula's line is its own line: the text around it never joins it.
+        kept[i] = prev.ends_with(' ')
+            || prev.ends_with('\\')
+            || starts
+            || (i == 1 && keep_first)
+            || filler(line)
+            || filler(prev);
     }
     if kept.iter().all(|&k| k) {
         return None;
@@ -633,6 +688,21 @@ fn list_block(
         // Read before the line's text goes into its block: the blanks are what says how many
         // formulas it holds.
         let shown = display.clone();
+        // A display formula owns its line: it is drawn by the block painter, exactly as a `$$`
+        // block of the note would be, instead of as a run of blanks in a line of text.
+        if let Some(slot) = display_slot(&shown, math, &mut next) {
+            let kind = crate::rich::Kind::Math { src: slot.src, display: true };
+            let node = crate::rich::add(dom, parent, kind, &mut info.rich);
+            info.blocks.push(BlockView {
+                block,
+                node,
+                src_start: start,
+                src_end: end,
+                map: vec![(start, 0, 0)],
+                ..BlockView::default()
+            });
+            continue;
+        }
         if let Some((color, ts, te)) = callout {
             let (d0, d1) = (display_of(&map, ts), display_of(&map, te));
             for sp in spans.iter_mut().filter(|sp| sp.start >= d0 && sp.end <= d1) {
@@ -688,12 +758,24 @@ fn attach_math(
     node: NodeId,
     info: &mut ViewInfo,
 ) {
-    let n = crate::rich::slots_in(display).min(math.len() - *next);
+    let n = crate::rich::slots_in(display).min(math.len().saturating_sub(*next));
     if n == 0 {
         return;
     }
     info.inline.push(crate::rich::InlineItem { node, slots: math[*next..*next + n].to_vec() });
     *next += n;
+}
+
+/// The display formula whose blanks make up a whole line of a container, if that is what the line
+/// is. Stepping past the formula it takes is left to [`attach_math`] for every other line, so a
+/// line is counted once.
+fn display_slot(line: &str, math: &[crate::rich::Inline], next: &mut usize) -> Option<crate::rich::Inline> {
+    if !is_filler_line(line) || crate::rich::slots_in(line) != 1 {
+        return None;
+    }
+    let slot = math.get(*next).filter(|m| m.display).cloned()?;
+    *next += 1;
+    Some(slot)
 }
 
 /// Mark the characters that carry meaning on their own: the stars that rate a note and the `·`
@@ -1344,6 +1426,7 @@ fn editor(
         marks,
         start: first == 0,
         end: last == doc.blocks.len(),
+        blocks: doc.blocks.len(),
     });
 }
 
@@ -1356,6 +1439,12 @@ pub fn scroll_views(app: &mut App, dom: &mut Dom, info: &ViewInfo) {
             t.scroll_to_block(0);
             continue;
         }
+        // An anchor past the end of the note (an edit that shortened it, a saved session from a
+        // longer version) would land on the last block laid out and open the note at its end,
+        // with its first lines scrolled off the top. The last block is as far as it can go.
+        if t.top_block >= s.blocks {
+            t.scroll_to_block(s.blocks.saturating_sub(1));
+        }
         let top = dom.content_rect(s.view).y;
         // Offsets of the blocks in the view's content; the first starts at the top, margin
         // included.
@@ -1367,6 +1456,7 @@ pub fn scroll_views(app: &mut App, dom: &mut Dom, info: &ViewInfo) {
         let want = pos[anchor] + t.scroll_px;
         let mut y = want;
         if s.start {
+            // The first line of the note is never scrolled above the top of the view.
             y = y.max(0.0);
         }
         if s.end {
@@ -1436,6 +1526,9 @@ pub(crate) fn note_blocks(
                 "cm-line"
             }
             NodeKind::CodeBlock { .. } | NodeKind::MathBlock { .. } => "cm-line cm-codeblock",
+            // Raw HTML (an `<svg>` block, a `<div>` layout) is shown as code: it is source, not
+            // prose, and a line of it wrapped as prose breaks tags in the middle.
+            NodeKind::HtmlBlock => "cm-line cm-codeblock cm-htmlblock",
             NodeKind::BlockQuote => "cm-line cm-quote",
             NodeKind::Callout { .. } => "cm-line cm-callout",
             NodeKind::FrontMatter { .. } => "cm-line cm-frontmatter",
@@ -1568,8 +1661,15 @@ pub(crate) fn note_blocks(
         let (mut display, mut spans, mut map) = if class.ends_with("cm-hr") {
             (String::new(), Vec::new(), Vec::new())
         } else {
-            block_display(&src, s, &block_decos, &math, pal)
+            block_display(&src, s, &block_decos, &math, pal, matches!(root.kind, NodeKind::HtmlBlock))
         };
+        // A container's body may end with an empty line (a `>` alone): it is not content, and an
+        // empty paragraph underneath a callout makes its box taller than the one beside it.
+        if rendered && matches!(root.kind, NodeKind::Callout { .. } | NodeKind::BlockQuote) {
+            trim_empty_lines(&mut display);
+            spans.retain(|sp| sp.start < display.len());
+            map.retain(|&(_, d, len)| d < display.len() && len > 0);
+        }
         if marker > 0 && !rendered {
             // Shown to edit it: at the size of the text, not of the heading.
             for sp in spans.iter_mut().filter(|sp| sp.end <= marker) {
@@ -1600,7 +1700,10 @@ pub(crate) fn note_blocks(
         // lines under the item's text, and the bullet would be the source's own `-`. A callout
         // with a title of its own is drawn that way too, list or not: the title has to be a line
         // of its own to fold and unfold it, while a click on the body still places the caret.
-        let split_callout = callout_titled && display.contains('\n');
+        // A container that holds a display formula is split as well: the formula gets a line of
+        // its own, and no text may be laid out beside it.
+        let display_math = display.split('\n').any(is_filler_line);
+        let split_callout = display.contains('\n') && (callout_titled || display_math);
         if rendered && !folded_here && (draws_list_lines(&root.kind, &display) || split_callout) {
             let mut callout_lines = cut_lines(&display, &spans, &map);
             // A closed callout shows its title and nothing else: `list_block` gives every line
@@ -1774,7 +1877,7 @@ fn table(
             let text = raw.trim();
             let cell_decos: Vec<Deco> =
                 decos.iter().filter(|d| d.start < start + text.len() && d.end > start).copied().collect();
-            let (display, spans, map) = block_display(text, start, &cell_decos, &[], pal);
+            let (display, spans, map) = block_display(text, start, &cell_decos, &[], pal, false);
             cells.push(Cell {
                 start,
                 end: start + text.len(),
@@ -1857,7 +1960,8 @@ fn embedded_blocks(dom: &mut Dom, parent: NodeId, text: &str, action: &str, pal:
         if class.ends_with("cm-quote") {
             hide_quote_markers(src, s, &mut block_decos);
         }
-        let (display, mut spans, map) = block_display(src, s, &block_decos, &[], pal);
+        let verbatim = matches!(root.kind, NodeKind::HtmlBlock);
+        let (display, mut spans, map) = block_display(src, s, &block_decos, &[], pal, verbatim);
         code_spans(&b.tree, b.start, src, s, &map, pal, &mut spans);
         dom.add(parent, El::div().class(class).text(display).spans(spans).action(action));
     }
@@ -2337,7 +2441,8 @@ fn stack(
     }
 }
 
-/// The main window: ribbon, sidebars, the split panes and the status bar.
+/// The main window: ribbon, sidebars, the split panes and the status bar. `viewport_h` is the
+/// height above the footer: the status bar is not part of the area a note scrolls in.
 fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewInfo, viewport_h: f32) {
     let show_ribbon = app.config.appearance.bool("showRibbon", true);
     let ribbon = dom.add(ws, El::div().class("workspace-ribbon").class_if(!show_ribbon, "is-hidden"));
@@ -2663,6 +2768,12 @@ fn overlays(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate::ric
     }
 }
 
+/// Height of the status bar, from `base.css` (`padding: 4px 14px` around a line of
+/// `--font-ui-smaller`). It is drawn on top of the window, so it is not part of the area a note
+/// scrolls in: the view of a note, and everything sized from the window height, has to end above
+/// it. The last line of a note used to disappear under it.
+pub const STATUS_BAR_H: f32 = 27.0;
+
 /// The window's view. `solo` is a pane shown alone in a window of its own; the menus, prompts
 /// and notices show in the window whose pane has the keyboard.
 pub fn build(app: &App, viewport_h: f32, solo: Option<usize>) -> (Dom, ViewInfo) {
@@ -2670,20 +2781,22 @@ pub fn build(app: &App, viewport_h: f32, solo: Option<usize>) -> (Dom, ViewInfo)
     let mut info = ViewInfo::default();
     let mut dom = Dom::new();
     dom.nodes[0].el.classes.push(if app.dark { "theme-dark" } else { "theme-light" }.to_string());
-    let ws = dom.add(0, El::div().class("workspace"));
+    // A window of its own shows the pane alone, with no status bar under it.
+    let body_h = if solo.is_some() { viewport_h } else { (viewport_h - STATUS_BAR_H).max(0.0) };
+    let ws = dom.add(0, El::div().class("workspace").style(&format!("height: {body_h:.1}px")));
     match solo {
         Some(p) => {
             let root = dom.add(ws, El::div().class("workspace-split mod-root"));
-            pane(app, &mut dom, root, p, &pal, &mut info, viewport_h, app.window_w);
+            pane(app, &mut dom, root, p, &pal, &mut info, body_h, app.window_w);
         }
-        None => chrome(app, &mut dom, ws, &pal, &mut info, viewport_h),
+        None => chrome(app, &mut dom, ws, &pal, &mut info, body_h),
     }
     let here = match solo {
         Some(p) => app.pane == p,
         None => !app.is_popped(app.pane),
     };
     if here {
-        overlays(app, &mut dom, viewport_h, &mut info.rich);
+        overlays(app, &mut dom, body_h, &mut info.rich);
     }
     for (id, y) in &app.scrolls {
         if let Some(n) = dom.by_id(id) {

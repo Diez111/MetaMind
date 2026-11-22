@@ -29,6 +29,8 @@ pub struct Inline {
     pub scale: f32,
     /// How much taller than its line the formula is, as a multiple of the line height.
     pub lh: f32,
+    /// A `$$..$$` block formula: it takes a line of its own, at the size of a block.
+    pub display: bool,
 }
 
 /// The formulas of one text node, in the order their blanks appear in it.
@@ -127,26 +129,60 @@ pub fn inline(tree: &Tree, block_text: &str, scale: f32) -> Vec<Inline> {
     let scale = if scale > 0.0 { scale } else { 1.0 };
     tree.iter()
         .filter_map(|(_, n)| match n.kind {
-            NodeKind::InlineMath { content, .. } => {
-                Some((n.span.start as usize, n.span.end as usize, content.of(block_text).trim()))
+            NodeKind::InlineMath { content, display } => {
+                let src = content.of(block_text);
+                Some((n.span.start as usize, n.span.end as usize, src.trim().to_string(), display))
             }
+            // A `$$..$$` block that is not the root of its top-level block (it sits in a callout,
+            // a list item, a footnote) is never seen by `block_kind`: it is typeset here, in the
+            // flow of its container, and given a line of its own.
+            NodeKind::MathBlock { content } => Some((
+                n.span.start as usize,
+                n.span.end as usize,
+                math_block_source(content.of(block_text)),
+                true,
+            )),
             _ => None,
         })
-        .filter(|(_, _, src)| !src.is_empty())
-        .map(|(start, end, src)| slot(start, end, src, scale))
+        .filter(|(_, _, src, _)| !src.is_empty())
+        .map(|(start, end, src, display)| slot(start, end, &src, scale, display))
         .collect()
+}
+
+/// The formula of a `$$..$$` block: its lines with the marks of the container it sits in (the `>`
+/// of a quote) removed, joined into one expression. A display formula is set as a whole, so the
+/// line breaks the container put in front of them are not part of it.
+fn math_block_source(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for line in text.lines() {
+        let t = line.trim_start();
+        let t = t.strip_prefix('>').map_or(t, |r| r.trim_start()).trim();
+        if t.is_empty() {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.push_str(t);
+    }
+    out
 }
 
 /// The place one formula keeps in the text it sits in: its blanks, and how tall it makes the
 /// line. `start` and `end` are the formula's byte range in the drawn text, for the callers that
 /// track it; drawing only needs the order of the blanks.
-fn slot(start: usize, end: usize, src: &str, scale: f32) -> Inline {
+fn slot(start: usize, end: usize, src: &str, scale: f32, display: bool) -> Inline {
+    // A display formula is set at the size a block of its own uses, whatever the text around it.
+    let scale = if display { BLOCK_SIZE / TEXT_SIZE } else { scale };
     let size = TEXT_SIZE * scale;
-    let l = math_core::render_full(src, size, false, &INLINE_METRICS, &mut math_core::Approx).layout;
+    let l = math_core::render_full(src, size, display, &INLINE_METRICS, &mut math_core::Approx).layout;
     // The blanks are counted in a character's advance, and the face that draws them is
     // not the one the box was measured with: keep air, so the formula can never run
-    // under what follows it. `paint` shrinks it if the guess was too small anyway.
-    let want = l.width * 1.05 + 3.0;
+    // under what follows it. `paint` shrinks it if the guess was too small anyway. A display
+    // formula owns its line and is centred there, so its blanks only have to be wide enough to
+    // keep the line from wrapping in the middle of it.
+    let want =
+        if display { l.width.min(DIAGRAM_MAX_W).max(NBSP_EM * size * 2.0) } else { l.width * 1.05 + 3.0 };
     let count = ((want / (NBSP_EM * size).max(0.5)).round() as usize).max(1);
     // A line of prose is `LINE_EM` tall; a formula taller than that pushes the line down
     // instead of running over the line above and below. The height comes from the plain
@@ -154,9 +190,10 @@ fn slot(start: usize, end: usize, src: &str, scale: f32) -> Inline {
     // than the formula the fonts really set (26 px against 27 for a sum with limits, 17
     // against 24 for a fraction), and a line that under-measures its formula draws it
     // over the line below.
-    let tall = math_core::render(src, size, false, &mut math_core::Approx).height();
+    let tall = math_core::render(src, size, display, &mut math_core::Approx).height()
+        + if display { 2.0 * PAD } else { 0.0 };
     let lh = ((tall / TEXT_SIZE) / LINE_EM).max(1.0);
-    Inline { start, end, src: src.to_string(), filler: "\u{a0}".repeat(count), scale, lh }
+    Inline { start, end, src: src.to_string(), filler: "\u{a0}".repeat(count), scale, lh, display }
 }
 
 /// The inline formulas of a plain text, such as an AI reply, with the blanks that hold their
@@ -174,7 +211,7 @@ pub fn inline_text(text: &str, scale: f32) -> (String, Vec<Inline>) {
                 let src = rest[1..len].trim();
                 if !src.is_empty() && !rest[1..len].contains('\n') {
                     let start = display.len();
-                    let s = slot(start, start, src, scale);
+                    let s = slot(start, start, src, scale, false);
                     display.push_str(&s.filler);
                     slots.push(Inline { end: display.len(), ..s });
                     i += len + 1;
@@ -588,12 +625,22 @@ fn paint_inline(dom: &mut Dom, it: &InlineItem, fonts: &mut Fonts) {
         let Some(slot) = it.slots.get(i) else { break };
         let Some(at) = fm.fonts.range_box(&text, &spans, &base, width, a, b) else { continue };
         let size = base.size * slot.scale;
-        let r = math_core::render_full(&slot.src, size, false, &INLINE_METRICS, &mut fm);
+        let metrics = if slot.display { math_core::Metrics::default() } else { INLINE_METRICS };
+        let r = math_core::render_full(&slot.src, size, slot.display, &metrics, &mut fm);
         let l = &r.layout;
-        // The blanks were counted before the real font metrics were known; if they came up short
-        // the formula shrinks into the room it has instead of running under the next word.
-        let sc = if l.width > at.rect.w { (at.rect.w / l.width).clamp(0.4, 1.0) } else { 1.0 };
-        let x = cb.x + at.rect.x + (at.rect.w - l.width * sc) / 2.0;
+        let (x, sc) = if slot.display {
+            // A display formula owns its line: it is centred in the column, and shrunk to fit
+            // when it is wider than the column rather than running under the edge of the pane.
+            let avail = cb.w.max(1.0);
+            let sc = (avail / l.width.max(1.0)).clamp(MATH_MIN_SCALE, 1.0);
+            (cb.x + ((avail - l.width * sc) / 2.0).max(0.0), sc)
+        } else {
+            // The blanks were counted before the real font metrics were known; if they came up
+            // short the formula shrinks into the room it has instead of running under the next
+            // word.
+            let sc = if l.width > at.rect.w { (at.rect.w / l.width).clamp(0.4, 1.0) } else { 1.0 };
+            (cb.x + at.rect.x + (at.rect.w - l.width * sc) / 2.0, sc)
+        };
         emit(l, x, cb.y + at.baseline - l.ascent * sc, sc, &base, color, &mut cmds);
     }
     dom.nodes[it.node].draw = cmds;
