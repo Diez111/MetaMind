@@ -29,6 +29,9 @@ enum UserEvent {
     Indexed(PathBuf, Option<String>, Result<VaultStore, String>),
     /// Another launch asked this window to come forward and show a note of its vault.
     Show(Option<String>),
+    /// A frame of the video player is ready, or the player has something new to say: redraw so it
+    /// is shown now instead of at the next deadline.
+    Wake,
 }
 
 impl From<accesskit_winit::Event> for UserEvent {
@@ -420,6 +423,12 @@ impl Win {
         }
         let mut app = app;
         app.set_system_dark(self.window.as_ref().and_then(|w| w.theme()).map(|t| t == Theme::Dark));
+        // The player's frames arrive on a thread of its own: it wakes this loop instead of the
+        // window sleeping until something else happens.
+        let proxy = self.proxy.clone();
+        app.video.set_waker(Box::new(move || {
+            let _ = proxy.send_event(UserEvent::Wake);
+        }));
         // The vault index is already built here, but themes, plugins and the search corpus still
         // load over the next frames; the status bar spinner covers that stretch.
         app.start_busy("Cargando bóveda…");
@@ -588,6 +597,8 @@ impl ApplicationHandler<UserEvent> for Win {
             UserEvent::Changed(generation, paths) => (generation, paths),
             UserEvent::Indexed(root, note, store) => return self.indexed(&root, note.as_deref(), store),
             UserEvent::Show(note) => return self.show(note.as_deref()),
+            // A video frame is waiting: paint it now.
+            UserEvent::Wake => return self.request_redraw(),
             UserEvent::Access(e) => {
                 match e.window_event {
                     accesskit_winit::WindowEvent::InitialTreeRequested => self.update_access(),
@@ -860,11 +871,22 @@ impl Win {
         // A background update job is polled until it reports back.
         let update = app.update.busy().then_some(250);
         let ai = app.ai.busy().then_some(60);
-        let next = [app.derived_due_in(now), app.autosave_due_in(now), app.notice_due_in(), update, ai]
-            .into_iter()
-            .flatten()
-            .filter(|&ms| ms > 0)
-            .min();
+        // The player repaints while it plays, and a `yt-dlp` run is looked at until it answers.
+        let video = app.video_due_in();
+        let youtube = app.youtube_due_in();
+        let next = [
+            app.derived_due_in(now),
+            app.autosave_due_in(now),
+            app.notice_due_in(),
+            update,
+            ai,
+            video,
+            youtube,
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|&ms| ms > 0)
+        .min();
         // While the graph layout or an interface animation is moving, redraw at display rate;
         // both stop by themselves.
         let animating = app.graph_animating() || app.anims.active() || app.scrolling() || app.busy.is_some();

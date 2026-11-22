@@ -506,6 +506,26 @@ impl App {
         }
     }
 
+    /// Open a link with the system's browser. Only `http(s)` is handed to the opener, so a note
+    /// cannot make the application run an arbitrary command through it.
+    pub(crate) fn open_in_browser(&mut self, url: &str) {
+        let url = url.trim();
+        if !(url.starts_with("https://") || url.starts_with("http://")) {
+            self.notice = Some(format!("No es un enlace web: {url}"));
+            return;
+        }
+        let result = if cfg!(windows) {
+            std::process::Command::new("cmd").args(["/C", "start", "", url]).spawn()
+        } else if cfg!(target_os = "macos") {
+            std::process::Command::new("open").arg(url).spawn()
+        } else {
+            std::process::Command::new("xdg-open").arg(url).spawn()
+        };
+        if let Err(e) = result {
+            self.notice = Some(format!("No se pudo abrir {url} en el navegador: {e}"));
+        }
+    }
+
     /// Expand the folders above the current file and scroll the explorer to it.
     fn reveal_in_explorer(&mut self) {
         let Some(p) = self.tab().map(|t| t.path.clone()) else { return };

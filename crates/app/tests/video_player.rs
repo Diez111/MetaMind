@@ -3,7 +3,7 @@
 
 #[cfg(unix)]
 mod unix {
-    use metamind_app::video::{find_program, FfmpegPipe, Playback, State, VideoPlayer};
+    use metamind_app::video::{find_program, FfmpegPipe, Playback, Source, State, VideoPlayer};
     use metamind_app::{render, App};
     use metamind_ui::{Cmd, Fonts, Pixmap, Rect};
     use std::fs;
@@ -207,7 +207,7 @@ mod unix {
         let clip = d.path().join("clip.mp4");
         fs::write(&clip, b"not a video").unwrap();
         let mut pipe = FfmpegPipe::with_tools(clip.clone(), clip.clone());
-        assert!(pipe.open(&clip, (10, 10), 0.0).is_err());
+        assert!(pipe.open(&Source::file(&clip), (10, 10), 0.0).is_err());
         assert!(!pipe.is_running());
         assert!(pipe.poll().is_none());
         pipe.close();
@@ -387,7 +387,8 @@ mod unix {
         assert!(has("mod-video"), "the video has no modal of its own");
         assert!(has("video-fullscreen"), "no backdrop behind it");
         // The card in the note is gone while the player is over the window.
-        let cards = frame.dom.nodes.iter().filter(|n| n.el.classes.iter().any(|c| c == "video-player")).count();
+        let cards =
+            frame.dom.nodes.iter().filter(|n| n.el.classes.iter().any(|c| c == "video-player")).count();
         assert_eq!(cards, 1, "the player is drawn once");
 
         // Escape goes back to the player in its note.
@@ -430,9 +431,180 @@ mod unix {
         let at_two = play_out(&mut fast);
         normal.close();
         fast.close();
+        assert!(at_two * 100 < at_one * 90, "2x took {at_two} ms against {at_one} ms at 1x");
+    }
+
+    /// A one second clip at 30 fps, decoded through the real pipe: at normal speed a second of
+    /// wall time has to show the best part of thirty frames, and the whole clip has to take a
+    /// second, not three. This is the gate on bug (a): ffmpeg was asked to pace (`-re`) and the
+    /// reader slept again on top of it, so the film ran at half speed.
+    #[test]
+    fn a_one_second_clip_plays_in_a_second_and_shows_its_frames() {
+        if !have_tools() {
+            eprintln!("skipping: ffmpeg and ffprobe are not on PATH");
+            return;
+        }
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("smoke.mp4");
+        let made = std::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=duration=1:size=320x240:rate=30",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&path)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(made, "ffmpeg could not make the smoke clip");
+
+        let mut v = VideoPlayer::default();
+        v.open("smoke.mp4", &path, "Note.md", CAP).expect("the clip opens");
+        // The probe says one second at thirty frames; the reader paces to what the file says.
+        assert!((v.duration() - 1.0).abs() < 0.1, "duration {}", v.duration());
+        assert_eq!(v.size(), (320, 240), "a 4:3 clip is drawn at its own size");
+
+        // Play and count what arrives. The gate is the brief's: twenty five frames of a 30 fps clip
+        // inside about a second of wall time. The slack is for a test run with a dozen other
+        // decoders on the same machine: half speed (what `-re` plus a sleep per frame did) needs
+        // more than two seconds for this, so it is still caught.
+        let t0 = Instant::now();
+        let mut one_second_frames = 0;
+        while t0.elapsed() < Duration::from_millis(1600) && one_second_frames < 25 {
+            v.tick(Instant::now());
+            one_second_frames = v.frames();
+            std::thread::sleep(Duration::from_millis(5));
+        }
         assert!(
-            at_two * 100 < at_one * 80,
-            "2x took {at_two} ms against {at_one} ms at 1x"
+            one_second_frames >= 25,
+            "only {one_second_frames} frames in {:?} of a 30 fps clip",
+            t0.elapsed()
         );
+        // And the clock of the player agrees with the wall clock it has been running for.
+        let read = v.position();
+        assert!((read - t0.elapsed().as_secs_f64()).abs() < 0.15, "the clock reads {read:.3}s");
+
+        // Let the rest of the second run out: the clip ends, it does not crawl.
+        let played = play_out(&mut v);
+        assert!(played < 4000, "the one second clip took {played} ms to play out");
+        assert_eq!(v.state(), &State::Idle);
+        assert!(v.frames() >= 25, "{} frames in total", v.frames());
+        v.close();
+    }
+
+    /// A note that links to a YouTube video shows a card to play it, and the card is where the
+    /// click has to be: the player takes its place once the video is the open one.
+    #[test]
+    fn a_youtube_link_becomes_a_card() {
+        let Some(d) = clip() else { return };
+        fs::write(d.path().join("Note.md"), "mirá esto: https://www.youtube.com/watch?v=dQw4w9WgXcQ\n")
+            .unwrap();
+        let mut app = App::open(d.path()).unwrap();
+        app.open_note("Note.md");
+        let mut fonts = Fonts::new();
+        let mut pm = Pixmap::new(1100, 700).unwrap();
+        let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+        let card = frame
+            .dom
+            .nodes
+            .iter()
+            .find(|n| n.el.classes.iter().any(|c| c == "media-card-youtube"))
+            .expect("the link has no card");
+        assert!(card.rect.w > 0.0 && card.rect.h > 0.0, "{:?}", card.rect);
+        let play = frame
+            .dom
+            .nodes
+            .iter()
+            .find(|n| {
+                n.el.action.as_deref() == Some("youtube:open:https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+            })
+            .expect("the card does not offer to play it here");
+        assert_eq!(play.el.text.as_deref(), Some("Reproducir en MetaMind"));
+        // The line itself is still there: the card is added under it, not instead of it.
+        assert!(frame.dom.nodes.iter().any(|n| n
+            .el
+            .text
+            .as_deref()
+            .is_some_and(|t| t.contains("youtube.com/watch?v=dQw4w9WgXcQ"))));
+        // And nothing else turns into a card: a link to another site is just a link.
+        fs::write(d.path().join("Other.md"), "https://example.com/watch?v=dQw4w9WgXcQ\n").unwrap();
+        app.open_note("Other.md");
+        let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+        assert!(!frame.dom.nodes.iter().any(|n| n.el.classes.iter().any(|c| c == "media-card-youtube")));
+        // Nor does a code block: it shows its text.
+        fs::write(d.path().join("Code.md"), "```\nhttps://youtu.be/dQw4w9WgXcQ\n```\n").unwrap();
+        app.open_note("Code.md");
+        let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+        assert!(!frame.dom.nodes.iter().any(|n| n.el.classes.iter().any(|c| c == "media-card-youtube")));
+    }
+
+    /// The overlay is laid out inside the workspace: the card, controls included, fits the box it
+    /// is given (it used to be cut by the bottom edge and to spill out of the right one), and a
+    /// click outside the card gives the note its video back.
+    #[test]
+    fn the_overlay_fits_the_workspace_and_closes_from_outside() {
+        let Some(d) = clip() else { return };
+        fs::write(d.path().join("Note.md"), "![[clip.mp4]]\n").unwrap();
+        let mut app = App::open(d.path()).unwrap();
+        app.open_note("Note.md");
+        let mut fonts = Fonts::new();
+        let mut pm = Pixmap::new(1100, 700).unwrap();
+        app.run("video:open:Note.md|clip.mp4");
+        for _ in 0..250 {
+            render(&mut app, &mut fonts, &mut pm, 1.0);
+            if app.video.current().is_some() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        app.video.toggle_pause();
+        app.run("video:fullscreen");
+        assert!(app.video_fullscreen);
+        // One frame asks the decoder for the overlay's size; the layout follows it.
+        let _ = render(&mut app, &mut fonts, &mut pm, 1.0);
+        let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+        let rect_of = |class: &str| {
+            frame.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == class)).map(|n| n.rect)
+        };
+        let overlay = rect_of("video-fullscreen").expect("no backdrop");
+        let card = rect_of("video-player").expect("no player in the overlay");
+        let controls = rect_of("video-player-controls").expect("no controls");
+        let status = rect_of("status-bar").expect("no status bar");
+        // The overlay stops where the status bar starts, and the card stops inside the overlay.
+        assert!(
+            overlay.y + overlay.h <= status.y + 0.5,
+            "the overlay covers the status bar: {overlay:?} / {status:?}"
+        );
+        assert!(
+            card.y >= overlay.y && card.y + card.h <= overlay.y + overlay.h + 0.5,
+            "the card is cut: {card:?} in {overlay:?}"
+        );
+        assert!(
+            card.x >= overlay.x && card.x + card.w <= overlay.x + overlay.w + 0.5,
+            "the card is cut sideways: {card:?} in {overlay:?}"
+        );
+        assert!(
+            controls.y + controls.h <= overlay.y + overlay.h + 0.5,
+            "the controls are cut by the bottom edge: {controls:?} in {overlay:?}"
+        );
+        // A press on a control keeps the overlay; a press outside the card closes it.
+        let speed = frame
+            .dom
+            .nodes
+            .iter()
+            .find(|n| n.el.action.as_deref() == Some("video:speed"))
+            .map(|n| n.rect)
+            .expect("no speed control in the overlay");
+        app.click(&frame, &mut fonts, speed.x + 2.0, speed.y + 2.0, false);
+        assert!(app.video_fullscreen, "a press on a control closed the overlay");
+        app.click(&frame, &mut fonts, card.x - 8.0, card.y + 8.0, false);
+        assert!(!app.video_fullscreen, "a press outside the card did not close the overlay");
+        app.run("video:close");
     }
 }

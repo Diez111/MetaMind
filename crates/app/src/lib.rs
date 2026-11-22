@@ -41,6 +41,7 @@ pub mod video;
 pub mod view;
 pub mod welcome;
 pub mod workspaces;
+pub mod youtube;
 
 pub use shell::{App, Key};
 
@@ -88,6 +89,11 @@ pub fn render_window(
     let env = app.env();
     dom.style(&app.theme, env);
     dom.layout(fonts, pixmap.width() as f32 / scale, pixmap.height() as f32 / scale);
+    // The box the over-window overlays live in, once it has been laid out: the workspace, with
+    // the status bar already out of it. The video player asks for a frame that fits it.
+    if let Some(ws) = info.workspace.and_then(|n| dom.nodes.get(n)) {
+        app.video_area = (ws.rect.w, ws.rect.h);
+    }
     view::scroll_views(app, &mut dom, &info);
     // The suggestion and the composing text sit at the caret, which is only known after layout.
     let caret = view::caret_rect(app, &dom, &info, fonts);
@@ -171,6 +177,12 @@ impl App {
         self.last_click = if double { None } else { Some((now, (x, y))) };
         self.clicked_dragged = false;
         if double && self.double_click(frame, x, y) {
+            return;
+        }
+        // A click outside the player's box gives the note its video back, the way the diagram
+        // overlay closes on a click on its backdrop. The card keeps its own clicks: pressing it
+        // plays or pauses, pressing a control does what the control says.
+        if self.leave_video_overlay(frame, x, y) {
             return;
         }
         if self.menu_click(frame, x, y) || !self.press_pane(frame, x, y) || !self.press_stack(frame, x, y) {
@@ -351,17 +363,31 @@ impl App {
         self.diagram_drag = None;
     }
 
-    /// Show the player over the window, or back in its note. The decoder is asked for a frame as
-    /// large as the window, so the picture is sharp instead of a small one stretched.
+    /// Show the player over the window, or back in its note. The decoder is asked for a frame that
+    /// fits the workspace, so the picture is as sharp as the box allows.
     pub fn set_video_fullscreen(&mut self, on: bool) {
         if !self.video.is_open() {
             self.video_fullscreen = false;
             return;
         }
         self.video_fullscreen = on;
+        self.fit_video_overlay();
+    }
+
+    /// Ask the decoder for a frame that fits the box the overlay really has: the workspace of the
+    /// last frame (the status bar is already out of it), less the modal's padding, the margin
+    /// around it, the control row and the hint. A frame sized to the window instead is what used
+    /// to push the controls past the bottom edge of the modal.
+    pub fn fit_video_overlay(&mut self) {
         let scale = if self.scale > 0.0 { self.scale } else { 1.0 };
-        let cap = if on {
-            (((self.window_w - 80.0) * scale) as u32, ((self.window_h - 120.0) * scale) as u32)
+        let cap = if self.video_fullscreen {
+            let area = if self.video_area.0 > 0.0 && self.video_area.1 > 0.0 {
+                self.video_area
+            } else {
+                // The first frame of the overlay has no layout of its own yet.
+                (self.window_w.max(240.0), self.window_h.max(160.0))
+            };
+            crate::video::overlay_cap(area, scale)
         } else {
             ((640.0 * scale) as u32, (360.0 * scale) as u32)
         };
@@ -568,6 +594,16 @@ impl App {
         }
     }
 
+    /// Close the over-window player when a press fell outside its card, the way a press on the
+    /// diagram overlay's backdrop closes that one. Returns whether it closed.
+    fn leave_video_overlay(&mut self, frame: &Frame, x: f32, y: f32) -> bool {
+        if !self.video_fullscreen || player_at(frame, x, y) {
+            return false;
+        }
+        self.set_video_fullscreen(false);
+        true
+    }
+
     /// Track an explorer drag: past a few pixels it becomes a move, aimed at the folder
     /// under the pointer, the folder of the file under it, or the root on empty space.
     fn explorer_drag_to(&mut self, frame: &Frame, x: f32, y: f32) {
@@ -592,6 +628,14 @@ impl App {
 
 fn in_graph_panel(frame: &Frame, x: f32, y: f32) -> bool {
     frame.info.graph_panel.is_some_and(|n| frame.dom.nodes[n].rect.contains(x, y))
+}
+
+/// Whether the point is inside the player card of the frame. While the overlay is up the note
+/// draws no player of its own, so the card found here is always the one over the window.
+fn player_at(frame: &Frame, x: f32, y: f32) -> bool {
+    frame.dom.nodes.iter().any(|n| {
+        n.el.classes.iter().any(|c| c == "video-player") && n.rect.contains(x, y)
+    })
 }
 
 /// The graph pane of a frame, when the graph is showing.

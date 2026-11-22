@@ -5,8 +5,17 @@
 //! window geometry. The MVP is muted; the `Playback` trait leaves room for a smarter backend.
 //!
 //! Lifecycle: pausing stops the decoder (`SIGSTOP`), seeking restarts it at a new offset, and
-//! closing kills and reaps it, so no child outlives the player. The reader thread paces the frames
-//! at the file's own rate: `-re` is asked for, but ffmpeg 9 bursts a short file out regardless.
+//! closing kills and reaps it, so no child outlives the player.
+//!
+//! Pacing belongs to the reader thread and to nothing else. ffmpeg's own `-re`/`-readrate` were
+//! measured on ffmpeg 9.1 and are not a clock: the same one second clip decoded in 0.8 s, 1.7 s or
+//! 3.6 s depending on the flag and the frame rate, and combined with a sleep per frame they ran
+//! the film at half speed. So `ffmpeg` decodes as fast as the pipe lets it and the reader sleeps
+//! one frame of the file's own rate per frame, on an absolute schedule that does not drift.
+//!
+//! A source is either a file in the vault or an https URL. The URL is what `yt-dlp` resolves for a
+//! YouTube link ([`crate::youtube`]); seeking on it re-opens the stream at the new offset, since
+//! `-ss` before `-i` is a fast forward for the http reader too.
 
 use crate::icons;
 use metamind_ui::dom::NodeId;
@@ -21,6 +30,54 @@ use vault_core::path;
 
 /// Extensions played inside the application. Anything else still goes to the system player.
 pub const VIDEO_EXTS: [&str; 7] = ["mp4", "webm", "mkv", "mov", "m4v", "ogv", "avi"];
+
+/// What the remote reader is asked with. YouTube's CDN answers 403 to a request without one.
+pub const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 MetaMind";
+
+/// Frame rate assumed when the container does not say one.
+pub const FALLBACK_FPS: f32 = 25.0;
+
+/// Where a decoder reads from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Source {
+    /// A file, normally one inside the vault.
+    File(PathBuf),
+    /// An `http(s)` URL: what `yt-dlp` resolves a YouTube link to.
+    Url(String),
+}
+
+impl Source {
+    /// A file source.
+    pub fn file(path: impl Into<PathBuf>) -> Source {
+        Source::File(path.into())
+    }
+
+    /// An `http(s)` URL, or `None` when `url` is not one.
+    pub fn url(url: &str) -> Option<Source> {
+        let rest = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+        (!rest.is_empty()).then(|| Source::Url(url.to_string()))
+    }
+
+    pub fn is_url(&self) -> bool {
+        matches!(self, Source::Url(_))
+    }
+
+    /// What `ffmpeg` and `ffprobe` are given: a path, or the URL as it is.
+    pub fn arg(&self) -> String {
+        match self {
+            Source::File(p) => p.to_string_lossy().into_owned(),
+            Source::Url(u) => u.clone(),
+        }
+    }
+
+    /// Whether the source can be read at all: a local file has to exist.
+    fn usable(&self) -> bool {
+        match self {
+            Source::File(p) => p.is_file(),
+            Source::Url(_) => true,
+        }
+    }
+}
 
 /// Whether `rel` names a file this module can play.
 pub fn is_video(rel: &str) -> bool {
@@ -48,13 +105,13 @@ pub enum Frame {
 /// A video decoder the player drives. One implementation today (`FfmpegPipe`); an mpv backend
 /// would implement the same surface.
 pub trait Playback {
-    /// Start decoding `path` at `offset` seconds, scaled to fit `size`, and play.
-    fn open(&mut self, path: &Path, size: (u32, u32), offset: f64) -> Result<(), String>;
+    /// Start decoding `source` at `offset` seconds, scaled to fit `size`, and play.
+    fn open(&mut self, source: &Source, size: (u32, u32), offset: f64) -> Result<(), String>;
     fn pause(&mut self);
     fn resume(&mut self);
     /// Restart decoding at `offset`, keeping the paused state.
     fn seek(&mut self, offset: f64) -> Result<(), String>;
-    /// Play `speed` times as fast (see [`Clock`]); takes effect on the next `open` or `seek`.
+    /// Play `speed` times as fast (see [`Clock`]); the reader sleeps for it per frame.
     fn set_speed(&mut self, speed: f32);
     /// The next thing the decoder has for the view, if any.
     fn poll(&mut self) -> Option<Frame>;
@@ -79,11 +136,11 @@ pub struct FfmpegPipe {
     child: Option<Child>,
     rx: Receiver<Frame>,
     size: (u32, u32),
-    /// Frames per second of the file, to pace the reader; `0.0` plays as fast as the pipe fills.
+    /// Frames per second of the source, to pace the reader; `0.0` plays as fast as the pipe fills.
     rate: f32,
     /// Playback speed the reader sleeps for: `2.0` takes half the time per frame.
     speed: f32,
-    path: PathBuf,
+    source: Option<Source>,
     paused: bool,
     waker: Option<Waker>,
 }
@@ -107,15 +164,15 @@ impl FfmpegPipe {
             size: (2, 2),
             rate: 0.0,
             speed: 1.0,
-            path: PathBuf::new(),
+            source: None,
             paused: false,
             waker: None,
         }
     }
 
-    /// What `ffprobe` says about `path`, through the probe this decoder was built with.
-    pub fn probe(&self, path: &Path) -> Result<MediaInfo, String> {
-        probe(&self.probe, path)
+    /// What `ffprobe` says about `source`, through the probe this decoder was built with.
+    pub fn probe(&self, source: &Source) -> Result<MediaInfo, String> {
+        probe(&self.probe, source)
     }
 
     /// Frames per second to play at. Set before `open`.
@@ -133,10 +190,11 @@ impl FfmpegPipe {
         self.waker = waker;
     }
 
-    /// Run `ffmpeg` for the current file and size, replacing any running decoder.
+    /// Run `ffmpeg` for the current source and size, replacing any running decoder.
     fn spawn(&mut self, offset: f64) -> Result<(), String> {
         self.close();
-        let args = ffmpeg_args(&self.path, self.size, offset, self.speed);
+        let Some(source) = self.source.clone() else { return Err("no hay nada que reproducir".to_string()) };
+        let args = ffmpeg_args(&source, self.size, offset);
         let mut child = Command::new(&self.exe)
             .args(&args)
             .stdin(Stdio::null())
@@ -159,17 +217,17 @@ impl FfmpegPipe {
 }
 
 impl Playback for FfmpegPipe {
-    fn open(&mut self, path: &Path, size: (u32, u32), offset: f64) -> Result<(), String> {
+    fn open(&mut self, source: &Source, size: (u32, u32), offset: f64) -> Result<(), String> {
         if !usable(&self.exe) {
             return Err("no está instalado ffmpeg".to_string());
         }
         if !usable(&self.probe) {
             return Err("no está instalado ffprobe".to_string());
         }
-        if !path.is_file() {
-            return Err(format!("no existe {}", path.display()));
+        if !source.usable() {
+            return Err(format!("no existe {}", source.arg()));
         }
-        self.path = path.to_path_buf();
+        self.source = Some(source.clone());
         self.size = (size.0.max(2), size.1.max(2));
         self.paused = false;
         self.spawn(offset)
@@ -228,8 +286,9 @@ fn signal_child(child: &Option<Child>, stop: bool) {
 }
 
 /// Read whole frames off the pipe until it closes. The channel is bounded, so a view that stops
-/// draining stalls the decoder instead of growing memory; the reader sets the pace, which `-re`
-/// alone does not do on every build (ffmpeg 9 bursts a short file out in milliseconds).
+/// draining stalls the decoder instead of growing memory; the reader sets the pace, on an absolute
+/// schedule so a slow frame does not shift the rest of the film (see the module docs for why
+/// `ffmpeg` is not asked to do it).
 fn read_frames(
     mut out: impl Read,
     size: (u32, u32),
@@ -242,7 +301,10 @@ fn read_frames(
     let mut buf = vec![0u8; w as usize * h as usize * 4];
     let mut shown = 0u64;
     let speed = if speed.is_finite() && speed > 0.0 { speed } else { 1.0 };
-    let step = (rate > 0.0).then(|| Duration::from_secs_f32((1.0 / rate / speed).min(1.0)));
+    // One frame of the file's own rate, at the playback speed asked for.
+    let step =
+        (rate > 0.0).then(|| Duration::from_secs_f64((1.0 / rate as f64 / speed as f64).clamp(0.001, 1.0)));
+    let mut next = Instant::now();
     loop {
         match out.read_exact(&mut buf) {
             Ok(()) => {}
@@ -268,10 +330,20 @@ fn read_frames(
             Err(TrySendError::Full(_)) => {}
             Err(TrySendError::Disconnected(_)) => return,
         }
-        // One frame of sleep per frame: the pipe backs up, the decoder blocks, and the film runs
-        // on the same clock as the time readout.
+        // The pipe backs up, the decoder blocks, and the film runs on the same clock as the time
+        // readout: one frame of sleep per frame, counted from the deadline of this frame and not
+        // from the moment it was decoded, so the pace never drifts.
         if let Some(step) = step {
-            std::thread::sleep(step);
+            let now = Instant::now();
+            match next.checked_add(step) {
+                Some(ahead) if ahead > now => {
+                    std::thread::sleep(ahead - now);
+                    next = ahead;
+                }
+                // Decoding took longer than a frame: the schedule starts over from here instead
+                // of racing through the backlog.
+                _ => next = now,
+            }
         }
     }
     let end =
@@ -301,20 +373,25 @@ fn rgba_image(src: &[u8], w: u32, h: u32) -> Option<Image> {
     Some(Image(Arc::new(pm)))
 }
 
-/// Ask `ffprobe` about the file. The reason it gives is what the notice shows.
-pub fn probe(tool: &Path, path: &Path) -> Result<MediaInfo, String> {
-    let out = Command::new(tool)
-        .args([
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "stream=width,height,r_frame_rate:format=duration",
-            "-of",
-            "json",
-        ])
-        .arg(path)
+/// Ask `ffprobe` about the source. The reason it gives is what the notice shows. A remote source
+/// is probed over http, with the same user agent the decoder is given.
+pub fn probe(tool: &Path, source: &Source) -> Result<MediaInfo, String> {
+    let mut cmd = Command::new(tool);
+    cmd.args([
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height,r_frame_rate,avg_frame_rate:format=duration",
+        "-of",
+        "json",
+    ]);
+    if source.is_url() {
+        cmd.args(["-user_agent", USER_AGENT]);
+    }
+    let out = cmd
+        .arg(source.arg())
         .stdin(Stdio::null())
         .stderr(Stdio::piped())
         .output()
@@ -339,7 +416,14 @@ pub fn probe_json(text: &str) -> Option<MediaInfo> {
     if width == 0 || height == 0 {
         return None;
     }
-    let fps = stream.get("r_frame_rate").and_then(|r| r.as_str()).map_or(0.0, parse_rate);
+    // The nominal rate of the stream is what the reader paces to; a container that only knows the
+    // average (a stream copied from a variable-rate source) still gives a usable pace.
+    let fps = ["r_frame_rate", "avg_frame_rate"]
+        .iter()
+        .filter_map(|k| stream.get(*k).and_then(|r| r.as_str()))
+        .map(parse_rate)
+        .find(|fps| *fps > 0.0)
+        .unwrap_or(0.0);
     let duration = match v.get("format").and_then(|f| f.get("duration")) {
         Some(serde_json::Value::String(s)) => s.parse::<f64>().ok().unwrap_or(0.0),
         Some(serde_json::Value::Number(n)) => n.as_f64().unwrap_or(0.0),
@@ -359,24 +443,29 @@ pub fn parse_rate(rate: &str) -> f32 {
     }
 }
 
-/// The argv that decodes to a raw RGBA pipe. `-re` paces decoding to the file's own rate, `-ss`
-/// before `-i` seeks by fast forward, and `-an` keeps it muted and cheap. `speed` is the playback
-/// rate: `-readrate` asks ffmpeg for that multiple of the file's rate (`-re` is its `1.0`, and is
-/// kept for the normal speed because every ffmpeg understands it).
-pub fn ffmpeg_args(path: &Path, size: (u32, u32), offset: f64, speed: f32) -> Vec<String> {
-    let speed = if speed.is_finite() && speed > 0.0 { speed } else { 1.0 };
-    let pace = if (speed - 1.0).abs() < 0.001 {
-        vec!["-re".to_string()]
-    } else {
-        vec!["-readrate".to_string(), format!("{speed:.2}")]
-    };
-    let mut args = vec!["-nostdin".to_string(), "-loglevel".to_string(), "error".to_string()];
-    args.extend(pace);
+/// The argv that decodes to a raw RGBA pipe. `-ss` before `-i` seeks by fast forward (for a URL
+/// the http reader seeks, so a remote seek is a re-open at the offset), and `-an` keeps it muted
+/// and cheap. Nothing here paces: `-re`/`-readrate` were measured unreliable on ffmpeg 9 and the
+/// reader thread owns the clock (see the module docs).
+pub fn ffmpeg_args(source: &Source, size: (u32, u32), offset: f64) -> Vec<String> {
+    let mut args: Vec<String> = vec!["-nostdin".to_string(), "-loglevel".to_string(), "error".to_string()];
+    if source.is_url() {
+        // A remote stream needs an agent, and a dropped connection is worth one more try.
+        args.extend(["-user_agent".to_string(), USER_AGENT.to_string()]);
+        args.extend([
+            "-reconnect".to_string(),
+            "1".to_string(),
+            "-reconnect_streamed".to_string(),
+            "1".to_string(),
+            "-reconnect_delay_max".to_string(),
+            "5".to_string(),
+        ]);
+    }
     args.extend([
         "-ss".to_string(),
         format!("{:.3}", offset.max(0.0)),
         "-i".to_string(),
-        path.to_string_lossy().into_owned(),
+        source.arg(),
         "-an".to_string(),
         "-sn".to_string(),
         "-vf".to_string(),
@@ -391,11 +480,13 @@ pub fn ffmpeg_args(path: &Path, size: (u32, u32), offset: f64, speed: f32) -> Ve
 }
 
 /// The largest size that fits `src` into `cap`, keeping the aspect, never upscaling, with both
-/// sides even so the colour planes stay aligned.
+/// sides even so the colour planes stay aligned. Sizes are truncated, never rounded up: a frame
+/// that name a pixel more than the box it was fitted to is a frame that overflows it.
 pub fn fitted(src: (u32, u32), cap: (u32, u32)) -> (u32, u32) {
     let (sw, sh) = (src.0.max(1) as f32, src.1.max(1) as f32);
-    let k = (cap.0 as f32 / sw).min(cap.1 as f32 / sh).min(1.0);
-    let even = |v: f32| ((v.round() as u32) / 2 * 2).max(2);
+    let (cw, ch) = (cap.0.max(2) as f32, cap.1.max(2) as f32);
+    let k = (cw / sw).min(ch / sh).min(1.0);
+    let even = |v: f32| ((v.max(2.0) as u32) / 2 * 2).max(2);
     (even(sw * k), even(sh * k))
 }
 
@@ -441,10 +532,16 @@ pub fn mmss(seconds: f64) -> String {
 }
 
 /// Where playback is, from an anchor time plus the time played since.
+///
+/// `played` counts **film** seconds, not wall seconds: a speed change folds the time played so far
+/// at the speed it was played at and never rewrites it afterwards. Anything else makes the
+/// readout jump every time the speed control is pressed (`10 s` at `2x` becoming `10 s` at `1x`
+/// is 10 film seconds lost).
 #[derive(Clone, Copy, Debug)]
 pub struct Clock {
     offset: f64,
     since: Option<Instant>,
+    /// Film time already played, at the speed each stretch was played at.
     played: Duration,
     /// How fast the film runs per second of wall time; `1.0` is normal speed.
     speed: f32,
@@ -469,8 +566,9 @@ impl Clock {
     }
 
     pub fn position(&self, now: Instant) -> f64 {
-        let live = self.since.map_or(0.0, |s| now.saturating_duration_since(s).as_secs_f64());
-        self.offset + self.played.as_secs_f64() * self.speed as f64 + live * self.speed as f64
+        let live =
+            self.since.map_or(0.0, |s| now.saturating_duration_since(s).as_secs_f64() * self.speed as f64);
+        self.offset + self.played.as_secs_f64() + live
     }
 
     /// Where a speed change has to be applied, so the time already played keeps the speed it was
@@ -491,7 +589,8 @@ impl Clock {
 
     pub fn pause(&mut self, now: Instant) {
         if let Some(since) = self.since.take() {
-            self.played += now.saturating_duration_since(since);
+            let live = now.saturating_duration_since(since).as_secs_f64() * self.speed as f64;
+            self.played += Duration::from_secs_f64(live.max(0.0));
         }
     }
 
@@ -523,9 +622,10 @@ pub enum State {
     Failed(String),
 }
 
-/// Narrowest the player card gets. Below this the controls would be squeezed: the picture of a
-/// small clip is drawn at its own size, centred in a card wide enough for the bar.
-const MIN_CARD_W: f32 = 400.0;
+/// Narrowest the player card gets. Below this the controls squeeze the scrub track to nothing:
+/// the picture of a small clip is drawn at its own size, centred in a card wide enough for the
+/// whole row (play, readout, track, speed, full screen, close).
+const MIN_CARD_W: f32 = 440.0;
 
 /// The playback rates the speed control cycles through, in order.
 pub const SPEEDS: [f32; 5] = [0.75, 1.0, 1.25, 1.5, 2.0];
@@ -534,10 +634,11 @@ pub const SPEEDS: [f32; 5] = [0.75, 1.0, 1.25, 1.5, 2.0];
 #[derive(Default)]
 pub struct VideoPlayer {
     backend: Option<Box<dyn Playback>>,
-    /// The vault-relative media path; empty when no player is open.
+    /// What identifies the open video: its vault-relative path, or the YouTube watch URL. Empty
+    /// when no player is open.
     path: String,
-    /// Where the file is on disk, to decode it again at another size or speed.
-    abs: PathBuf,
+    /// Where the decoder reads from, to decode it again at another size, offset or speed.
+    source: Option<Source>,
     /// The vault-relative note that shows it: the player lives while that note is open.
     note: String,
     info: MediaInfo,
@@ -546,6 +647,8 @@ pub struct VideoPlayer {
     speed: f32,
     clock: Clock,
     current: Option<Image>,
+    /// Frames shown since the player opened: what a smoke test counts to see the film move.
+    frames: u64,
     state: State,
     /// The progress track being dragged: its left edge, its width, and the time under the pointer.
     scrub: Option<(f32, f32, f64)>,
@@ -561,22 +664,38 @@ impl Drop for VideoPlayer {
 impl VideoPlayer {
     /// Probe `abs` and start decoding it, replacing any player already open.
     pub fn open(&mut self, rel: &str, abs: &Path, note: &str, cap: (u32, u32)) -> Result<(), String> {
-        self.close();
         let fail = |e: String| format!("No se puede reproducir {rel}: {e}");
-        let mut pipe = FfmpegPipe::new().map_err(fail)?;
-        let info = pipe.probe(abs).map_err(fail)?;
+        self.open_source(rel, Source::file(abs), note, cap).map_err(fail)
+    }
+
+    /// Play a stream URL, which is how a YouTube link reaches the player. `key` is what the card
+    /// and the full-screen overlay look the player up by: the watch URL.
+    pub fn open_url(&mut self, key: &str, url: &str, note: &str, cap: (u32, u32)) -> Result<(), String> {
+        let Some(source) = Source::url(url) else {
+            return Err(format!("no es una dirección de video: {url}"));
+        };
+        let fail = |e: String| format!("No se puede reproducir el video: {e}");
+        self.open_source(key, source, note, cap).map_err(fail)
+    }
+
+    /// Probe and start decoding `source`, replacing any player already open.
+    fn open_source(&mut self, key: &str, source: Source, note: &str, cap: (u32, u32)) -> Result<(), String> {
+        self.close();
+        let mut pipe = FfmpegPipe::new()?;
+        let info = pipe.probe(&source)?;
+        let rate = if info.fps > 0.0 { info.fps } else { FALLBACK_FPS };
         let size = fitted((info.width, info.height), cap);
         self.state = State::Loading;
         pipe.set_waker(self.waker.clone());
-        pipe.set_rate(info.fps);
+        pipe.set_rate(rate);
         pipe.set_speed(self.speed());
-        if let Err(e) = pipe.open(abs, size, 0.0) {
+        if let Err(e) = pipe.open(&source, size, 0.0) {
             self.state = State::Idle;
-            return Err(fail(e));
+            return Err(e);
         }
         self.backend = Some(Box::new(pipe));
-        self.path = rel.to_string();
-        self.abs = abs.to_path_buf();
+        self.path = key.to_string();
+        self.source = Some(source);
         self.note = note.to_string();
         self.info = info;
         self.size = size;
@@ -639,21 +758,25 @@ impl VideoPlayer {
         self.set_speed(SPEEDS[(i + 1) % SPEEDS.len()]);
     }
 
-    /// Play `speed` times as fast, from where playback is now.
+    /// Play `speed` times as fast, from where playback is now. The time already played keeps the
+    /// speed it was played at: the readout does not jump, and the decoder is moved to exactly the
+    /// position the clock names, once.
     pub fn set_speed(&mut self, speed: f32) {
+        let now = Instant::now();
+        let t = self.position_at(now);
         let speed = if speed.is_finite() && speed > 0.0 { speed.clamp(0.1, 4.0) } else { 1.0 };
         self.speed = speed;
-        self.clock.set_speed(speed, Instant::now());
+        self.clock.set_speed(speed, now);
         if let Some(b) = self.backend.as_mut() {
             b.set_speed(speed);
         }
         if self.is_open() {
-            self.seek_to(self.position());
+            self.restart_at(t, now);
         }
     }
 
     /// Decode again at a frame size that fits `cap`, keeping the time and the paused state. The
-    /// full-screen view asks for the window's size; the note asks for the card's.
+    /// full-screen view asks for the space the overlay has; the note asks for the card's.
     pub fn set_cap(&mut self, cap: (u32, u32)) {
         let size = fitted((self.info.width, self.info.height), cap);
         if size == self.size || size.0 < 2 || size.1 < 2 {
@@ -662,11 +785,9 @@ impl VideoPlayer {
         let t = self.position();
         let paused = self.state == State::Paused;
         self.size = size;
-        if self.abs.as_os_str().is_empty() {
-            return;
-        }
+        let Some(source) = self.source.clone() else { return };
         let Some(backend) = self.backend.as_mut() else { return };
-        if let Err(e) = backend.open(&self.abs, size, t) {
+        if let Err(e) = backend.open(&source, size, t) {
             self.state = State::Failed(e);
             return;
         }
@@ -691,7 +812,13 @@ impl VideoPlayer {
     }
 
     pub fn position(&self) -> f64 {
-        let p = self.clock.position(Instant::now());
+        self.position_at(Instant::now())
+    }
+
+    /// The clock's position at `now`, clamped to the file: the readout and the progress bar are
+    /// both painted from this one value, so they can never disagree.
+    fn position_at(&self, now: Instant) -> f64 {
+        let p = self.clock.position(now);
         if self.info.duration > 0.0 {
             p.min(self.info.duration)
         } else {
@@ -702,6 +829,11 @@ impl VideoPlayer {
     /// The last frame to draw.
     pub fn current(&self) -> Option<&Image> {
         self.current.as_ref()
+    }
+
+    /// How many frames have been shown since the player opened.
+    pub fn frames(&self) -> u64 {
+        self.frames
     }
 
     /// Where to wake the interface when a frame is ready. Set before opening a player.
@@ -729,6 +861,7 @@ impl VideoPlayer {
         }
         if let Some(image) = newest {
             self.current = Some(image);
+            self.frames += 1;
             if self.state == State::Loading {
                 self.state = State::Playing;
             }
@@ -782,21 +915,38 @@ impl VideoPlayer {
 
     /// Decode again from `t`, clamped to the file. Unbounded when its length is unknown.
     pub fn seek_to(&mut self, t: f64) {
-        let Some(backend) = self.backend.as_mut() else { return };
-        let t = if self.info.duration > 0.0 { t.clamp(0.0, self.info.duration) } else { t.max(0.0) };
+        let now = Instant::now();
+        let t = self.clamped(t);
+        self.restart_at(t, now);
+    }
+
+    /// Move the decoder to `t` and put the clock there, keeping the paused state. `now` is the
+    /// instant the move belongs to, so a caller that already read the clock does not read it twice
+    /// (which is what makes a seek duplicate or restart the time).
+    fn restart_at(&mut self, t: f64, now: Instant) {
+        let t = self.clamped(t);
         let paused = self.state == State::Paused;
+        let clock = self.clock_from(t, now, !paused);
+        let Some(backend) = self.backend.as_mut() else { return };
         if let Err(e) = backend.seek(t) {
             self.state = State::Failed(e);
             return;
         }
-        let now = Instant::now();
         if paused {
             backend.pause();
-            self.clock = self.clock_from(t, now, false);
-        } else {
-            self.clock = self.clock_from(t, now, true);
         }
+        self.clock = clock;
         self.state = if paused { State::Paused } else { State::Playing };
+    }
+
+    /// `t` brought inside the file; unbounded when its length is not known.
+    fn clamped(&self, t: f64) -> f64 {
+        let t = if t.is_finite() { t } else { 0.0 };
+        if self.info.duration > 0.0 {
+            t.clamp(0.0, self.info.duration)
+        } else {
+            t.max(0.0)
+        }
     }
 
     /// Kill the decoder and go back to the card.
@@ -805,12 +955,13 @@ impl VideoPlayer {
             backend.close();
         }
         self.path.clear();
-        self.abs.clear();
+        self.source = None;
         self.note.clear();
         self.info = MediaInfo::default();
         self.size = (0, 0);
         self.clock = Clock::default();
         self.current = None;
+        self.frames = 0;
         self.state = State::Idle;
         self.scrub = None;
     }
@@ -873,22 +1024,61 @@ impl VideoPlayer {
     }
 }
 
+/// The height the control row of the player takes: the 26 px of `.video-player-btn` on top of the
+/// row's 8 px of padding and its 1 px rule, which is what `.video-player-controls` asks for.
+pub const CONTROLS_H: f32 = 43.0;
+
+/// The padding of the over-window modal, on each side, and the margin the dim layer leaves around
+/// it. The frame the overlay decodes has to leave both out, or the card outgrows the box holding
+/// it and its controls are cut by the bottom edge.
+pub const OVERLAY_PAD: f32 = 18.0;
+pub const OVERLAY_MARGIN: f32 = 20.0;
+/// One line of hint under the card in the overlay.
+pub const OVERLAY_HINT: f32 = 24.0;
+
+/// The frame size the over-window player can decode at, in device pixels: the card's controls,
+/// the modal's padding, the margin around it and its hint line taken out of the space the
+/// workspace gives the overlay.
+pub fn overlay_cap(area: (f32, f32), scale: f32) -> (u32, u32) {
+    let scale = if scale > 0.0 { scale } else { 1.0 };
+    let chrome = 2.0 * (OVERLAY_MARGIN + OVERLAY_PAD);
+    let w = (area.0 - chrome).max(120.0);
+    let h = (area.1 - chrome - CONTROLS_H - OVERLAY_HINT).max(90.0);
+    ((w * scale) as u32, (h * scale) as u32)
+}
+
+/// The width of the player card for a frame `w` device pixels wide at `scale`: the picture as it
+/// is, and never narrower than the control row needs. The overlay asks for the same number so its
+/// box and the card inside it can never disagree.
+pub fn card_width(frame_w: u32, scale: f32) -> f32 {
+    let scale = if scale > 0.0 { scale } else { 1.0 };
+    let fw = if frame_w > 0 { frame_w as f32 / scale } else { 640.0 };
+    fw.max(MIN_CARD_W)
+}
+
 /// The player widget that replaces a video's card: the frame, the controls and the track. The
-/// frame plays and pauses on a click, as a video anywhere else does.
-pub fn widget(app: &crate::App, dom: &mut Dom, view: NodeId) -> NodeId {
+/// frame plays and pauses on a click, as a video anywhere else does. `max_w` is the widest the
+/// card may be, which is what the over-window view uses to stay inside its box.
+pub fn widget(app: &crate::App, dom: &mut Dom, view: NodeId, max_w: Option<f32>) -> NodeId {
     let v = &app.video;
     let scale = if app.scale > 0.0 { app.scale } else { 1.0 };
     let (w, h) = v.size();
     // The player lives in the note's render; when the video card is visible
     // the player is already open (it was opened by `video:open`).
-    let (fw, fh) = if w > 0 && h > 0 { (w as f32 / scale, h as f32 / scale) } else { (640.0, 360.0) };
+    let fw = if w > 0 { w as f32 / scale } else { 640.0 };
+    let fh = if h > 0 { h as f32 / scale } else { 360.0 };
     let loading = *v.state() == State::Loading;
     // The card is as wide as the picture it holds: in the note it is one block of the column, and
-    // over the window it is centred instead of stretching to the whole screen.
-    let wide = fw.max(MIN_CARD_W);
+    // over the window it is centred instead of stretching to the whole screen. It is never wider
+    // than the box it is drawn in.
+    let wide = max_w.map_or_else(|| card_width(w, scale), |max| card_width(w, scale).min(max.max(160.0)));
     let card = dom.add(
         view,
-        El::div().class("video-player").class_if(loading, "is-loading").style(&format!("width: {wide:.0}px")),
+        El::div()
+            .class("video-player")
+            .class_if(loading, "is-loading")
+            .class_if(app.video_fullscreen, "is-fullscreen")
+            .style(&format!("width: {wide:.0}px")),
     );
     let size = format!("width: {fw:.0}px; height: {fh:.0}px");
     // The picture is centred in the card: a narrow clip on a card as wide as the controls needs
@@ -915,16 +1105,23 @@ pub fn widget(app: &crate::App, dom: &mut Dom, view: NodeId) -> NodeId {
     dom.add(button, icons::el(if playing { "pause" } else { "play" }));
     let shown = v.scrub_preview().unwrap_or_else(|| v.position());
     let duration = v.duration();
+    // The readout and the bar are painted from this one number: they cannot disagree.
+    let t = if duration > 0.0 { (shown / duration).clamp(0.0, 1.0) as f32 } else { 0.0 };
     dom.add(
         controls,
         El::div().class("video-player-time").text(format!("{} / {}", mmss(shown), mmss(duration))),
     );
     let track = dom.add(
         controls,
-        El::div().class("video-player-track").attr("aria-label", "Posición").action("video:scrub"),
+        El::div()
+            .class("video-player-track")
+            .attr("aria-label", "Posición")
+            .attr("role", "slider")
+            .attr("aria-valuenow", &format!("{:.0}", (t * 100.0)))
+            .action("video:scrub"),
     );
-    let t = if duration > 0.0 { (shown / duration).clamp(0.0, 1.0) as f32 } else { 0.0 };
-    // Fill and rest share the space left by the thumb in proportion to the time played.
+    // Fill, marker and rest share the track in proportion to the time played: the marker is the
+    // zero-width join, so the bar says the same thing as the readout.
     dom.add(track, El::div().class("video-player-fill").style(&format!("flex-grow: {t:.4}")));
     dom.add(track, El::div().class("video-player-thumb"));
     dom.add(track, El::div().class("video-player-rest").style(&format!("flex-grow: {:.4}", 1.0 - t)));
@@ -937,15 +1134,18 @@ pub fn widget(app: &crate::App, dom: &mut Dom, view: NodeId) -> NodeId {
             .text(v.speed_label())
             .action("video:speed"),
     );
-    // Fullscreen: opens the video in a modal at the window size, like the mermaid zoom.
+    // Fullscreen: opens the video in a modal over the window, like the mermaid zoom. The glyph
+    // says what the press will do, so the button reads as a toggle instead of a dead box.
+    let full = app.video_fullscreen;
     let fullscreen = dom.add(
         controls,
         El::div()
             .class("clickable-icon video-player-btn")
-            .attr("aria-label", "Pantalla completa")
+            .class_if(full, "is-active")
+            .attr("aria-label", if full { "Salir de pantalla completa" } else { "Pantalla completa" })
             .action("video:fullscreen"),
     );
-    dom.add(fullscreen, icons::el("maximize"));
+    dom.add(fullscreen, icons::el(if full { "minimize" } else { "maximize" }));
     let close = dom.add(
         controls,
         El::div()
@@ -1014,14 +1214,13 @@ mod tests {
 
     #[test]
     fn ffmpeg_argv_seeks_before_the_input_and_scales_to_the_asked_size() {
-        let args = ffmpeg_args(Path::new("/v/clip.mp4"), (320, 180), 12.5, 1.0);
+        let args = ffmpeg_args(&Source::file("/v/clip.mp4"), (320, 180), 12.5);
         assert_eq!(
             args,
             [
                 "-nostdin",
                 "-loglevel",
                 "error",
-                "-re",
                 "-ss",
                 "12.500",
                 "-i",
@@ -1039,13 +1238,37 @@ mod tests {
             .map(String::from)
         );
         // A negative offset never reaches ffmpeg.
-        assert_eq!(ffmpeg_args(Path::new("a.mp4"), (2, 2), -3.0, 1.0)[5], "0.000");
-        // Any other speed asks ffmpeg for that multiple of the file's own rate instead of `-re`.
-        for (speed, want) in [(2.0, "2.00"), (0.75, "0.75"), (1.5, "1.50")] {
-            let args = ffmpeg_args(Path::new("a.mp4"), (2, 2), 0.0, speed);
-            assert_eq!((args[3].as_str(), args[4].as_str()), ("-readrate", want), "{speed}");
-            assert!(!args.iter().any(|a| a == "-re"));
+        assert_eq!(ffmpeg_args(&Source::file("a.mp4"), (2, 2), -3.0)[4], "0.000");
+        // ffmpeg is not asked to pace the film: it was measured bursting or crawling depending on
+        // the build, the rate and the offset, and the reader sleeps one frame per frame anyway.
+        for args in [
+            ffmpeg_args(&Source::file("a.mp4"), (2, 2), 0.0),
+            ffmpeg_args(&Source::Url("https://example.com/v".to_string()), (2, 2), 0.0),
+        ] {
+            assert!(!args.iter().any(|a| a == "-re" || a == "-readrate"), "{args:?}");
         }
+    }
+
+    /// A URL is played the same way a file is, with the agent YouTube needs and the offset that
+    /// makes a remote seek a re-open.
+    #[test]
+    fn a_remote_source_carries_its_agent_and_its_offset() {
+        let url = Source::Url("https://rr1.googlevideo.com/videoplayback?x=1".to_string());
+        let args = ffmpeg_args(&url, (160, 90), 30.0);
+        let at = |needle: &str| args.iter().position(|a| a == needle).unwrap_or_else(|| panic!("{args:?}"));
+        assert_eq!(args[at("-user_agent") + 1], USER_AGENT);
+        assert_eq!(args[at("-ss") + 1], "30.000");
+        assert_eq!(args[at("-i") + 1], "https://rr1.googlevideo.com/videoplayback?x=1");
+        assert_eq!(args[at("-vf") + 1], "scale=160:90");
+        // A file is not given the http options: they are options of the http reader.
+        let local = ffmpeg_args(&Source::file("a.mp4"), (2, 2), 0.0);
+        assert!(!local.iter().any(|a| a == "-user_agent" || a == "-reconnect"), "{local:?}");
+        // Only `http(s)` is a URL source.
+        assert!(Source::url("https://youtu.be/x").is_some());
+        assert!(Source::url("http://x/v").is_some());
+        assert!(Source::url("file:///tmp/x.mp4").is_none());
+        assert!(Source::url("https://").is_none());
+        assert!(Source::url("/tmp/x.mp4").is_none());
     }
 
     #[test]
@@ -1067,6 +1290,93 @@ mod tests {
         assert!(!c.playing());
         assert!((c.position(at(11_000)) - 2.0).abs() < 1e-6);
         assert!((Clock::paused_at(3.0).position(at(0)) - 3.0).abs() < 1e-6);
+    }
+
+    /// The gate on bug (a): after a second of wall time at rate R the clock reads R seconds of
+    /// film, within 10%.
+    #[test]
+    fn the_clock_runs_at_the_rate_it_is_given() {
+        let t0 = Instant::now();
+        for rate in [0.75_f32, 1.0, 1.25, 1.5, 2.0] {
+            let mut c = Clock::at(0.0, t0);
+            c.set_speed(rate, t0);
+            let after = c.position(t0 + Duration::from_secs(2));
+            assert!((after - 2.0 * rate as f64).abs() < 0.1 * (2.0 * rate as f64), "{rate}x read {after}");
+        }
+    }
+
+    /// The other half of bug (a): a speed change must not rewrite the time already played. Ten
+    /// seconds at `0.5x` are five film seconds whatever the speed becomes afterwards; the clock
+    /// used to re-read them at the new speed, and the bar jumped under the readout.
+    #[test]
+    fn a_speed_change_does_not_rewrite_the_time_already_played() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let mut c = Clock::at(0.0, t0);
+        c.set_speed(0.5, t0);
+        let played = c.position(at(10_000));
+        assert!((played - 5.0).abs() < 1e-6, "{played}");
+        for rate in [1.0_f32, 2.0, 1.25, 0.75] {
+            let before = c.position(at(10_000));
+            c.set_speed(rate, at(10_000));
+            let after = c.position(at(10_000));
+            assert!((after - before).abs() < 1e-6, "{rate}x moved {before} to {after}");
+            // And from there on it runs at the new speed.
+            let later = c.position(at(11_000));
+            assert!((later - (before + rate as f64)).abs() < 1e-6, "{rate}x read {later}");
+        }
+        // A paused clock keeps its position across a speed change too.
+        c.pause(at(20_000));
+        let paused = c.position(at(20_000));
+        c.set_speed(1.5, at(20_000));
+        assert!((c.position(at(30_000)) - paused).abs() < 1e-6);
+    }
+
+    /// Pacing, in the reader's terms: the reader shows one frame every `1 / fps` of wall time, and
+    /// the clock runs at the playback rate. After N frames of a 30 fps file the clock has to read
+    /// N/30 * rate seconds of film, within 10%, whatever the rate.
+    #[test]
+    fn ticking_at_a_rate_reads_the_film_at_that_rate() {
+        let fps = 30.0_f64;
+        let step = Duration::from_secs_f64(1.0 / fps);
+        for rate in [0.75_f32, 1.0, 1.25, 1.5, 2.0] {
+            let t0 = Instant::now();
+            let mut clock = Clock::at(0.0, t0);
+            clock.set_speed(rate, t0);
+            let mut now = t0;
+            let mut frames = 0;
+            while now < t0 + Duration::from_secs(1) {
+                frames += 1;
+                now += step;
+            }
+            let wall = now.saturating_duration_since(t0).as_secs_f64();
+            let read = clock.position(now);
+            let want = wall * rate as f64;
+            assert!(
+                (read - want).abs() <= 0.1 * want,
+                "{rate}x: {frames} frames over {wall:.3}s read {read:.3}s of film, wanted {want:.3}s"
+            );
+            assert!(frames >= 30, "a second of a 30 fps file is {frames} frames");
+        }
+    }
+
+    /// `overlay_cap` leaves out everything the overlay draws around the picture: the same
+    /// arithmetic is what keeps the controls inside the box.
+    #[test]
+    fn the_overlay_cap_leaves_the_controls_and_the_padding_out() {
+        let (w, h) = overlay_cap((1100.0, 700.0), 1.0);
+        let chrome = 2.0 * (OVERLAY_MARGIN + OVERLAY_PAD);
+        assert_eq!(w as f32, 1100.0 - chrome);
+        assert_eq!(h as f32, 700.0 - chrome - CONTROLS_H - OVERLAY_HINT);
+        // The whole card, controls included, fits the box the overlay is given.
+        let card_h = h as f32 + CONTROLS_H + 2.0 * OVERLAY_PAD;
+        assert!(card_h + 2.0 * OVERLAY_MARGIN <= 700.0, "the card is {card_h}px tall");
+        // At 2x the device pixels are what grows, never the logical box.
+        let (dw, dh) = overlay_cap((1100.0, 700.0), 2.0);
+        assert_eq!((dw, dh), (w * 2, h * 2));
+        // A window too small for the arithmetic still asks for something playable.
+        let (sw, sh) = overlay_cap((0.0, 0.0), 1.0);
+        assert!(sw >= 120 && sh >= 90, "{sw}x{sh}");
     }
 
     #[test]
@@ -1118,7 +1428,7 @@ mod tests {
     #[test]
     fn a_decoder_with_bogus_tools_opens_nothing() {
         let mut pipe = FfmpegPipe::with_tools(PathBuf::from("/nonexistent/ffmpeg"), PathBuf::from("/x"));
-        let err = pipe.open(Path::new("/etc/hostname"), (10, 10), 0.0).unwrap_err();
+        let err = pipe.open(&Source::file("/etc/hostname"), (10, 10), 0.0).unwrap_err();
         assert!(err.contains("ffmpeg"), "{err}");
         assert!(!pipe.is_running());
         assert!(pipe.poll().is_none());

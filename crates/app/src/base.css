@@ -204,6 +204,13 @@ body {
 .media-card-title { color: var(--text-normal); font-size: 0.92em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .media-card-action { align-self: flex-start; margin-top: 3px; padding: 3px 10px; border: 1px solid var(--rs-rule-strong); border-radius: var(--radius-s); background-color: var(--rs-pill); color: var(--text-normal); font-size: 0.82em; white-space: nowrap }
 .media-card-action:hover { background-color: var(--rs-rule-strong); color: var(--text-accent); cursor: pointer }
+/* A YouTube card: the note's line stays above the card, and the card itself says whether the
+   video can play here or only in the browser. */
+.media-card-youtube .media-card-icon { background-color: var(--rs-pill); color: var(--text-error) }
+.media-card-secondary { border: none; background-color: transparent; color: var(--text-muted); padding: 3px 0 }
+.media-card-secondary:hover { color: var(--text-accent); background-color: transparent }
+.media-card-action.is-busy { color: var(--text-muted); border-style: dashed }
+.media-card-note { margin-top: 3px; color: var(--text-faint); font-size: 0.8em; white-space: normal }
 .empty-state { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px }
 .empty-state-container { width: 380px; display: flex; flex-direction: column; align-items: center }
 .empty-state-logo { width: 72px; height: 72px; margin-bottom: 14px }
@@ -571,30 +578,42 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .bases-more, .bases-error { margin: 8px 24px; color: var(--text-muted) }
 
 /* Video player widget: one card with the radii of the app, one row of controls with a single
-   rhythm, and one marker on the track (a bar sitting on the join, not a thumb plus a line). */
+   rhythm, and one marker on the track (a bar sitting on the join, not a thumb plus a line).
+   The track is a 24 px tall row with a 6 px bar in it: the bar is what reads as the progress, the
+   row is what the pointer can hit, so the knob can stay small without being hard to grab. */
 .video-player { margin: 8px 0 16px 0; max-width: 640px; overflow: hidden; background-color: #1a1a1a; border: 1px solid #3a3a3a; border-radius: var(--radius-m); box-shadow: 0 4px 16px rgba(0,0,0,0.4); flex-shrink: 0 }
-.video-player-stage { display: flex; justify-content: center; background-color: #000 }
-.video-player-frame { display: flex; align-items: center; justify-content: center; background-color: #000 }
+.video-player-stage { display: flex; justify-content: center; background-color: #000; overflow: hidden }
+.video-player-frame { display: flex; align-items: center; justify-content: center; background-color: #000; overflow: hidden; cursor: pointer }
 .video-player-loading { margin-left: 8px; color: var(--text-muted); font-size: var(--font-ui-smaller) }
 .video-player-controls { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background-color: #2a2a2a; border-top: 1px solid #3a3a3a }
-/* Every control is the same box, so the bar reads as one row instead of five sizes. */
-.video-player-btn { width: 28px; height: 24px; color: var(--text-normal); border-radius: var(--radius-s) }
-.video-player-btn:hover { background-color: #3a3a3a; color: #ffffff }
-.video-player-pill { width: auto; min-width: 40px; justify-content: center; padding: 0 8px; border: 1px solid #3a3a3a; background-color: #333333; color: var(--text-normal); font-size: var(--font-ui-smaller); white-space: nowrap; font-variant-numeric: tabular-nums }
-.video-player-pill:hover { background-color: #444444; color: #ffffff }
+/* Every control is the same box, so the bar reads as one row instead of five sizes. The icon is
+   drawn at 18 px inside it: a stroke and a half of a pixel is as thin as Lucide's 2/24 gets
+   before a play triangle turns into a smudge at this size. */
+.video-player-btn { width: 32px; height: 26px; color: #e8e8e8; border-radius: var(--radius-s) }
+.video-player-btn .svg-icon { width: 18px; height: 18px }
+.video-player-btn:hover { background-color: #3d3d3d; color: #ffffff }
+.video-player-btn.is-active { background-color: #3d3d3d; color: #ffffff }
+.video-player-pill { width: auto; min-width: 40px; justify-content: center; padding: 0 8px; border: 1px solid #4a4a4a; background-color: #333333; color: #e8e8e8; font-size: var(--font-ui-smaller); white-space: nowrap; font-variant-numeric: tabular-nums }
+.video-player-pill:hover { background-color: #464646; color: #ffffff }
 .video-player-speed { min-width: 46px }
-.video-player-time { margin: 0; color: var(--text-muted); font-size: var(--font-ui-smaller); white-space: nowrap; font-variant-numeric: tabular-nums; min-width: 84px; text-align: center }
-.video-player-track { display: flex; align-items: center; flex-grow: 1; min-width: 60px; height: 18px }
-.video-player-fill { height: 4px; border-radius: 2px; background-color: #7aa2f7 }
-.video-player-rest { height: 4px; border-radius: 2px; background-color: #4a4a4a }
-.video-player-thumb { width: 3px; height: 12px; flex-shrink: 0; border-radius: 2px; background-color: #ffffff }
+.video-player-time { margin: 0; color: #c8c8c8; font-size: var(--font-ui-smaller); white-space: nowrap; font-variant-numeric: tabular-nums; min-width: 84px; text-align: center }
+.video-player-track { display: flex; align-items: center; flex-grow: 1; min-width: 60px; height: 24px; cursor: pointer }
+/* The played part is bright and the rest is a visible track: the old #4a4a4a on #2a2a2a was a
+   hint of a line, not a track. */
+.video-player-fill { height: 6px; border-radius: 3px; background-color: #8ab4ff }
+.video-player-rest { height: 6px; border-radius: 3px; background-color: #6b6b6b }
+.video-player-thumb { width: 6px; height: 18px; flex-shrink: 0; border-radius: 3px; background-color: #ffffff; box-shadow: 0 0 0 2px #2a2a2a }
+.video-player:hover .video-player-thumb { background-color: #ffffff; box-shadow: 0 0 0 2px #3d3d3d }
 .video-player.is-loading .video-player-frame { background-color: var(--rs-card) }
 /* A diagram or the player opened over the window: the backdrop dims the app and the box holds
-   what was opened, centered, with a line saying how to get out. */
-.modal.mod-diagram, .modal.mod-video, .modal.mod-video { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 18px; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5); overflow: hidden }
-/* A percentage here resolves against nothing in this engine, so the cap is a length: the note
-   caps the card at 640 px, the full-screen view lets it take the window. */
-.modal.mod-video .video-player { margin: 0; max-width: 1600px }
+   what was opened, centered, with a line saying how to get out. Neither the box nor the card in
+   it has a fixed size: both are laid out from the picture they hold, so nothing is cut off. */
+.modal.mod-diagram, .modal.mod-video { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 18px; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5); overflow: hidden }
+/* The card keeps the size the view computed for it: a percentage here resolves against nothing
+   in this engine (it parses as a length of zero), which is what collapsed the card in the
+   overlay. The box around it is sized from the same number instead. */
+.modal.mod-video .video-player { margin: 0 }
+.video-fullscreen-hint { margin-top: 2px }
 .diagram-zoom-hint { color: var(--text-faint); font-size: var(--font-ui-smaller); white-space: nowrap; flex-shrink: 0; text-align: center }
 .diagram-zoom { border-radius: var(--radius-s) }
 .diagram-zoom-source { align-items: flex-start; justify-content: flex-start; padding: 14px 16px; margin: 0; font-family: monospace; font-size: 13px; line-height: 1.6; color: var(--code-normal); background-color: var(--code-background); white-space: pre-wrap; text-align: left }
