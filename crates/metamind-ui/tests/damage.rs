@@ -120,8 +120,16 @@ fn a_partial_repaint_leaves_the_pixels_of_a_full_one() {
     }
 }
 
+/// Whether the run is the `METAMIND_FULL_PAINT` fallback, where there is no diff to measure.
+fn forced_full() -> bool {
+    std::env::var_os("METAMIND_FULL_PAINT").is_some_and(|v| v != "0" && !v.is_empty())
+}
+
 #[test]
 fn the_diff_is_cheaper_than_the_frame_it_saves() {
+    if forced_full() {
+        return;
+    }
     let mut fonts = Fonts::new();
     let mut pm = Pixmap::new(W, H).unwrap();
     let mut tracker = DamageTracker::new();
