@@ -2880,12 +2880,15 @@ fn overlays(app: &App, dom: &mut Dom, workspace: Option<NodeId>, viewport_h: f32
     }
     if let Some(n) = &app.notice {
         let t = app.anims.t("notice");
-        let mut el = El::div().class("notice").attr("role", "status");
+        // Some notices inform instead of warning: a plugin the native core cannot run yet is
+        // expected, and the toast should not dress it as a failure.
+        let info = app.plugins.no_port_notice.as_ref().is_some_and(|m| m == n);
+        let mut el = El::div().class("notice").class_if(info, "mod-info").attr("role", "status");
         if t < 1.0 {
             el = el.style(&format!("top: {:.1}px", 12.0 * t));
         }
         let toast = dom.add(0, el);
-        dom.add(toast, icons::el("warning"));
+        dom.add(toast, icons::el(if info { "sparkles" } else { "warning" }));
         dom.add(toast, El::div().class("notice-text").text(n.clone()));
         dom.add(
             toast,

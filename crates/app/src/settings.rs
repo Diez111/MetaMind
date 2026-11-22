@@ -1347,6 +1347,11 @@ fn community_plugins_view(app: &App, dom: &mut Dom, parent: NodeId) {
     }
     for p in &list {
         let state = match (&p.error, p.loaded, p.enabled) {
+            // A plugin without a native port is expected to sit there until its port arrives:
+            // the row says so without the word the list uses for real failures.
+            (Some(e), _, _) if e == crate::plugins::NO_PORT => {
+                format!("v{} · {} · {e}", p.version, kind_label(p.kind))
+            }
             (Some(e), _, _) => format!("Error: {e}"),
             (_, true, _) => format!("v{} · {} · en ejecución", p.version, kind_label(p.kind)),
             (_, _, true) => format!("v{} · {} · se cargará al recargar", p.version, kind_label(p.kind)),
@@ -1354,6 +1359,14 @@ fn community_plugins_view(app: &App, dom: &mut Dom, parent: NodeId) {
         };
         let ctl = row(dom, parent, &p.name, &state);
         toggle(dom, ctl, p.enabled, format!("settings:community:{}", p.id));
+    }
+    if list.iter().any(|p| p.error.as_deref() == Some(crate::plugins::NO_PORT)) {
+        dom.add(
+            parent,
+            El::div()
+                .class("settings-note")
+                .text("Los plugins sin port nativo aún quedan en la lista: llegarán los que hagan falta."),
+        );
     }
 }
 

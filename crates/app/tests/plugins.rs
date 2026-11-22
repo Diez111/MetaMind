@@ -148,3 +148,43 @@ fn example_wasm_plugin_loads_and_runs_in_the_app() {
     assert!(app.tab().unwrap().editor.buf.text().starts_with("stamped\n"));
     assert!(app.plugins.ext.reg.status.iter().any(|s| s.text.starts_with("hello-wasm")));
 }
+
+/// An Obsidian plugin of the JS kind has no native port yet. That is not an error of the plugin
+/// nor of the app, so the launch notice says it once, in one line for all of them, with the
+/// reassuring wording the owner asked for — not the technical sentence it used to print, and not
+/// one toast per plugin.
+#[test]
+fn js_plugins_without_a_native_port_are_announced_once_and_as_one_line() {
+    metamind_app::plugins::reset_no_port_notice();
+    let d = tempfile::tempdir().unwrap();
+    fs::write(d.path().join("Home.md"), "# Home\n").unwrap();
+    for id in ["calendar-extra", "kanban-board"] {
+        let p = d.path().join(".obsidian/plugins").join(id);
+        fs::create_dir_all(&p).unwrap();
+        fs::write(
+            p.join("manifest.json"),
+            format!(r#"{{"id":"{id}","name":"{id}","version":"1.2.3","minAppVersion":"0.15.0"}}"#),
+        )
+        .unwrap();
+        fs::write(p.join("main.js"), "module.exports = {};").unwrap();
+    }
+    fs::write(d.path().join(".obsidian/community-plugins.json"), r#"["calendar-extra","kanban-board"]"#)
+        .unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    // The window loads the plugins itself after the first frame; `plugins:reload` would replace
+    // the launch notice with its own "Plugins recargados" line.
+    app.plugins_load();
+    let list = app.plugin_list();
+    assert_eq!(list.len(), 2);
+    assert!(list.iter().all(|p| p.enabled), "{list:?}");
+    assert!(list.iter().all(|p| p.error.as_deref() == Some(metamind_app::plugins::NO_PORT)), "{list:?}");
+    // One line for both, counting them, and the toast knows it informs instead of warning.
+    let notice = app.notice.clone().expect("the launch notice is shown");
+    assert_eq!(notice, "2 plugins de Obsidian sin port nativo aún; los necesarios llegarán con el tiempo.");
+    assert_eq!(app.plugins.no_port_notice.as_deref(), Some(notice.as_str()));
+    assert!(!notice.contains("compilación"), "the old technical wording is gone: {notice}");
+    // Once per session: a reload (or another vault) does not repeat it.
+    app.notice = None;
+    app.plugins_load();
+    assert_eq!(app.notice, None, "the notice is not repeated after the first time");
+}
