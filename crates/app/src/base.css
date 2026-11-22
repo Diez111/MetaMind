@@ -249,6 +249,10 @@ body {
 .prompt-results { padding: 6px; overflow-y: auto }
 .suggestion-item { padding: 6px 10px; border-radius: var(--radius-s); display: flex; justify-content: space-between; white-space: nowrap; color: var(--text-normal) }
 .suggestion-item.is-selected, .suggestion-item:hover { background-color: var(--background-modifier-hover) }
+/* A command with a name longer than the box ends in an ellipsis; the hotkey on the right keeps
+   its own room instead of being pushed out. */
+.suggestion-title { min-width: 0; overflow: hidden; text-overflow: ellipsis }
+.suggestion-aux { flex-shrink: 0 }
 .suggestion-aux, .suggestion-note { color: var(--text-faint); font-size: var(--font-ui-smaller); white-space: nowrap }
 .search-input-container { margin: 0 12px 8px 12px; padding: 5px 8px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); background-color: var(--background-primary); color: var(--text-normal); white-space: nowrap; overflow: hidden }
 
@@ -272,15 +276,17 @@ body {
 .editor-suggest .suggestion-item { height: 30px; gap: 12px; overflow: hidden }
 .editor-suggest-preview { padding: 10px 12px; border-left: 1px solid var(--background-modifier-border); background-color: var(--background-secondary); overflow: hidden }
 .editor-suggest-preview-line { color: var(--text-muted); font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden }
-.hover-popover { position: absolute; display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow: hidden }
-.hover-popover-title { font-weight: 600; color: var(--text-normal); white-space: nowrap; overflow: hidden }
+/* The preview of a note under the pointer: a box with a ceiling, and the rest of the note is a
+   turn of the wheel away instead of cut at the edge of the box. */
+.hover-popover { position: absolute; display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow-y: auto }
+.hover-popover-title { font-weight: 600; color: var(--text-normal); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .hover-popover-empty { color: var(--text-muted); font-size: var(--font-ui-small) }
 .menu { position: absolute; background-color: #262626; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); padding: 4px; display: flex; flex-direction: column; overflow: hidden }
 .menu-item { height: 28px; padding: 0 10px; border-radius: var(--radius-s); display: flex; align-items: center; gap: 10px; white-space: nowrap; color: var(--text-normal) }
 .menu-item.is-selected, .menu-item:hover { background-color: var(--background-modifier-hover) }
 .menu-item .svg-icon { color: var(--text-muted) }
 .menu-item.is-warning, .menu-item.is-warning .svg-icon { color: var(--text-error) }
-.menu-item-title { flex-grow: 1; overflow: hidden }
+.menu-item-title { flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis }
 .menu-item-hotkey { color: var(--text-faint); font-size: var(--font-ui-smaller) }
 .menu-separator { height: 1px; margin: 4px 6px; background-color: var(--background-modifier-border) }
 .notice { position: absolute; bottom: 46px; top: auto; right: 16px; width: 420px; max-width: 420px; display: flex; align-items: flex-start; gap: 10px; background-color: var(--rs-toast); border: 1px solid var(--rs-rule-strong); border-left: 3px solid var(--rs-warning); border-radius: var(--radius-m); padding: 10px 12px; color: var(--text-normal); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35) }

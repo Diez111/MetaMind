@@ -182,7 +182,7 @@ pub fn render(app: &App, dom: &mut Dom, parent: NodeId, mode: ViewMode, text: &s
     let Some(front) = scan(text) else { return false };
     let edit = app.prop_edit.as_ref();
     let editing = |t: &Target| edit.filter(|e| &e.target == t);
-    let shown = |e: &Edit| format!("{}▏", e.buf);
+    let shown = |e: &Edit| crate::view::with_caret(&e.buf, 22);
     let wrap = dom.add(parent, El::div().class("metadata-container"));
     dom.add(wrap, El::div().class("metadata-properties-heading").text("Properties"));
     let props = dom.add(wrap, El::div().class("metadata-properties"));

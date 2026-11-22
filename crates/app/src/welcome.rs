@@ -407,7 +407,7 @@ impl Welcome {
             let shown = if self.name.is_empty() {
                 "Nombre de la bóveda▏".to_string()
             } else {
-                format!("{}▏", self.name)
+                crate::view::with_caret(&self.name, 40)
             };
             dom.add(
                 footer,

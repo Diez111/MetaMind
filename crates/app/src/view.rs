@@ -889,13 +889,20 @@ fn sidebar_files(app: &App, dom: &mut Dom, parent: NodeId, viewport_h: f32) {
     }
 }
 
+/// Characters that fit, with room to spare, in the fields of this app: one line of 13 px text in a
+/// 250 px sidebar is about thirty of them, and the palette's 560 px box about sixty.
+const SIDE_FIELD_CHARS: usize = 28;
+const SEARCH_FIELD_CHARS: usize = 28;
+const PROMPT_FIELD_CHARS: usize = 54;
+
 fn sidebar_search(app: &App, dom: &mut Dom, parent: NodeId) {
     section_header(dom, parent, "search", "Buscar");
-    let caret = if app.focus == Focus::Search { "▏" } else { "" };
     let shown = if app.search_query.is_empty() && app.focus != Focus::Search {
         "Escribe una búsqueda y pulsa Intro".to_string()
+    } else if app.focus == Focus::Search {
+        with_caret(&app.search_query, SEARCH_FIELD_CHARS)
     } else {
-        format!("{}{caret}", app.search_query)
+        app.search_query.clone()
     };
     let field = dom.add(
         parent,
@@ -1030,12 +1037,7 @@ fn ai_panel(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
     }
     let list = dom.add(panel, El::div().class("ai-messages").id("ai-messages"));
     if app.ai.messages.is_empty() {
-        empty_pane(
-            dom,
-            list,
-            "ai",
-            "Pregunta sobre la nota abierta. Las fórmulas se escriben con $...$.",
-        );
+        empty_pane(dom, list, "ai", "Pregunta sobre la nota abierta. Las fórmulas se escriben con $...$.");
     }
     for m in &app.ai.messages {
         ai_message(dom, list, m, info);
@@ -1056,7 +1058,7 @@ fn ai_panel(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
     let text = if empty && !app.ai.editing {
         "Pregunta sobre la nota…".to_string()
     } else if app.ai.editing {
-        format!("{}▏", app.ai.input)
+        with_caret(&app.ai.input, SIDE_FIELD_CHARS)
     } else {
         app.ai.input.clone()
     };
@@ -1165,7 +1167,7 @@ fn backlinks(app: &App, dom: &mut Dom, parent: NodeId) {
     dom.nodes[b].el.attrs.push(("aria-label".into(), "Mostrar filtro de búsqueda".into()));
     if let Some(f) = &app.backlinks_filter {
         let (text, faint) = match (f.is_empty(), app.backlinks_editing) {
-            (_, true) => (format!("{f}▏"), false),
+            (_, true) => (with_caret(f, SIDE_FIELD_CHARS), false),
             (true, false) => ("Filtrar…".to_string(), true),
             (false, false) => (f.clone(), false),
         };
@@ -2303,6 +2305,18 @@ fn section_header(dom: &mut Dom, parent: NodeId, icon: &str, title: &str) {
     dom.add(header, El::div().class("nav-header-title").text(title));
 }
 
+/// What a field shows while it has the keyboard: the value and the caret after it. A value longer
+/// than the field keeps its end — which is where the typing is — and starts with an ellipsis, so
+/// the caret never falls off the right edge of a box the reader is typing into.
+pub(crate) fn with_caret(text: &str, max: usize) -> String {
+    let n = text.chars().count();
+    if n <= max {
+        return format!("{text}\u{258f}");
+    }
+    let tail: String = text.chars().skip(n - max.saturating_sub(1)).collect();
+    format!("\u{2026}{tail}\u{258f}")
+}
+
 /// A pane with nothing in it, said out loud: a faint icon and one line. Silence reads as a pane
 /// that failed to draw; a sentence reads as a state the reader can act on.
 fn empty_pane(dom: &mut Dom, parent: NodeId, icon: &str, text: impl Into<String>) {
@@ -2426,7 +2440,7 @@ fn graph_panel(
     let field = |dom: &mut Dom, parent: NodeId, key: &str, value: &str, placeholder: &str| {
         let editing = edit.filter(|e| e.0 == key);
         let (text, faint) = match editing {
-            Some((_, t)) => (format!("{t}▏"), false),
+            Some((_, t)) => (with_caret(t, SIDE_FIELD_CHARS), false),
             None if value.is_empty() => (placeholder.to_string(), true),
             None => (value.to_string(), false),
         };
@@ -2926,7 +2940,11 @@ fn overlays(app: &App, dom: &mut Dom, workspace: Option<NodeId>, viewport_h: f32
             },
             PromptKind::BaseCell => "Vacío para quitar la propiedad…",
         };
-        let shown = if p.query.is_empty() { placeholder.to_string() } else { format!("{}▏", p.query) };
+        let shown = if p.query.is_empty() {
+            placeholder.to_string()
+        } else {
+            with_caret(&p.query, PROMPT_FIELD_CHARS)
+        };
         let input = dom.add(modal, El::div().class("prompt-input-container"));
         dom.add(
             input,
@@ -3000,7 +3018,11 @@ fn overlays(app: &App, dom: &mut Dom, workspace: Option<NodeId>, viewport_h: f32
         if t < 1.0 {
             // The toast is anchored to the bottom of the window, so it rises: it starts ten
             // pixels lower and fading, and lands on its own line above the status bar.
-            el = el.style(&format!("bottom: {:.1}px; opacity: {:.2}", 46.0 - 10.0 * (1.0 - t), 0.35 + 0.65 * t));
+            el = el.style(&format!(
+                "bottom: {:.1}px; opacity: {:.2}",
+                46.0 - 10.0 * (1.0 - t),
+                0.35 + 0.65 * t
+            ));
         }
         let toast = dom.add(0, el);
         dom.add(toast, icons::el(if info { "sparkles" } else { "warning" }));
@@ -3241,7 +3263,18 @@ pub fn add_suggest(app: &App, dom: &mut Dom, caret: Rect, viewport_h: f32) {
     let preview = !s.preview.is_empty();
     let w = SUGGEST_W + if preview { PREVIEW_W } else { 0.0 };
     let x = caret.x.min(app.window_w - w).max(0.0);
-    let pop = dom.add(0, El::div().class("editor-suggest").style(&format!("left: {x:.1}px; top: {y:.1}px")));
+    // The list that follows the caret rises four pixels into place the first time it appears;
+    // on the next keystroke the clock is already at its end and the box only moves with the
+    // caret, which is what typing needs.
+    let t = app.anims.t("suggest");
+    let pop = dom.add(
+        0,
+        El::div().class("editor-suggest").style(&format!(
+            "left: {x:.1}px; top: {:.1}px; opacity: {:.2}",
+            y + 4.0 * (1.0 - t),
+            0.5 + 0.5 * t
+        )),
+    );
     let list = dom.add(pop, El::div().class("editor-suggest-list").style(&format!("width: {SUGGEST_W}px")));
     for (i, item) in s.items.iter().enumerate() {
         let row = dom.add(
@@ -3276,10 +3309,13 @@ fn hover_popover(app: &App, dom: &mut Dom, viewport_h: f32) {
     let (px, py) = h.at;
     let x = if px + 12.0 + POPOVER_W > app.window_w { (px - 12.0 - POPOVER_W).max(0.0) } else { px + 12.0 };
     let y = if py + 16.0 + POPOVER_H > viewport_h { (py - 8.0 - POPOVER_H).max(0.0) } else { py + 16.0 };
+    let t = app.anims.t("hover");
     let pop = dom.add(
         0,
-        El::div().class("popover hover-popover").style(&format!(
-            "left: {x:.1}px; top: {y:.1}px; width: {POPOVER_W}px; max-height: {POPOVER_H}px"
+        El::div().class("popover hover-popover").id("hover-popover").style(&format!(
+            "left: {x:.1}px; top: {:.1}px; width: {POPOVER_W}px; max-height: {POPOVER_H}px; opacity: {:.2}",
+            y + 4.0 * (1.0 - t),
+            0.4 + 0.6 * t
         )),
     );
     let action = format!("open:{}", h.path);

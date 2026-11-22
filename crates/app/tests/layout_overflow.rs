@@ -35,10 +35,7 @@ fn vault() -> tempfile::TempDir {
         ("B.md", "---\ntags: [topic]\n---\n# Dos\n\nback to [[A]]\n"),
         ("dir/C.md", "alone, no links at all\n"),
         ("dir/nested/D.md", "deep\n"),
-        (
-            "Una nota con un nombre larguísimo para la barra de pestañas.md",
-            "# Larga\n\ntexto\n",
-        ),
+        ("Una nota con un nombre larguísimo para la barra de pestañas.md", "# Larga\n\ntexto\n"),
         ("Sin enlaces.md", "nada que enlazar\n"),
     ] {
         fs::write(d.path().join(p), t).unwrap();
@@ -195,7 +192,10 @@ fn cut_nodes(f: &Frame, fonts: &mut Fonts, w: f32, h: f32) -> Vec<String> {
             ));
             continue;
         }
-        if is_box && (r.x < cx0 - EPS || r.x + r.w > cx1 + EPS || (!scrolled && (r.y < cy0 - EPS || r.y + r.h > cy1 + EPS)))
+        if is_box
+            && (r.x < cx0 - EPS
+                || r.x + r.w > cx1 + EPS
+                || (!scrolled && (r.y < cy0 - EPS || r.y + r.h > cy1 + EPS)))
         {
             out.push(format!(
                 "{} at {:.0},{:.0} {:.0}x{:.0} leaves its box x{cx0:.0}-{cx1:.0} y{cy0:.0}-{cy1:.0}",
@@ -275,12 +275,13 @@ fn no_text_is_cut_and_nothing_leaves_the_window() {
     let d = vault();
     let mut fonts = Fonts::new();
     let mut failures: Vec<String> = Vec::new();
-    let mut check = |app: &mut App, label: &str, w: u32, h: u32, failures: &mut Vec<String>| {
-        let f = frame(app, &mut fonts, w, h);
-        for line in cut_nodes(&f, &mut fonts, w as f32, h as f32) {
-            failures.push(format!("{label} {w}x{h}: {line}"));
-        }
-    };
+    let check =
+        |app: &mut App, fonts: &mut Fonts, label: &str, w: u32, h: u32, failures: &mut Vec<String>| {
+            let f = frame(app, fonts, w, h);
+            for line in cut_nodes(&f, fonts, w as f32, h as f32) {
+                failures.push(format!("{label} {w}x{h}: {line}"));
+            }
+        };
     for (w, h) in SIZES {
         for (label, cmds) in views() {
             let mut app = open(&d);
@@ -290,35 +291,175 @@ fn no_text_is_cut_and_nothing_leaves_the_window() {
             if label == "buscar-opciones" {
                 app.focus = metamind_app::shell::Focus::Search;
             }
-            check(&mut app, label, w, h, &mut failures);
+            check(&mut app, &mut fonts, label, w, h, &mut failures);
         }
-        // The reading view of the same note, which paints blocks instead of lines.
+        // A sidebar dragged to its widest: every pane in it keeps its one line instead of
+        // leaving a column of empty box with the text cut at the old edge.
+        for panel in ["file-explorer:open", "global-search:open", "bookmarks:open", "tag-pane:open"] {
+            let mut app = open(&d);
+            app.left_w = metamind_app::shell::SIDE_W_MAX;
+            app.run(panel);
+            check(&mut app, &mut fonts, &format!("ancha:{panel}"), w, h, &mut failures);
+        }
+        for panel in ["backlinks:open", "outgoing-links:open", "outline:open", "ai:open"] {
+            let mut app = open(&d);
+            app.right_open = true;
+            app.right_w = metamind_app::shell::SIDE_W_MAX;
+            app.run(panel);
+            check(&mut app, &mut fonts, &format!("ancha-derecha:{panel}"), w, h, &mut failures);
+        }
+        // The status bar in a narrow window, with the two things that make it long: the hint of
+        // whatever is under the pointer and a long-running operation.
+        let mut app = open(&d);
+        app.hover_action = Some("open:dir/nested/D.md".into());
+        app.start_busy("Indexando la bóveda entera");
+        check(&mut app, &mut fonts, "barra-estado", 1200, 720, &mut failures);
         let mut app = open(&d);
         app.tab_mut().unwrap().mode = ViewMode::Reading;
-        check(&mut app, "lectura", w, h, &mut failures);
+        check(&mut app, &mut fonts, "lectura", w, h, &mut failures);
         // A search with no results, and one with a query that matches: the pane's empty state.
         let mut app = open(&d);
         app.run("global-search:open");
         app.search_query = "zzz-sin-resultados".into();
         app.run_search();
-        check(&mut app, "buscar-vacio", w, h, &mut failures);
+        check(&mut app, &mut fonts, "buscar-vacio", w, h, &mut failures);
         let mut app = open(&d);
         app.run("global-search:open");
         app.search_query = "topic".into();
         app.run_search();
-        check(&mut app, "buscar-hits", w, h, &mut failures);
+        check(&mut app, &mut fonts, "buscar-hits", w, h, &mut failures);
         // Every note open at once: the tab bar has more tabs than room and has to give way
         // instead of cutting one in half.
         let mut app = open(&d);
-        for p in ["B.md", "dir/C.md", "dir/nested/D.md", "Una nota con un nombre larguísimo para la barra de pestañas.md", "Sin enlaces.md"] {
+        for p in [
+            "B.md",
+            "dir/C.md",
+            "dir/nested/D.md",
+            "Una nota con un nombre larguísimo para la barra de pestañas.md",
+            "Sin enlaces.md",
+        ] {
             app.open_note(p);
         }
-        check(&mut app, "muchas-pestanas", w, h, &mut failures);
+        check(&mut app, &mut fonts, "muchas-pestanas", w, h, &mut failures);
         // A note with nothing to show on the right: the backlinks pane's empty state.
         let mut app = App::open(d.path()).unwrap();
         app.open_note("Sin enlaces.md");
         app.run("backlinks:open");
-        check(&mut app, "retroenlaces-vacio", w, h, &mut failures);
+        check(&mut app, &mut fonts, "retroenlaces-vacio", w, h, &mut failures);
+        // A query longer than its field: the caret is where the typing is, so the field shows the
+        // end of the text and an ellipsis for the start, and nothing runs past the box.
+        let mut app = open(&d);
+        app.run("global-search:open");
+        app.focus = metamind_app::shell::Focus::Search;
+        app.search_query = "una consulta larguísima ".repeat(6);
+        app.run_search();
+        let f = frame(&mut app, &mut fonts, w, h);
+        let field = f
+            .dom
+            .nodes
+            .iter()
+            .find(|n| n.el.classes.iter().any(|c| c == "search-input-container"))
+            .and_then(|n| n.shown.as_ref().or(n.el.text.as_ref()));
+        let field = field.cloned().unwrap_or_default();
+        assert!(field.ends_with('\u{258f}'), "the caret is still in the field: {field:?}");
+        assert!(field.starts_with('\u{2026}'), "the field shows the end of the query: {field:?}");
+        for line in cut_nodes(&f, &mut fonts, w as f32, h as f32) {
+            failures.push(format!("buscar-largo {w}x{h}: {line}"));
+        }
+        // A palette query longer than the box, for the same reason.
+        let mut app = open(&d);
+        app.run("command-palette:open");
+        for c in "comando con un nombre imposible de largo ".repeat(4).chars() {
+            app.text_input(&c.to_string());
+        }
+        let f = frame(&mut app, &mut fonts, w, h);
+        let field = f
+            .dom
+            .nodes
+            .iter()
+            .find(|n| n.el.classes.iter().any(|c| c == "prompt-input"))
+            .and_then(|n| n.shown.as_ref().or(n.el.text.as_ref()))
+            .cloned()
+            .unwrap_or_default();
+        assert!(field.ends_with('\u{258f}'), "the palette keeps its caret: {field:?}");
+        for line in cut_nodes(&f, &mut fonts, w as f32, h as f32) {
+            failures.push(format!("paleta-larga {w}x{h}: {line}"));
+        }
+        // The preview that opens from the pointer, in both corners: it turns around at the edge
+        // of the window instead of hanging half of itself out of it.
+        for at in [(24.0, 40.0), (w as f32 - 24.0, h as f32 - 40.0)] {
+            let mut app = open(&d);
+            app.hover_preview = Some(metamind_app::popover::HoverPreview {
+                path: "B.md".into(),
+                at,
+                text: "back to [[A]] and a line long enough to wrap inside the box\n\n".repeat(24),
+            });
+            check(&mut app, &mut fonts, "popover", w, h, &mut failures);
+        }
     }
     assert!(failures.is_empty(), "{} findings:\n{}", failures.len(), failures.join("\n"));
+}
+
+/// The width of the first node wearing `class`, in window pixels: a sidebar that is closed is not
+/// in the tree at all, so a missing box reads as zero.
+fn width_of(f: &Frame, class: &str) -> f32 {
+    f.dom
+        .nodes
+        .iter()
+        .filter(|n| n.el.classes.iter().any(|c| c == class))
+        .map(|n| n.rect.w)
+        .fold(0.0, f32::max)
+}
+
+/// A sidebar slides from its width to nothing and back, the right one the same way as the left
+/// one, and a reader who asked for reduced motion gets the end state on the first frame.
+#[test]
+fn sidebars_slide_and_reduced_motion_skips_it() {
+    let d = vault();
+    let mut app = open(&d);
+    let mut fonts = Fonts::new();
+    // What a window does once it knows whether the desk asked for motion: the clocks run.
+    app.anims.enabled = true;
+    // The first frame is the one the animation reads: nothing is moving yet.
+    let start = frame(&mut app, &mut fonts, 1280, 720);
+    assert!(width_of(&start, "mod-left-split") > 100.0, "the explorer starts open");
+    assert!(!app.anims.active());
+
+    // The close is an animation too: the frame that starts it still holds the full width, and
+    // the one after it has the room back.
+    app.left_open = false;
+    let _ = frame(&mut app, &mut fonts, 1280, 720);
+    assert!(app.anims.active(), "closing a sidebar starts its clock");
+    std::thread::sleep(std::time::Duration::from_millis(260));
+    let closed = frame(&mut app, &mut fonts, 1280, 720);
+    assert_eq!(width_of(&closed, "mod-left-split"), 0.0);
+    assert_eq!(width_of(&closed, "mod-right-split"), 0.0);
+
+    // Opening starts both clocks, and the boxes are still a fraction of what they are going to be.
+    app.left_open = true;
+    app.right_open = true;
+    let (want_l, want_r) = (app.left_w, app.right_w);
+    let first = frame(&mut app, &mut fonts, 1280, 720);
+    assert!(app.anims.active(), "opening a sidebar starts its clock");
+    let (l0, r0) = (width_of(&first, "mod-left-split"), width_of(&first, "mod-right-split"));
+    assert!(l0 < want_l * 0.9, "left starts at {l0} of {want_l}");
+    assert!(r0 < want_r * 0.9, "right starts at {r0} of {want_r}");
+
+    // A quarter of a second later both are at the width they were dragged to.
+    std::thread::sleep(std::time::Duration::from_millis(260));
+    let open = frame(&mut app, &mut fonts, 1280, 720);
+    assert!((width_of(&open, "mod-left-split") - want_l).abs() < 1.0);
+    assert!((width_of(&open, "mod-right-split") - want_r).abs() < 1.0);
+
+    // Reduced motion: no clock runs, and the end state is there on the first frame.
+    app.set_reduced_motion(true);
+    app.left_open = false;
+    app.right_open = false;
+    let _ = frame(&mut app, &mut fonts, 1280, 720);
+    app.left_open = true;
+    app.right_open = true;
+    let now = frame(&mut app, &mut fonts, 1280, 720);
+    assert!(!app.anims.active(), "reduced motion starts no clocks");
+    assert!((width_of(&now, "mod-left-split") - want_l).abs() < 1.0);
+    assert!((width_of(&now, "mod-right-split") - want_r).abs() < 1.0);
 }
