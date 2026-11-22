@@ -84,6 +84,7 @@ fn the_last_file_of_a_big_vault_can_be_reached_in_the_explorer() {
         .iter()
         .filter(|n| n.el.classes.iter().any(|c| c == "nav-file-title-content"))
         .count();
+    assert!(n0 < 60, "the list builds only the rows in view, not the 400 files: {n0}");
     // The wheel over the explorer, all the way down: the same path a reader's wheel takes.
     for _ in 0..80 {
         let f = frame(&mut app, &mut fonts, &mut pm);
