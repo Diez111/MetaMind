@@ -243,9 +243,7 @@ impl App {
                 let row = menu.selected.and_then(|s| menu.items.get(s)).cloned();
                 self.menu = None;
                 match row {
-                    Some(row) if row.disabled.is_some() => {
-                        self.notice = row.disabled.map(str::to_string)
-                    }
+                    Some(row) if row.disabled.is_some() => self.notice = row.disabled.map(str::to_string),
                     Some(row) => self.run(&row.action),
                     None => {}
                 }
@@ -781,8 +779,7 @@ fn tab_items(b: &mut Builder<'_>, i: usize) {
         let blocked = b.app.split_blocked();
         b.item("separator-vertical", "Dividir a la derecha", format!("split-pane:right:{i}"))
             .disabled(blocked);
-        b.item("separator-horizontal", "Dividir abajo", format!("split-pane:down:{i}"))
-            .disabled(blocked);
+        b.item("separator-horizontal", "Dividir abajo", format!("split-pane:down:{i}")).disabled(blocked);
     }
     if i == b.app.active && !p.is_empty() {
         b.item("arrow-up-right", "Mover a una ventana nueva", "workspace:move-to-new-window");

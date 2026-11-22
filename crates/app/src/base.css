@@ -554,11 +554,11 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 /* A phone: a row puts its control under its label and gives it the whole row, and the controls
    of one row go one under another, which is the room the 216 px column and the label cannot
    share on one line. The head of a plugin card folds the same way. */
-.modal.mod-settings.is-narrow .setting-item-main,
+.modal.mod-settings.is-narrow .setting-item-main { flex-direction: column; align-items: stretch; gap: 8px }
 .modal.mod-settings.is-narrow .plugin-card-head { flex-direction: column; align-items: stretch; gap: 8px }
 .modal.mod-settings.is-narrow .setting-item-control { width: auto; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 6px }
 .modal.mod-settings.is-narrow .setting-input { width: 100%; max-width: none }
-.modal.mod-settings.is-narrow .setting-item-control > .dropdown,
+.modal.mod-settings.is-narrow .setting-item-control > .dropdown { width: auto; flex-grow: 1 }
 .modal.mod-settings.is-narrow .setting-item-control > .setting-hotkey { width: auto; flex-grow: 1 }
 /* The three previews are the whole control of the theme row, so they get the room they need
    instead of sharing the column with a dropdown that says the same thing. */
@@ -916,8 +916,8 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
    painting over the veil, at the edge of the window, where nothing said what it was. Clipping
    here also turns the modal into a clipping ancestor for the layout gate. */
 .modal.mod-settings { overflow: hidden }
-.modal.mod-settings .settings-body,
-.modal.mod-settings .vertical-tab-content-container,
+.modal.mod-settings .settings-body { min-width: 0 }
+.modal.mod-settings .vertical-tab-content-container { min-width: 0 }
 .modal.mod-settings .vertical-tab-content { min-width: 0 }
 
 /* A dropdown list hangs under its own control, aligned to the column's right edge: it is the
@@ -999,7 +999,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 
 /* An open list takes the width it is given and centres its rows: a menu that sat at the left of
    a column left empty space beside it and read as a table of leftovers. */
-.modal.mod-settings.is-single .setting-menu,
+.modal.mod-settings.is-single .setting-menu { width: 100%; max-width: none }
 .modal.mod-settings.is-narrow .setting-menu { width: 100%; max-width: none }
-.modal.mod-settings.is-single .setting-menu-item,
+.modal.mod-settings.is-single .setting-menu-item { text-align: center }
 .modal.mod-settings.is-narrow .setting-menu-item { text-align: center }

@@ -726,9 +726,11 @@ fn in_graph_panel(frame: &Frame, x: f32, y: f32) -> bool {
 /// Whether the point is inside one of the sheets that cover the workspace (the copilot and the
 /// ⋮ menu). What they paint is theirs: the pane behind those pixels is not the target.
 fn over_sheet(frame: &Frame, x: f32, y: f32) -> bool {
-    frame.dom.nodes.iter().any(|n| {
-        n.el.classes.iter().any(|c| c == "ai-sheet" || c == "more-sheet") && n.rect.contains(x, y)
-    })
+    frame
+        .dom
+        .nodes
+        .iter()
+        .any(|n| n.el.classes.iter().any(|c| c == "ai-sheet" || c == "more-sheet") && n.rect.contains(x, y))
 }
 
 /// Whether the point is inside the player card of the frame. While the overlay is up the note
