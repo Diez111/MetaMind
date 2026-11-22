@@ -343,6 +343,18 @@ pub const SCROLL_LINE: f32 = 40.0;
 pub const SIDE_W_DEFAULT: f32 = 250.0;
 pub const SIDE_W_MIN: f32 = 180.0;
 pub const SIDE_W_MAX: f32 = 600.0;
+/// The one breakpoint of the shell: 44 px of ribbon + the two sidebars at their default 250 + the
+/// ~276 px a line of prose needs. Below it the sidebars stop taking a column and float over the
+/// note, which keeps the whole width.
+pub const COMPACT_W: f32 = 820.0;
+/// Width of a sidebar that floats over the note in a compact window: wide enough for its lists,
+/// and never so wide that the note behind it is out of sight.
+pub const SIDE_W_COMPACT: f32 = 260.0;
+/// Room the note keeps between the two sidebars. When the window cannot hold the note and the
+/// widths the sidebars were dragged to, the sidebars give up the difference in proportion
+/// instead of squeezing the note to nothing and pushing its header, and its properties, out of
+/// the window with it.
+pub const NOTE_W_MIN: f32 = 380.0;
 const META_DEBOUNCE_MS: u64 = 400;
 
 pub struct Tab {
@@ -485,6 +497,16 @@ pub struct App {
     pub(crate) mirrored: Option<(String, u64)>,
     pub left_open: bool,
     pub right_open: bool,
+    /// Whether the window is in its compact shape (see [`COMPACT_W`]).
+    pub compact: bool,
+    /// Whether the first frame already told the app what shape the window has.
+    pub compact_seen: bool,
+    /// Whether a command asked for a sidebar: a window that opens compact keeps that one open
+    /// instead of hiding it, and any command that shows a pane wins over the shape.
+    pub sidebar_asked: bool,
+    /// What the sidebars were doing before the window went compact, to put them back when it
+    /// grows again: a resize is not an instruction to lose what the reader had open.
+    pub compact_restore: Option<(bool, bool)>,
     /// Width of each sidebar in pixels, while it is open.
     pub left_w: f32,
     pub right_w: f32,
@@ -724,6 +746,53 @@ pub(crate) fn default_keymap(config: &VaultConfig) -> Vec<(Vec<Key>, String)> {
 }
 
 impl App {
+    /// Follows the window shape into and out of compact. Going compact closes the sidebars, which
+    /// now float over the note; going back restores exactly what was open before, because a resize
+    /// is not an instruction to throw away the reader's layout.
+    pub fn sync_compact(&mut self) {
+        let compact = self.window_w > 0.0 && self.window_w < COMPACT_W;
+        if !self.compact_seen {
+            // The first frame is not a resize: the window was born this shape. A compact one
+            // starts with the note at full width, unless a command already asked for a sidebar.
+            self.compact_seen = true;
+            self.compact = compact;
+            if compact && !self.sidebar_asked {
+                self.left_open = false;
+                self.right_open = false;
+            }
+            return;
+        }
+        if compact == self.compact {
+            return;
+        }
+        self.compact = compact;
+        if compact {
+            self.compact_restore = Some((self.left_open, self.right_open));
+            self.left_open = false;
+            self.right_open = false;
+        } else if let Some((left, right)) = self.compact_restore.take() {
+            self.left_open = left;
+            self.right_open = right;
+        }
+    }
+
+    /// Shows a sidebar because a command asked for one of its panes. In a compact window a
+    /// sidebar floats over the note, so the other one makes room.
+    pub fn show_side(&mut self, left: bool) {
+        self.sidebar_asked = true;
+        if left {
+            self.left_open = true;
+            if self.compact {
+                self.right_open = false;
+            }
+        } else {
+            self.right_open = true;
+            if self.compact {
+                self.left_open = false;
+            }
+        }
+    }
+
     pub fn open(root: &Path) -> io::Result<App> {
         let (store, _) = VaultStore::open(root)?;
         App::with_store(root, store)
@@ -791,6 +860,10 @@ impl App {
             mirrored: None,
             left_open: true,
             right_open: false,
+            compact: false,
+            compact_seen: false,
+            sidebar_asked: false,
+            compact_restore: None,
             left_w: SIDE_W_DEFAULT,
             right_w: SIDE_W_DEFAULT,
             side_drag: None,
@@ -1753,12 +1826,12 @@ impl App {
             "command-palette:open" => self.open_prompt(PromptKind::Commands),
             "switcher:open" => self.open_prompt(PromptKind::Switcher),
             "global-search:open" => {
-                self.left_open = true;
+                self.show_side(true);
                 self.panel = Panel::Search;
                 self.focus = Focus::Search;
             }
             "file-explorer:open" => {
-                self.left_open = true;
+                self.show_side(true);
                 self.panel = Panel::Files;
             }
             "file-explorer:new-file" => {
@@ -1924,8 +1997,22 @@ impl App {
                 let p = self.history[self.history_pos].clone();
                 self.open_note_inner(&p, false);
             }
-            "app:toggle-left-sidebar" => self.left_open = !self.left_open,
-            "app:toggle-right-sidebar" => self.right_open = !self.right_open,
+            // In a compact window a sidebar floats over the note, so two of them would cover it
+            // whole: opening one closes the other.
+            "app:toggle-left-sidebar" => {
+                self.sidebar_asked = true;
+                self.left_open = !self.left_open;
+                if self.compact && self.left_open {
+                    self.right_open = false;
+                }
+            }
+            "app:toggle-right-sidebar" => {
+                self.sidebar_asked = true;
+                self.right_open = !self.right_open;
+                if self.compact && self.right_open {
+                    self.left_open = false;
+                }
+            }
             c if c.starts_with("file-explorer:sort:") => {
                 self.config.app.set("fileSortOrder", c["file-explorer:sort:".len()..].into());
                 if let Err(e) = self.config.app.save() {
@@ -1946,7 +2033,7 @@ impl App {
             }
             "backlinks:edit-filter" => self.backlinks_editing = self.backlinks_filter.is_some(),
             "backlinks:open" | "outgoing-links:open" | "outline:open" | "ai:open" => {
-                self.right_open = true;
+                self.show_side(false);
                 self.right_panel = match command {
                     "backlinks:open" => RightPanel::Backlinks,
                     "outgoing-links:open" => RightPanel::Outgoing,
@@ -1974,7 +2061,8 @@ impl App {
                     None => self.notice = Some(format!("No encontré la nota «{name}»")),
                 }
             }
-            "ai:send" => self.ai_send(),            "ai:clear" => self.ai.clear(),
+            "ai:send" => self.ai_send(),
+            "ai:clear" => self.ai.clear(),
             "ai:explain-selection" => self.ai_quick(crate::ai::QuickAsk::Selection),
             "ai:summarize-note" => self.ai_quick(crate::ai::QuickAsk::Summary),
             c if c.starts_with("ai:profile:") => {

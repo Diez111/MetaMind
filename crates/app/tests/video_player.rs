@@ -256,7 +256,7 @@ mod unix {
         let mut fonts = Fonts::new();
         let mut pm = Pixmap::new(1100, 700).unwrap();
 
-        // The card offers to play the video inside MetaMind, not to hand it to the system.
+        // The card offers to play the video inside MetMind, not to hand it to the system.
         let card = render(&mut app, &mut fonts, &mut pm, 1.0);
         let action = "video:open:Note.md|clip.mp4";
         let node = card
@@ -266,7 +266,7 @@ mod unix {
             .find(|n| n.el.action.as_deref() == Some(action))
             .expect("the card starts the in-app player");
         assert!(node.el.classes.iter().any(|c| c == "media-card-action"), "{:?}", node.el.classes);
-        assert_eq!(node.el.text.as_deref(), Some("Reproducir en MetaMind"));
+        assert_eq!(node.el.text.as_deref(), Some("Reproducir en MetMind"));
 
         // Clicking it decodes: the card is replaced by the player once a frame is there.
         app.run(action);
@@ -662,7 +662,7 @@ mod unix {
                 n.el.action.as_deref() == Some("youtube:open:https://www.youtube.com/watch?v=dQw4w9WgXcQ")
             })
             .expect("the card does not offer to play it here");
-        assert_eq!(play.el.text.as_deref(), Some("Reproducir en MetaMind"));
+        assert_eq!(play.el.text.as_deref(), Some("Reproducir en MetMind"));
         // The line itself is still there: the card is added under it, not instead of it.
         assert!(frame.dom.nodes.iter().any(|n| n
             .el

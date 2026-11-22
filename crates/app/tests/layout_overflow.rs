@@ -244,7 +244,11 @@ fn cut_nodes(f: &Frame, fonts: &mut Fonts, w: f32, h: f32) -> Vec<String> {
     out
 }
 
-const SIZES: [(u32, u32); 2] = [(1280, 720), (2560, 1440)];
+// The sizes the app has to hold: a phone in portrait, a tablet in portrait and in landscape, a
+// laptop, a desktop and a wide desktop. The window is resizable, so every one of these is a real
+// shape of the interface, not a hypothetical.
+const SIZES: [(u32, u32); 6] =
+    [(390, 844), (768, 1024), (1024, 768), (1366, 768), (1280, 720), (2560, 1440)];
 
 /// Every view the sweep covers, as the commands that put the window in it.
 fn views() -> Vec<(&'static str, Vec<&'static str>)> {

@@ -898,6 +898,14 @@ const SIDE_FIELD_CHARS: usize = 28;
 const SEARCH_FIELD_CHARS: usize = 28;
 const PROMPT_FIELD_CHARS: usize = 54;
 
+/// The tail of a prompt query that fits in the field of a window `w` pixels wide, with the
+/// ellipsis that says it was cut and the caret at the end. The field is what the box, its margins,
+/// its padding, its icon and its borders leave, and a character of the 16 px field takes about
+/// 8 px: 9 px each is a budget the narrowest window still meets.
+fn prompt_chars(w: f32) -> usize {
+    (((w - 96.0).max(120.0) / 9.0) as usize).min(PROMPT_FIELD_CHARS)
+}
+
 fn sidebar_search(app: &App, dom: &mut Dom, parent: NodeId) {
     section_header(dom, parent, "search", "Buscar");
     let shown = if app.search_query.is_empty() && app.focus != Focus::Search {
@@ -1410,7 +1418,7 @@ fn pane(
         _ if app.kanban_active() => {
             crate::kanbanview::pane(app.kanban_view.as_ref().unwrap(), dom, leaf, info)
         }
-        _ if crate::dashboard::is_dashboard(app) => crate::dashboard::pane(app, dom, leaf),
+        _ if crate::dashboard::is_dashboard(app) => crate::dashboard::pane(app, dom, leaf, width),
         _ => editor(app, dom, leaf, pal, info, app.tab().map(|t| (pane, app.active, t)), true),
     }
     info.panes.push((pane, leaf, None));
@@ -2664,6 +2672,61 @@ fn resize_handle(app: &App, dom: &mut Dom, side: NodeId, left: bool) {
     dom.add(side, el);
 }
 
+/// The panels the left sidebar holds: the row of tabs that picks one and the pane itself.
+fn left_sidebar(app: &App, dom: &mut Dom, left: NodeId, viewport_h: f32) {
+    let head = dom.add(left, El::div().class("sidebar-tab-header"));
+    for (icon, cmd, panel) in [
+        ("folder", "file-explorer:open", Panel::Files),
+        ("search", "global-search:open", Panel::Search),
+        ("bookmark", "bookmarks:open", Panel::Bookmarks),
+        ("tag", "tag-pane:open", Panel::Tags),
+        ("calendar", "calendar:open", Panel::Calendar),
+    ] {
+        if app.disabled_by(cmd).is_some() {
+            continue;
+        }
+        icon_button(dom, head, icon, cmd, app.panel == panel);
+    }
+    let cmd = match app.panel {
+        Panel::Files => "file-explorer:open",
+        Panel::Search => "global-search:open",
+        Panel::Bookmarks => "bookmarks:open",
+        Panel::Tags => "tag-pane:open",
+        Panel::Calendar => "calendar:open",
+    };
+    if let Some(name) = app.disabled_by(cmd) {
+        dom.add(left, El::div().class("pane-empty").text(format!("{name} está desactivado.")));
+        return;
+    }
+    match app.panel {
+        Panel::Files => sidebar_files(app, dom, left, viewport_h),
+        Panel::Search => sidebar_search(app, dom, left),
+        Panel::Bookmarks => crate::panes::bookmarks(app, dom, left),
+        Panel::Tags => crate::panes::tags(app, dom, left),
+        Panel::Calendar => crate::calendar::panel(app, dom, left, viewport_h),
+    }
+}
+
+/// The widths the two sidebars really get: the width each one was dragged to, while the note
+/// between them keeps `NOTE_W_MIN`. A window too narrow for the three gives the sidebars what is
+/// left in proportion, instead of squeezing the note to nothing and pushing its header out of the
+/// window with it.
+fn side_widths(avail: f32, want: (f32, f32)) -> (f32, f32) {
+    let (left, right) = want;
+    let room = (avail - crate::shell::NOTE_W_MIN).max(0.0);
+    let total = left + right;
+    if total <= room || total <= 0.0 {
+        return want;
+    }
+    (left * room / total, right * room / total)
+}
+
+/// Width a sidebar takes when it floats over the note: the compact width, or less when the window
+/// cannot give it that much and still shows some of the note behind it.
+fn float_w(avail: f32, want: f32) -> f32 {
+    want.min(crate::shell::SIDE_W_COMPACT).min((avail - 24.0).max(0.0))
+}
+
 /// The main window: ribbon, sidebars, the split panes and the status bar. `viewport_h` is the
 /// height above the footer: the status bar is not part of the area a note scrolls in.
 fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewInfo, viewport_h: f32) {
@@ -2704,58 +2767,59 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
     ] {
         ribbon_action(dom, icon, cmd, active);
     }
+    let ribbon_w = if show_ribbon { 44.0 } else { 0.0 };
+    let avail = (app.window_w - ribbon_w).max(0.0);
+    // A compact window has no room for three columns: the sidebars float over the note instead
+    // of taking one, and the note keeps the whole width.
+    let compact = app.window_w < crate::shell::COMPACT_W;
     let left_w = app.anims.toward("left", app.left_open);
-    let left_px = app.left_w.clamp(crate::shell::SIDE_W_MIN, crate::shell::SIDE_W_MAX);
-    if left_w > 0.01 {
-        // The width the user dragged stays the target: opening and closing scale it.
-        let el = El::div()
-            .class("workspace-split mod-left-split")
-            .style(&format!("width: {:.1}px", left_px * left_w));
+    let right_w = app.anims.toward("right", app.right_open);
+    // The width the user dragged stays the target: opening and closing scale it.
+    let left_want = app.left_w.clamp(crate::shell::SIDE_W_MIN, crate::shell::SIDE_W_MAX) * left_w.min(1.0);
+    let right_want =
+        app.right_w.clamp(crate::shell::SIDE_W_MIN, crate::shell::SIDE_W_MAX) * right_w.min(1.0);
+    let (left_col, right_col) = if compact { (0.0, 0.0) } else { side_widths(avail, (left_want, right_want)) };
+    if left_w > 0.01 && !compact {
+        let el =
+            El::div().class("workspace-split mod-left-split").style(&format!("width: {left_col:.1}px"));
         let left = dom.add(ws, el);
-        let head = dom.add(left, El::div().class("sidebar-tab-header"));
-        for (icon, cmd, panel) in [
-            ("folder", "file-explorer:open", Panel::Files),
-            ("search", "global-search:open", Panel::Search),
-            ("bookmark", "bookmarks:open", Panel::Bookmarks),
-            ("tag", "tag-pane:open", Panel::Tags),
-            ("calendar", "calendar:open", Panel::Calendar),
-        ] {
-            if app.disabled_by(cmd).is_some() {
-                continue;
-            }
-            icon_button(dom, head, icon, cmd, app.panel == panel);
-        }
-        let cmd = match app.panel {
-            Panel::Files => "file-explorer:open",
-            Panel::Search => "global-search:open",
-            Panel::Bookmarks => "bookmarks:open",
-            Panel::Tags => "tag-pane:open",
-            Panel::Calendar => "calendar:open",
-        };
-        if let Some(name) = app.disabled_by(cmd) {
-            dom.add(left, El::div().class("pane-empty").text(format!("{name} está desactivado.")));
-        } else {
-            match app.panel {
-                Panel::Files => sidebar_files(app, dom, left, viewport_h),
-                Panel::Search => sidebar_search(app, dom, left),
-                Panel::Bookmarks => crate::panes::bookmarks(app, dom, left),
-                Panel::Tags => crate::panes::tags(app, dom, left),
-                Panel::Calendar => crate::calendar::panel(app, dom, left, viewport_h),
-            }
-        }
+        left_sidebar(app, dom, left, viewport_h);
         resize_handle(app, dom, left, true);
     }
     let root = dom.add(ws, El::div().class("workspace-split mod-root"));
-    let right_w = app.anims.toward("right", app.right_open);
-    let right_px = app.right_w.clamp(crate::shell::SIDE_W_MIN, crate::shell::SIDE_W_MAX);
-    let side = |px: f32, w: f32| if w > 0.01 { px * w.min(1.0) } else { 0.0 };
-    let ribbon_w = if show_ribbon { 44.0 } else { 0.0 };
-    let width = app.window_w - ribbon_w - side(left_px, left_w) - side(right_px, right_w);
-    split_layout(app, dom, root, &app.layout, &mut Vec::new(), pal, info, viewport_h, width);
-    if right_w > 0.01 {
-        let el = El::div()
-            .class("workspace-split mod-right-split")
-            .style(&format!("width: {:.1}px", right_px * right_w));
+    split_layout(
+        app,
+        dom,
+        root,
+        &app.layout,
+        &mut Vec::new(),
+        pal,
+        info,
+        viewport_h,
+        avail - left_col - right_col,
+    );
+    if compact {
+        // Added after the note and over it: a sidebar that floats is painted above the content
+        // it covers, and it is what the pointer finds first.
+        if left_w > 0.01 {
+            let el = El::div().class("workspace-split mod-left-split is-floating").style(&format!(
+                "top: 0; bottom: 0; left: {ribbon_w:.1}px; width: {:.1}px",
+                float_w(avail, left_want)
+            ));
+            let left = dom.add(ws, el);
+            left_sidebar(app, dom, left, viewport_h);
+        }
+        if right_w > 0.01 {
+            let el = El::div().class("workspace-split mod-right-split is-floating").style(&format!(
+                "top: 0; bottom: 0; right: 0; width: {:.1}px",
+                float_w(avail, right_want)
+            ));
+            let right = dom.add(ws, el);
+            right_sidebar(app, dom, right, info);
+        }
+    } else if right_w > 0.01 {
+        let el =
+            El::div().class("workspace-split mod-right-split").style(&format!("width: {right_col:.1}px"));
         let right = dom.add(ws, el);
         right_sidebar(app, dom, right, info);
         resize_handle(app, dom, right, false);
@@ -2927,6 +2991,39 @@ fn diagram_zoom(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate:
 }
 
 /// Prompts, the hover preview, settings, menus and notices, over the window.
+/// Width the settings panel is drawn at (`.modal.mod-settings` in `base.css`) plus the margin it
+/// keeps off the edges of the window: a narrower window gives it the width the window has.
+const SETTINGS_W: f32 = 900.0;
+/// Width of the window below which a row of the settings panel puts its control under its label:
+/// the category column, the 216 px control column and a label with room for a word do not fit in
+/// a phone side by side.
+const SETTINGS_ROW_W: f32 = 620.0;
+
+/// The settings window is built by `settings::modal` at the fixed width of `base.css`; here it
+/// learns the width it really has. Under `SETTINGS_W + 24` the panel stops being 900 px wide
+/// (`is-compact`) and its category column narrows, and in a phone-sized window the rows fold
+/// (`is-narrow`), so the panel and everything in it stays between the edges of the window.
+fn fold_settings(app: &App, dom: &mut Dom) {
+    if app.window_w >= SETTINGS_W + 24.0 {
+        return;
+    }
+    let Some(n) = dom
+        .nodes
+        .iter_mut()
+        .find(|n| n.el.classes.iter().any(|c| c == "mod-settings"))
+    else {
+        return;
+    };
+    n.el.classes.push("is-compact".to_string());
+    if app.window_w < SETTINGS_ROW_W {
+        n.el.classes.push("is-narrow".to_string());
+    }
+    // The style the panel already carries is where it lands on the window; the cap on its width
+    // goes in front of it.
+    let style = n.el.inline_style.take().unwrap_or_default();
+    n.el.inline_style = Some(format!("max-width: {:.1}px; {style}", app.window_w - 24.0));
+}
+
 fn overlays(app: &App, dom: &mut Dom, workspace: Option<NodeId>, viewport_h: f32, info: &mut ViewInfo) {
     // The player over the window is part of the workspace, not of the window: the status bar keeps
     // the height it has.
@@ -2942,9 +3039,19 @@ fn overlays(app: &App, dom: &mut Dom, workspace: Option<NodeId>, viewport_h: f32
     if let Some(p) = &app.prompt {
         let t = app.anims.t("prompt");
         let mut el = El::div().class("prompt");
+        // 560 px of box is more than a narrow window has: there it keeps a margin off both
+        // edges and takes the room between them.
+        let narrow = app.window_w < crate::shell::COMPACT_W;
+        let style = |top: f32, opacity: f32| {
+            let mut s = if narrow { "left: 12px; right: 12px; width: auto; ".to_string() } else { String::new() };
+            s.push_str(&format!("top: {top:.1}px; opacity: {opacity:.2}"));
+            s
+        };
         if t < 1.0 {
             // Down and in: the box arrives from four pixels above, fading while it lands.
-            el = el.style(&format!("top: {:.1}px; opacity: {:.2}", 80.0 - 4.0 * (1.0 - t), 0.55 + 0.45 * t));
+            el = el.style(&style(80.0 - 4.0 * (1.0 - t), 0.55 + 0.45 * t));
+        } else if narrow {
+            el = el.style(&style(80.0, 1.0));
         }
         let modal = dom.add(0, el);
         let placeholder = match p.kind {
@@ -2962,7 +3069,7 @@ fn overlays(app: &App, dom: &mut Dom, workspace: Option<NodeId>, viewport_h: f32
         let shown = if p.query.is_empty() {
             placeholder.to_string()
         } else {
-            with_caret(&p.query, PROMPT_FIELD_CHARS)
+            with_caret(&p.query, prompt_chars(app.window_w))
         };
         let input = dom.add(modal, El::div().class("prompt-input-container"));
         dom.add(
@@ -2993,6 +3100,7 @@ fn overlays(app: &App, dom: &mut Dom, workspace: Option<NodeId>, viewport_h: f32
     }
     hover_popover(app, dom, viewport_h);
     crate::settings::modal(app, dom);
+    fold_settings(app, dom);
     if let Some(m) = &app.menu {
         // Open toward the inside of the window when there is no room at the pointer.
         let x =

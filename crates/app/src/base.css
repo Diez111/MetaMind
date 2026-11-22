@@ -107,6 +107,12 @@ body {
 .workspace-split.mod-left-split, .workspace-split.mod-right-split { width: 250px; background-color: var(--background-secondary); display: flex; flex-direction: column; overflow: hidden }
 .workspace-split.mod-left-split { border-right: 1px solid var(--background-modifier-border) }
 .workspace-split.mod-right-split { border-left: 1px solid var(--background-modifier-border) }
+/* A window too narrow for three columns (see `COMPACT_W`): the sidebars float over the note
+   instead of taking a column. They are painted after it, so they cover it, and the note keeps
+   the whole width behind them. */
+.workspace-split.is-floating { position: absolute; border-top: none; border-bottom: none }
+.workspace-split.mod-left-split.is-floating { border-left: none }
+.workspace-split.mod-right-split.is-floating { border-right: none }
 .sidebar-resize-handle { position: absolute; top: 0; bottom: 0; width: 6px; background-color: transparent }
 .sidebar-resize-handle.mod-left { right: 0 }
 .sidebar-resize-handle.mod-right { left: 0 }
@@ -521,6 +527,27 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .settings-empty-icon { width: 30px; height: 30px; color: var(--text-faint); margin-bottom: 6px }
 .settings-empty-title { font-size: 15px; font-weight: 600; color: var(--text-normal) }
 .settings-empty-text { font-size: var(--font-ui-smaller); color: var(--text-muted) }
+/* A window narrower than the panel's 900 px (see `SETTINGS_W` in `view.rs`): the panel takes the
+   width the window has, the column of categories narrows, and the label of a row keeps the room
+   its control does not use. The search field gives up its 216 px so the bar fits. */
+.modal.mod-settings.is-compact .settings-search .setting-input { width: auto; max-width: none; flex-grow: 1 }
+.modal.mod-settings.is-compact .vertical-tab-header { width: 150px; padding: 10px 6px }
+.modal.mod-settings.is-compact .vertical-tab-nav-item { margin: 0 3px; padding: 6px 7px; gap: 7px; font-size: 13px }
+.modal.mod-settings.is-compact .vertical-tab-content { padding: 4px 10px 16px 10px }
+.modal.mod-settings.is-compact .settings-section-header { padding: 12px 12px 10px 12px }
+.modal.mod-settings.is-compact .setting-item { padding: 8px 6px }
+.modal.mod-settings.is-compact .setting-item-info { width: auto }
+.modal.mod-settings.is-compact .settings-section-text { flex-grow: 1; min-width: 0 }
+.modal.mod-settings.is-compact .theme-swatch, .modal.mod-settings.is-compact .theme-swatch-label { width: 44px }
+/* A phone: a row puts its control under its label and gives it the whole row, and the controls
+   of one row go one under another, which is the room the 216 px column and the label cannot
+   share on one line. The head of a plugin card folds the same way. */
+.modal.mod-settings.is-narrow .setting-item-main,
+.modal.mod-settings.is-narrow .plugin-card-head { flex-direction: column; align-items: stretch; gap: 8px }
+.modal.mod-settings.is-narrow .setting-item-control { width: auto; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 6px }
+.modal.mod-settings.is-narrow .setting-input { width: 100%; max-width: none }
+.modal.mod-settings.is-narrow .setting-item-control > .dropdown,
+.modal.mod-settings.is-narrow .setting-item-control > .setting-hotkey { width: auto; flex-grow: 1 }
 /* The three previews are the whole control of the theme row, so they get the room they need
    instead of sharing the column with a dropdown that says the same thing. */
 .theme-swatches { display: flex; align-items: flex-start; gap: 8px; margin-right: 4px; align-self: center }
@@ -578,7 +605,12 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .multi-select-container { display: flex; gap: 4px; align-items: center }
 .multi-select-container { flex-wrap: wrap; row-gap: 4px }
 .multi-select-container { display: flex; flex-wrap: wrap; gap: 3px 4px; align-items: center }
-.multi-select-pill { display: flex; align-items: center; gap: 4px; padding: 1px 9px; border-radius: 999px; background-color: var(--rs-pill); color: var(--text-normal); font-size: 0.8em }
+.multi-select-pill { display: flex; align-items: center; gap: 4px; padding: 1px 9px; border-radius: 999px; background-color: var(--rs-pill); color: var(--text-normal); font-size: 0.8em; overflow: hidden }
+/* A row of pills and the field that adds one share a line the layout cannot wrap: the tag that
+   does not fit is shortened, and the `×` and the `+` keep the few pixels that make them usable,
+   instead of the tag hanging out of the property and the `+` squeezed to nothing. */
+.multi-select-pill-content { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.multi-select-pill-remove-button, .multi-select-input { flex-shrink: 0 }
 .multi-select-pill-remove-button { color: var(--text-faint) }
 .multi-select-pill-remove-button:hover { color: var(--text-normal) }
 .multi-select-input { color: var(--text-faint); padding: 0 6px }
@@ -815,6 +847,12 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .dash-title { font-size: 26px; font-weight: 700; color: var(--text-normal); letter-spacing: -0.01em }
 .dash-date { font-size: 14px; color: var(--text-muted) }
 .dash-grid { display: flex; flex-wrap: wrap; gap: 16px; align-items: stretch }
+/* A board that has to fold (see `dashboard::columns`): a column of rows, and every card one
+   equal share of its row. A row of one is the whole width. */
+.dash-grid.is-columns { flex-direction: column }
+.dash-row { display: flex; gap: 16px; align-items: stretch }
+.dash-grid.is-one-col .dash-card { width: 100%; max-width: none }
+.dash-grid.is-two-col .dash-card { width: 50%; max-width: none }
 .dash-card { display: flex; flex-direction: column; gap: 10px; flex-grow: 1; flex-basis: 300px; min-width: 250px; max-width: 520px; padding: 16px 18px; border: 1px solid var(--background-modifier-border); border-radius: 12px; background-color: var(--background-secondary) }
 .dash-card-title { font-size: 13px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.02em }
 .dash-empty { font-size: 13px; color: var(--text-faint); line-height: 1.5 }
@@ -842,3 +880,11 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .dash-note:hover { background-color: var(--background-modifier-hover) }
 .dash-note-title { flex-grow: 1; font-size: 13px; color: var(--text-normal); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .dash-note-ago { font-size: 11px; color: var(--text-faint) }
+
+/* The settings panel clips its own box: a column that does not fit the modal used to keep
+   painting over the veil, at the edge of the window, where nothing said what it was. Clipping
+   here also turns the modal into a clipping ancestor for the layout gate. */
+.modal.mod-settings { overflow: hidden }
+.modal.mod-settings .settings-body,
+.modal.mod-settings .vertical-tab-content-container,
+.modal.mod-settings .vertical-tab-content { min-width: 0 }

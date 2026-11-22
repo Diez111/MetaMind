@@ -44,7 +44,8 @@ pub fn is_dashboard(app: &App) -> bool {
     let Some(meta) = entry.meta() else { return false };
     let Some(props) = meta.frontmatter.as_ref() else { return false };
     props.iter().any(|(k, v)| {
-        k.eq_ignore_ascii_case("tipo") && v.as_str().is_some_and(|s| s.trim().eq_ignore_ascii_case("dashboard"))
+        k.eq_ignore_ascii_case("tipo")
+            && v.as_str().is_some_and(|s| s.trim().eq_ignore_ascii_case("dashboard"))
     })
 }
 
@@ -105,22 +106,25 @@ fn daily_note(store: &vault_core::VaultStore, day: Day) -> Option<String> {
         .find(|(_, f)| vault_core::path::stem(&f.path) == stem)
         .map(|(_, f)| f.path.to_string())
         .or_else(|| {
-            store.index.notes().find(|(_, f)| {
-                let Some(meta) = f.meta() else { return false };
-                let Some(props) = meta.frontmatter.as_ref() else { return false };
-                let is_entry = props.iter().any(|(k, v)| {
-                    k.eq_ignore_ascii_case("tipo")
-                        && v.as_str().is_some_and(|s| {
-                            let s = s.trim().to_lowercase();
-                            s == "diario" || s == "daily" || s == "journal"
+            store
+                .index
+                .notes()
+                .find(|(_, f)| {
+                    let Some(meta) = f.meta() else { return false };
+                    let Some(props) = meta.frontmatter.as_ref() else { return false };
+                    let is_entry = props.iter().any(|(k, v)| {
+                        k.eq_ignore_ascii_case("tipo")
+                            && v.as_str().is_some_and(|s| {
+                                let s = s.trim().to_lowercase();
+                                s == "diario" || s == "daily" || s == "journal"
+                            })
+                    });
+                    is_entry
+                        && props.iter().any(|(k, v)| {
+                            k.eq_ignore_ascii_case("fecha") && v.as_str().is_some_and(|s| s.trim() == stem)
                         })
-                });
-                is_entry
-                    && props.iter().any(|(k, v)| {
-                        k.eq_ignore_ascii_case("fecha") && v.as_str().is_some_and(|s| s.trim() == stem)
-                    })
-            })
-            .map(|(_, f)| f.path.to_string())
+                })
+                .map(|(_, f)| f.path.to_string())
         })
 }
 
@@ -204,8 +208,18 @@ fn recent(store: &vault_core::VaultStore) -> Vec<(String, f32)> {
 
 const WEEKDAYS: [&str; 7] = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
 const MONTHS: [&str; 12] = [
-    "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
-    "noviembre", "diciembre",
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
 ];
 
 /// `lunes 9 de noviembre`, from a day.
@@ -229,19 +243,55 @@ fn ago(hours: f32) -> String {
     }
 }
 
-/// The board, in the pane the dashboard note is open in.
-pub fn pane(app: &App, dom: &mut Dom, parent: NodeId) {
+/// The board, in the pane the dashboard note is open in. `width` is the width the pane really
+/// has: the cards sit side by side while they fit and fold into one or two columns when they do
+/// not, so no card is squeezed under the width its own text needs.
+pub fn pane(app: &App, dom: &mut Dom, parent: NodeId, width: f32) {
     let wrap = dom.add(parent, El::div().class("dash"));
     let today = today();
     let head = dom.add(wrap, El::div().class("dash-head"));
     dom.add(head, El::div().class("dash-title").text("Hoy"));
     dom.add(head, El::div().class("dash-date").text(long_date(today.ymd())));
 
-    let grid = dom.add(wrap, El::div().class("dash-grid"));
-    sleep_card(app, dom, grid);
-    week_card(app, dom, grid);
-    calendar_card(app, dom, grid, today);
-    recent_card(app, dom, grid);
+    let cols = columns(width);
+    let grid = dom.add(
+        wrap,
+        El::div()
+            .class("dash-grid")
+            .class_if(cols.is_some(), "is-columns")
+            .class_if(cols == Some(1), "is-one-col")
+            .class_if(cols == Some(2), "is-two-col"),
+    );
+    // A folded board puts the cards on rows of `cols`: a row per `cols` cards, in the order the
+    // board reads them. The wide board keeps its single row, one card after another.
+    let mut cells: Vec<NodeId> = Vec::with_capacity(4);
+    match cols {
+        None => cells.resize(4, grid),
+        Some(n) => {
+            while cells.len() < 4 {
+                let row = dom.add(grid, El::div().class("dash-row"));
+                for _ in 0..n.min(4 - cells.len()) {
+                    cells.push(row);
+                }
+            }
+        }
+    }
+    sleep_card(app, dom, cells[0]);
+    week_card(app, dom, cells[1]);
+    calendar_card(app, dom, cells[2], today);
+    recent_card(app, dom, cells[3]);
+}
+
+/// The columns a board of `width` takes: one in a phone, two in a tablet and in a half-width
+/// pane, and `None` — the single row of cards it has always been — when the pane is wide.
+fn columns(width: f32) -> Option<usize> {
+    if width < 720.0 {
+        Some(1)
+    } else if width < 1100.0 {
+        Some(2)
+    } else {
+        None
+    }
 }
 
 fn card(dom: &mut Dom, parent: NodeId, title: &str) -> NodeId {
@@ -259,21 +309,16 @@ fn sleep_card(app: &App, dom: &mut Dom, grid: NodeId) {
         let (y, m, d) = today().ymd();
         dom.add(
             c,
-            El::div()
-                .class("dash-empty")
-                .text(format!("Todavía no hay un `sueno::` cargado en la nota diaria ({y:04}-{m:02}-{d:02})")),
+            El::div().class("dash-empty").text(format!(
+                "Todavía no hay un `sueno::` cargado en la nota diaria ({y:04}-{m:02}-{d:02})"
+            )),
         );
         return;
     }
     let avg = known.iter().sum::<f32>() / known.len() as f32;
     let row = dom.add(c, El::div().class("dash-big-row"));
     dom.add(row, El::div().class("dash-big").text(format_hours(avg)));
-    dom.add(
-        row,
-        El::div()
-            .class("dash-big-note")
-            .text(format!("promedio · {} de {DAYS} días", known.len())),
-    );
+    dom.add(row, El::div().class("dash-big-note").text(format!("promedio · {} de {DAYS} días", known.len())));
     let bars = dom.add(c, El::div().class("dash-bars"));
     let max = values.iter().flatten().copied().fold(9.0f32, f32::max);
     for (data, value) in app.dash.days.iter().zip(&values) {

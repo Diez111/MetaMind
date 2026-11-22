@@ -9,8 +9,8 @@ pub mod calendar;
 pub mod canvasview;
 pub mod cli;
 pub mod clipboard;
-pub mod dataview;
 pub mod dashboard;
+pub mod dataview;
 pub mod datetime;
 pub mod editing;
 pub mod excalidraw;
@@ -96,6 +96,9 @@ pub fn render_window(
     app.step_scrolls();
     app.window_w = pixmap.width() as f32 / scale;
     app.window_h = pixmap.height() as f32 / scale;
+    // The sidebars follow the window shape: they close when it turns compact and come back when
+    // it grows again.
+    app.sync_compact();
     // The dashboard reads the vault: refresh it once per frame, before the tree is built, and only
     // when the notes or the day actually changed.
     let rev = crate::dataview::revision(app);

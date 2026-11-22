@@ -48,7 +48,7 @@ fn edit_save_and_conflict() {
     typed(&mut app, "!");
     fs::write(d.path().join("Home.md"), "changed elsewhere, different length").unwrap();
     assert!(!app.save());
-    assert!(app.notice.as_deref().unwrap().contains("fuera de MetaMind"));
+    assert!(app.notice.as_deref().unwrap().contains("fuera de MetMind"));
     assert_eq!(fs::read_to_string(d.path().join("Home.md")).unwrap(), "changed elsewhere, different length");
     assert!(
         app.tab().unwrap().editor.buf.text().ends_with("new line!"),
