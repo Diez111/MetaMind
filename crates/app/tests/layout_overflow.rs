@@ -948,3 +948,32 @@ fn the_bar_marks_only_the_destination_the_reader_sees() {
     assert_eq!(marked(&f), ["Calendario"], "the destination the reader lands on is the one marked");
     assert!(classed(&f, "ai-sheet").is_none(), "the sheet is not drawn over it");
 }
+
+#[test]
+fn no_stylesheet_rule_hides_behind_a_line_break() {
+    // The CSS reader of this engine takes a selector list only when it is on one line: `a,\nb { … }`
+    // is dropped without a word, and the style the rule described never exists. Four rules were
+    // dead that way (the ones that fold a settings row in a narrow window), so the sheet is checked.
+    let css = metamind_app::shell::BASE_CSS;
+    let mut offenders = Vec::new();
+    let mut in_comment = false;
+    for (i, line) in css.lines().enumerate() {
+        // A comment that wraps is not a selector: it just happens to end in a comma.
+        let opens = line.matches("/*").count();
+        let closes = line.matches("*/").count();
+        let was_in_comment = in_comment;
+        in_comment = (in_comment || opens > closes) && !(closes > opens);
+        if was_in_comment || line.trim_start().starts_with("/*") {
+            continue;
+        }
+        let code = match line.find("/*") {
+            Some(at) => &line[..at],
+            None => line,
+        };
+        let t = code.trim_end();
+        if t.ends_with(',') && !t.trim_start().starts_with('@') && !t.is_empty() {
+            offenders.push(format!("{}: {t}", i + 1));
+        }
+    }
+    assert!(offenders.is_empty(), "a selector list split across lines is never read: {offenders:#?}");
+}
