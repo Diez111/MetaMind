@@ -611,9 +611,11 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .video-player-btn .svg-icon { width: 18px; height: 18px }
 .video-player-btn:hover { background-color: #3d3d3d; color: #ffffff }
 .video-player-btn.is-active { background-color: #3d3d3d; color: #ffffff }
-/* The speed control is a button like the others with a word in it: same height, same border, and
-   the label centred in the box instead of pressed against its edges. */
-.video-player-pill { display: flex; align-items: center; justify-content: center; width: auto; min-width: 40px; height: var(--video-row-h); padding: 0 10px; border: 1px solid #4a4a4a; background-color: #333333; color: #e8e8e8; font-size: var(--font-ui-smaller); white-space: nowrap; font-variant-numeric: tabular-nums }
+/* The speed control is a button like the others with a word in it: the same 26 px box, the same
+   border and the same air, and the label centred in both directions. The engine paints text at
+   the top of the content box, so the balance is made with padding: 3 px above and 1 px below the
+   18 px line is 4 px of air on each side of the glyph. */
+.video-player-pill { width: auto; min-width: 40px; height: var(--video-row-h); padding: 3px 10px 1px 10px; border: 1px solid #4a4a4a; background-color: #333333; color: #e8e8e8; font-size: var(--font-ui-smaller); white-space: nowrap; text-align: center; font-variant-numeric: tabular-nums }
 .video-player-pill:hover { background-color: #464646; color: #ffffff }
 .video-player-speed { min-width: 46px }
 .video-player-time { margin: 0; color: #c8c8c8; font-size: var(--font-ui-smaller); white-space: nowrap; font-variant-numeric: tabular-nums; min-width: 84px; text-align: center }

@@ -46,6 +46,36 @@ mod unix {
         Some(d)
     }
 
+    /// A one second 2:1 clip (1280x640) in a vault of its own: a picture whose shape is nothing
+    /// like the box the note gives a video, which is what the overlay got wrong.
+    fn clip_wide() -> Option<tempfile::TempDir> {
+        if !have_tools() {
+            eprintln!("skipping: ffmpeg and ffprobe are not on PATH");
+            return None;
+        }
+        let d = tempfile::tempdir().unwrap();
+        let made = std::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=duration=1:size=1280x640:rate=10",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(d.path().join("wide.mp4"))
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(made, "ffmpeg could not make the wide fixture clip");
+        Some(d)
+    }
+
     fn open(v: &mut VideoPlayer, dir: &Path) {
         v.open("clip.mp4", &dir.join("clip.mp4"), "Note.md", CAP).expect("the clip opens");
     }
@@ -397,6 +427,107 @@ mod unix {
         let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
         assert!(!frame.dom.nodes.iter().any(|n| n.el.classes.iter().any(|x| x == "mod-video")));
         assert!(frame.dom.nodes.iter().any(|n| n.el.classes.iter().any(|x| x == "video-player")));
+        app.run("video:close");
+    }
+
+    /// Bug de las capturas: en "pantalla completa" el frame salía con la forma de la caja (un
+    /// rectángulo retrato de 639x856) y el slide apaisado se recortaba — título cortado, eje sin
+    /// flecha, contador de páginas fuera de cuadro. Un video 2:1 tiene que dibujarse 2:1 dentro de
+    /// una caja que no lo es, entero y centrado, y la fila de controles tiene que medir lo que mide
+    /// el frame.
+    #[test]
+    fn the_overlay_draws_a_wide_picture_at_its_own_aspect_and_never_crops_it() {
+        let Some(d) = clip_wide() else { return };
+        fs::write(d.path().join("Note.md"), "![[wide.mp4]]\n").unwrap();
+        let mut app = App::open(d.path()).unwrap();
+        app.open_note("Note.md");
+        let mut fonts = Fonts::new();
+        // A window taller than it is wide: the workspace it leaves is portrait, so a 2:1 film in it
+        // is exactly the shape the overlay used to get wrong.
+        let mut pm = Pixmap::new(900, 1200).unwrap();
+        app.run("video:open:Note.md|wide.mp4");
+        for _ in 0..250 {
+            render(&mut app, &mut fonts, &mut pm, 1.0);
+            if app.video.current().is_some() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        app.video.toggle_pause();
+        // The same command the button runs: the geometry of the card in the note is not what this
+        // test is about, and a narrow column can put the button off screen.
+        app.run("video:fullscreen");
+        assert!(app.video_fullscreen, "the command did not open the full-screen view");
+        let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
+
+        let has = |n: &metamind_ui::dom::Node, c: &str| n.el.classes.iter().any(|x| x == c);
+        let rect_of = |class: &str| -> Option<Rect> {
+            frame.dom.nodes.iter().find(|n| has(n, class)).map(|n| n.rect)
+        };
+        let ws = frame.info.workspace.expect("the frame has a workspace");
+        let ws_rect = frame.dom.nodes[ws].rect;
+        let backdrop = rect_of("video-fullscreen").expect("the overlay has no scrim");
+        let modal = rect_of("mod-video").expect("the player has no box over the window");
+        let pic = rect_of("video-player-frame").expect("the picture has no box");
+        let stage = rect_of("video-player-stage").expect("no stage");
+        let controls = rect_of("video-player-controls").expect("no control row");
+
+        // 1. El scrim y la caja ocupan todo el workspace, no un modal chico.
+        assert_eq!((backdrop.w, backdrop.h), (ws_rect.w, ws_rect.h), "the scrim is {backdrop:?}");
+        assert_eq!((modal.w, modal.h), (ws_rect.w, ws_rect.h), "the box is {modal:?}");
+        // 2. El frame mantiene el 2:1 del archivo aunque la caja sea retrato. El bug medía 639x856
+        //    (0.75), o sea la forma de la caja y no la del video.
+        let aspect = pic.w / pic.h;
+        assert!((aspect - 2.0).abs() < 0.02, "the picture is {}x{} ({aspect:.3}:1)", pic.w, pic.h);
+        assert!(ws_rect.h > ws_rect.w, "the box is {ws_rect:?}: the picture has to letterbox");
+        // 3. Nada se recorta: el frame entra entero en la caja que lo dibuja, y el stage no lo
+        //    corta por ningún lado (lo que sobra de la caja es letterbox, no pérdida).
+        assert!(pic.w <= stage.w + 0.5 && pic.h <= stage.h + 0.5, "{pic:?} overflows {stage:?}");
+        assert!(
+            pic.x >= ws_rect.x && pic.y >= ws_rect.y && pic.x + pic.w <= ws_rect.x + ws_rect.w + 0.5
+                && pic.y + pic.h <= ws_rect.y + ws_rect.h + 0.5,
+            "{pic:?} is outside the workspace {ws_rect:?}"
+        );
+        // 4. Centrado: los márgenes de la tarjeta son iguales, que es cómo se ve un letterbox. El
+        //    marco del video cuelga de la fila de controles, así que se mide la tarjeta entera.
+        let card = rect_of("video-player").expect("no card");
+        let (left, right) = (card.x - ws_rect.x, ws_rect.x + ws_rect.w - (card.x + card.w));
+        let (top, bottom) = (card.y - ws_rect.y, ws_rect.y + ws_rect.h - (card.y + card.h));
+        assert!((left - right).abs() <= 1.0, "{left} px left, {right} px right");
+        assert!((top - bottom).abs() <= 1.0, "{top} px top, {bottom} px bottom");
+        // 5. La fila de controles mide exactamente lo que mide el frame (era un desfase de 10 px).
+        assert!((controls.w - pic.w).abs() <= 0.5, "the controls are {:?} and the picture {pic:?}", controls);
+        // 6. El botón de pantalla completa ya muestra "comprimir", no "expandir".
+        let icon = frame
+            .dom
+            .nodes
+            .iter()
+            .filter(|n| n.el.classes.iter().any(|c| c == "svg-icon"))
+            .filter_map(|n| n.el.attrs.iter().find(|(k, _)| k == "data-icon").map(|(_, v)| v.clone()))
+            .collect::<Vec<String>>();
+        assert!(icon.iter().any(|i| i == "minimize"), "no minimize glyph in {icon:?}");
+        // 7. La fila tiene un solo ritmo: los botones miden lo mismo y los gaps son iguales.
+        let btn = |action: &str| {
+            frame
+                .dom
+                .nodes
+                .iter()
+                .find(|n| n.el.action.as_deref() == Some(action))
+                .map(|n| n.rect)
+                .unwrap_or_else(|| panic!("no control for {action}"))
+        };
+        let (speed, full, close) = (btn("video:speed"), btn("video:fullscreen"), btn("video:close"));
+        assert!((speed.h - full.h).abs() <= 0.5, "the speed control is {} px tall, the rest {}", speed.h, full.h);
+        assert!((speed.h - close.h).abs() <= 0.5, "{speed:?} {close:?}");
+        let (gap_a, gap_b) = (full.x - (speed.x + speed.w), close.x - (full.x + full.w));
+        assert!((gap_a - gap_b).abs() <= 0.5, "gaps of {gap_a} and {gap_b} px in the row");
+        // 8. Cero texto de instrucciones: el hint que pedía clics ya no está.
+        for node in &frame.dom.nodes {
+            let text = node.el.text.as_deref().unwrap_or_default();
+            assert!(!text.contains("Clic en el cuadro"), "the overlay still instructs: {text}");
+            assert!(text != "Esc o clic fuera para volver a la nota");
+        }
+        assert!(rect_of("video-fullscreen-hint").is_none(), "the hint line is still drawn");
         app.run("video:close");
     }
 
