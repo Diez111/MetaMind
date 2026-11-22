@@ -1005,10 +1005,9 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .modal.mod-settings.is-narrow .setting-menu-item { text-align: center }
 
 /* A video card with its first frame behind the play button: the reader sees what the video is
-   before deciding, and the poster is decoded once and kept in a budgeted cache. */
-.media-card.has-poster { padding: 0; gap: 0 }
-.media-card-poster { margin: 0 }
-.media-card-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; width: 100% }
-.media-card-play { width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 20px; color: var(--text-on-accent); background-color: var(--interactive-accent); cursor: pointer }
-.media-card-play-icon { width: 18px; height: 18px }
-.media-card-play:hover { background-color: var(--interactive-accent-hover, var(--interactive-accent)) }
+   before deciding, and the poster is decoded once and kept in a budgeted cache. The frame is an
+   image node and the button is its child, drawn over it: that is the z-order this engine has. */
+.media-card-poster { margin: 0; display: flex; align-items: center; justify-content: center }
+.media-card-play { width: 56px; height: 56px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 28px; color: #ffffff; background-color: rgba(0, 0, 0, 0.55); cursor: pointer }
+.media-card-play-icon { width: 22px; height: 22px }
+.media-card-play:hover { background-color: var(--interactive-accent); color: var(--text-on-accent) }

@@ -37,9 +37,13 @@ fn vault() -> tempfile::TempDir {
         ("dir/nested/D.md", "deep\n"),
         ("Una nota con un nombre larguísimo para la barra de pestañas.md", "# Larga\n\ntexto\n"),
         ("Sin enlaces.md", "nada que enlazar\n"),
+        // A video embed: the card that names the file, with the button that opens the player.
+        // The bytes are not a film: the gate never decodes one (see `METAMIND_NO_POSTERS` below).
+        ("Video.md", "# Video\n\n![[clip.mp4]]\n\ntexto despues de la tarjeta\n"),
     ] {
         fs::write(d.path().join(p), t).unwrap();
     }
+    fs::write(d.path().join("clip.mp4"), b"un archivo que existe y no se decodifica").unwrap();
     d
 }
 
@@ -267,6 +271,7 @@ fn views() -> Vec<(&'static str, Vec<&'static str>)> {
         ("barra-inferior", vec!["calendar:open", "more:open"]),
         ("menu-mas", vec!["more:open"]),
         ("nota", vec![]),
+        ("video", vec!["open:Video.md"]),
         ("arbol", vec!["file-explorer:open"]),
         ("buscar", vec!["global-search:open"]),
         ("buscar-opciones", vec!["global-search:open"]),
@@ -292,6 +297,9 @@ fn views() -> Vec<(&'static str, Vec<&'static str>)> {
 
 #[test]
 fn no_text_is_cut_and_nothing_leaves_the_window() {
+    // The video card is checked with its button, not its poster: decoding one would start an
+    // `ffmpeg` per card, and a test does not run processes for a picture it throws away.
+    std::env::set_var("METAMIND_NO_POSTERS", "1");
     let d = vault();
     let mut fonts = Fonts::new();
     let mut failures: Vec<String> = Vec::new();

@@ -588,6 +588,9 @@ pub struct App {
     /// Width and height of the workspace in the last frame drawn: the space an over-window
     /// overlay has, with the status bar already taken out of it.
     pub video_area: (f32, f32),
+    /// Width of the note column in the last frame that drew one: a poster is sized to it before
+    /// the next layout, instead of to the whole window, which is not the room the note has.
+    pub editor_w: f32,
     /// The AI copilot of the right sidebar.
     pub ai: crate::ai::AiPanel,
     /// The models the AI panel's provider listed, fetched in the background from Ajustes → IA.
@@ -898,6 +901,7 @@ impl App {
                 config.app.str("cal.ical_url").unwrap_or_default(),
             ),
             video_area: (0.0, 0.0),
+            editor_w: 0.0,
             ai: Default::default(),
             ai_models: Default::default(),
             dash: Default::default(),

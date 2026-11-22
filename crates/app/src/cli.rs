@@ -266,6 +266,15 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Outcome {
             for _ in 0..frames {
                 crate::render(&mut app, &mut fonts, &mut pm, 1.0);
             }
+            // A video poster is decoded by a thread: a shot of a note with a video waits for the
+            // frame to land (a couple of seconds at most) and draws once more, instead of saving
+            // the card without the picture it is about.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            while app.posters.busy() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                crate::render(&mut app, &mut fonts, &mut pm, 1.0);
+            }
+            crate::render(&mut app, &mut fonts, &mut pm, 1.0);
             match pm.save_png(png) {
                 Ok(()) => {
                     let _ = writeln!(

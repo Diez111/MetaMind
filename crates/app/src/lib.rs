@@ -27,8 +27,8 @@ pub mod ospref;
 pub mod panes;
 pub mod pdf;
 pub mod plugins;
-pub mod posters;
 pub mod popover;
+pub mod posters;
 pub mod properties;
 pub mod recent;
 pub mod rich;
@@ -126,6 +126,13 @@ pub fn render_window(
     // the status bar already out of it. The video player asks for a frame that fits it.
     if let Some(ws) = info.workspace.and_then(|n| dom.nodes.get(n)) {
         app.video_area = (ws.rect.w, ws.rect.h);
+    }
+    // How wide the note column really is, for the things sized before layout (a video poster):
+    // the editor's own box, which is the room a block has before the note's inner padding.
+    if let Some(w) = info.editor.and_then(|n| dom.nodes.get(n)).map(|n| n.rect.w) {
+        if w > 0.0 {
+            app.editor_w = w;
+        }
     }
     // A list opened in the settings panel is brought into view before anything is drawn over it:
     // a row below the edge of the scrollport cannot be clicked, and the click lands on the veil.

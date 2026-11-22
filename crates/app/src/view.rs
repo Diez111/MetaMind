@@ -2173,6 +2173,9 @@ fn embedded_blocks(dom: &mut Dom, parent: NodeId, text: &str, action: &str, pal:
     }
 }
 const IMAGE_MAX_WIDTH: f32 = 640.0;
+/// The width of the note column (`--file-line-width` in `base.css`), the room a poster may take
+/// before the editor has drawn a frame to measure.
+const LINE_WIDTH: f32 = 700.0;
 
 /// Images, note embeds and `.excalidraw` boards referenced by a block, shown below it. A board is
 /// drawn only where the note is rendered: while the caret is on the line its `![[…]]` stays
@@ -2252,44 +2255,50 @@ fn embeds(
             }
         } else {
             // Video, audio and anything else this build does not decode: a card that names the
-            // file. A video also shows its own first frame when that frame is already decoded (or
-            // can be): a black box told the reader nothing.
+            // file. A video also shows its own first frame, with the play button on top of it: the
+            // frame is painted first and its children over it, which is the whole z-order this
+            // engine has.
             let stamp = app.store.index.get(rel).map(|f| (f.mtime, f.size));
-            let poster = stamp.and_then(|st| app.posters.image(rel, st));
-            if poster.is_none() {
-                if let (Some(st), true) = (stamp, crate::posters::wanted(app.compact)) {
-                    let path = app.store.index.get(rel).map(|f| app.store.abs(&f.path));
-                    if let Some(path) = path {
-                        // The tree is built with a shared borrow: the request waits its turn.
-                        app.poster_queue.borrow_mut().push((path, rel.to_string(), st));
-                    }
+            // A compact window keeps the card with its button and decodes nothing: the poster is
+            // for a screen with room to spare, not for the one that already has to squeeze.
+            let posters = crate::posters::wanted(app.compact);
+            let poster = stamp.filter(|_| posters).and_then(|st| app.posters.image(rel, st));
+            if poster.is_none() && posters {
+                if let (Some(st), Some(f)) = (stamp, app.store.index.get(rel)) {
+                    // The tree is built with a shared borrow: the request waits its turn.
+                    let path = app.store.abs(&f.path);
+                    app.poster_queue.borrow_mut().push((path, rel.to_string(), st));
                 }
             }
             if let Some(img) = poster {
                 // The engine gives an image the box it is put in: the poster keeps its own shape,
-                // shrunk to what the window can show, so a video is never a stretched frame.
+                // shrunk to the room the note column really has, so it is never a stretched frame
+                // and never spills past the column. The last frame's column is the only measure
+                // there is while the tree is being built, and it is exact once the first one is
+                // drawn, which is always before a poster lands.
                 let (iw, ih) = (img.0.width() as f32, img.0.height() as f32);
-                let max_w = (app.window_w - 320.0).max(200.0);
-                let k = (max_w / iw).min(1.0);
-                // A column, not an overlay: the engine has no z-index and does not resolve
-                // `position: relative`, so a poster with controls floating over it ends up
-                // painted at the window's corner. The frame on top and its row under it.
-                // The frame is the note's own image node, the one the engine already paints for
-                // `![[foto.png]]`: no extra parent, no absolute positioning.
-                dom.add(
+                let line = app
+                    .config
+                    .appearance
+                    .get("lineWidth")
+                    .and_then(serde_json::Value::as_f64)
+                    .map_or(LINE_WIDTH, |n| n as f32);
+                let column = if app.editor_w > 1.0 { app.editor_w.min(line) } else { line };
+                // As wide as the card under it: one block, one left edge. The engine stretches an
+                // image to its box, so the box keeps the frame's own shape.
+                let k = (column.max(160.0) / iw).min(1.0);
+                let play = El::div().class("media-card-play").action(format!("video:open:{source}|{rel}"));
+                let frame = dom.add(
                     view,
                     El::div()
-                        .class("image-embed media-card-poster")
+                        .class("media-card-poster")
                         .style(&format!("width: {:.0}px; height: {:.0}px", iw * k, ih * k))
                         .image(img),
                 );
-                let card = dom.add(view, El::div().class("media-card has-poster"));
-                let row = dom.add(card, El::div().class("media-card-row"));
-                let play = dom.add(row, El::div().class("media-card-play").action(format!(
-                    "video:open:{source}|{rel}"
-                )));
-                dom.add(play, icons::el("play").class("media-card-play-icon"));
-                let body = dom.add(row, El::div().class("media-card-body"));
+                let button = dom.add(frame, play);
+                dom.add(button, icons::el("play").class("media-card-play-icon"));
+                let card = dom.add(view, El::div().class("media-card"));
+                let body = dom.add(card, El::div().class("media-card-body"));
                 dom.add(body, El::div().class("media-card-title").text(path::file_name(rel)));
                 dom.add(
                     body,
