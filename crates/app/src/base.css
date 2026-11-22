@@ -96,7 +96,7 @@ body {
 .side-dock-ribbon-spacer { flex-grow: 1 }
 .nav-buttons-container { display: flex; justify-content: center; gap: 4px; padding: 6px 8px }
 .tree-item-self.is-unresolved { color: var(--text-faint) }
-.workspace-ribbon.is-hidden, .view-header.is-hidden, .status-bar.is-hidden { display: none }
+.workspace-ribbon.is-hidden, .view-header.is-hidden { display: none }
 .graph-input.backlinks-filter { margin: 0 8px 6px 8px; flex-grow: 0 }
 .search-result-file-match.is-wrapped { white-space: normal }
 .sidebar-tab-header { display: flex; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--background-modifier-border) }
@@ -925,10 +925,12 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .modal.mod-settings.is-narrow .theme-swatch-item { flex: 1 1 0; min-width: 0 }
 .modal.mod-settings.is-narrow .theme-swatch { width: 100%; max-width: 52px }
 
-/* The bottom navigation of a compact window: five destinations over the status bar, each with
-   its icon and its name, and an indicator that slides to the one in force. It only exists below
-   the shell's breakpoint, so the desktop layout is untouched. */
-.bottom-nav { position: absolute; left: 0; right: 0; display: flex; align-items: stretch; background-color: var(--background-secondary); border-top: 1px solid var(--background-modifier-border) }
+/* The bottom navigation of a compact window: five destinations between the note and the status
+   bar, each with its icon and its name, and an indicator that slides to the one in force. It is a
+   row of the window's column, not a layer over the note, so nothing is painted on top of it and
+   it is painted on top of nothing. It only exists below the shell's breakpoint, so the desktop
+   layout is untouched. */
+.bottom-nav { display: flex; align-items: stretch; flex-shrink: 0; background-color: var(--background-secondary); border-top: 1px solid var(--background-modifier-border) }
 .bottom-nav-item { flex-grow: 1; flex-basis: 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding-bottom: 4px; color: var(--text-muted); cursor: pointer }
 .bottom-nav-item:hover { color: var(--text-normal) }
 .bottom-nav-item.is-active { color: var(--text-accent) }
@@ -950,3 +952,11 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .more-row:hover { background-color: var(--background-modifier-hover) }
 .more-row-icon { width: 18px; height: 18px; flex-shrink: 0; color: var(--text-muted) }
 .more-row-label { flex-grow: 1; min-width: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+
+/* A task row of the day panel carries the checkbox that writes it back to its note: empty when
+   pending, accent with a tick when done (the tick only shows on a done task). */
+.calendar-task-check { width: 14px; height: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--background-modifier-border); border-radius: 4px; color: var(--text-on-accent) }
+.calendar-task-check:hover { border-color: var(--interactive-accent) }
+.calendar-task-check-mark { width: 10px; height: 10px; opacity: 0 }
+.calendar-task-check.is-done { background-color: var(--interactive-accent); border-color: var(--interactive-accent) }
+.calendar-task-check.is-done .calendar-task-check-mark { opacity: 1 }

@@ -12,7 +12,7 @@
 //!
 //! Content a scroller pushed out of sight is not a defect: the check asks whether a node that is
 //! visible is cut, not whether a long note is longer than its pane.
-use metamind_app::shell::{RightPanel, ViewMode};
+use metamind_app::shell::{Panel, RightPanel, ViewMode};
 use metamind_app::{render, App, Frame, Key};
 use metamind_ui::{Dom, Fonts, Pixmap};
 use std::fs;
@@ -264,6 +264,7 @@ fn views() -> Vec<(&'static str, Vec<&'static str>)> {
     vec![
         // Nothing open: the state the app shows on a fresh launch.
         ("sin-nota", vec!["close-tab:0"]),
+        ("barra-inferior", vec!["calendar:open", "more:open"]),
         ("menu-mas", vec!["more:open"]),
         ("nota", vec![]),
         ("arbol", vec!["file-explorer:open"]),
@@ -662,6 +663,14 @@ fn the_bottom_navigation_belongs_to_a_compact_window() {
     assert!((n.w - 360.0).abs() < 1.0, "the bar spans the window: {n:?}");
     assert!((n.y - (w.y + w.h)).abs() < 1.0, "it starts where the note ends: {n:?} {w:?}");
     assert!(n.y + n.h <= 640.0, "and stays inside the window: {n:?}");
+    // The status bar is still there, under the bar: the navigation sits on top of nothing and
+    // the note ends above both.
+    let status = classed(&f, "status-bar").expect("a compact window keeps its status bar");
+    let s = f.dom.nodes[status].rect;
+    assert!(s.h > 1.0, "the status bar has a line of its own: {s:?}");
+    assert!((s.y - (n.y + n.h)).abs() < 1.0, "it starts where the navigation ends: {s:?} {n:?}");
+    assert!((s.y + s.h - 640.0).abs() < 1.0, "and ends at the bottom of the window: {s:?}");
+    assert!(n.h >= 44.0, "every destination is 44 px tall at least: {n:?}");
 
     // Five destinations and the way into the rest of the app, the ⋮ at the right end.
     let items = all(&f, "bottom-nav-item");
@@ -676,10 +685,20 @@ fn the_bottom_navigation_belongs_to_a_compact_window() {
     assert!(all(&f, "more-row").len() >= 8, "the menu lists what the ribbon held");
     app.run("more:close");
     let f = frame(&mut app, &mut fonts, 360, 640);
-    for &i in &items {
+    // Five destinations and the menu split the width in equal parts at the narrowest window, and
+    // each one holds its icon and its name without cutting the name in the middle of a word.
+    let slots: Vec<metamind_ui::Rect> =
+        all(&f, "bottom-nav-item").iter().map(|&i| f.dom.nodes[i].rect).collect();
+    let widest = slots.iter().map(|r| r.w).fold(0.0_f32, f32::max);
+    let narrowest = slots.iter().map(|r| r.w).fold(f32::MAX, f32::min);
+    assert!((widest - narrowest).abs() < 1.0, "the slots are equal: {slots:?}");
+    for &i in &all(&f, "bottom-nav-item") {
         let r = f.dom.nodes[i].rect;
         assert!(r.x >= -0.5 && r.x + r.w <= 360.5, "a destination stays in the window: {r:?}");
-        assert!(r.h >= 40.0, "its touch area is comfortable: {r:?}");
+        assert!(r.h >= 44.0, "its touch area is comfortable: {r:?}");
+        let label = f.dom.nodes[i].children.last().copied().expect("a destination has a label");
+        let l = f.dom.nodes[label].rect;
+        assert!(l.x >= r.x - 0.5 && l.x + l.w <= r.x + r.w + 0.5, "the label fits its slot: {l:?} {r:?}");
     }
     // With the note in front and no pane open, no destination is in force.
     let active = |f: &Frame| -> Vec<usize> {
@@ -706,6 +725,68 @@ fn the_bottom_navigation_belongs_to_a_compact_window() {
     let dot = *all(&f, "bottom-nav-indicator").first().expect("the indicator");
     let d = f.dom.nodes[dot].rect;
     assert!(d.x >= -0.5 && d.x + d.w <= 360.5, "the indicator stays inside the bar: {d:?}");
+    // It is under the second destination: the one in force.
+    assert!(d.x > slots[1].x && d.x + d.w < slots[1].x + slots[1].w, "the indicator marks what opened: {d:?}");
+
+    // Moving to another destination slides the indicator, and a reader who asked for reduced
+    // motion gets it in place on the first frame.
+    app.anims.enabled = true;
+    app.set_reduced_motion(false);
+    let _ = frame(&mut app, &mut fonts, 360, 640);
+    app.run("calendar:open");
+    let moving = frame(&mut app, &mut fonts, 360, 640);
+    assert!(app.anims.active(), "changing destination starts its clock");
+    let mid = moving.dom.nodes[*all(&moving, "bottom-nav-indicator").first().unwrap()].rect;
+    assert!(mid.x >= d.x - 0.5 && mid.x < slots[2].x, "the indicator is on the way: {mid:?}");
+    std::thread::sleep(std::time::Duration::from_millis(260));
+    let arrived = frame(&mut app, &mut fonts, 360, 640);
+    let end = arrived.dom.nodes[*all(&arrived, "bottom-nav-indicator").first().unwrap()].rect;
+    assert!(end.x > slots[2].x && end.x + end.w < slots[2].x + slots[2].w, "it arrives: {end:?}");
+
+    app.set_reduced_motion(true);
+    app.run("global-search:open");
+    let still = frame(&mut app, &mut fonts, 360, 640);
+    assert!(!app.anims.active(), "reduced motion starts no clock");
+    let now = still.dom.nodes[*all(&still, "bottom-nav-indicator").first().unwrap()].rect;
+    assert!(now.x > slots[1].x && now.x + now.w < slots[1].x + slots[1].w, "it is already there: {now:?}");
+
+    // The bar is what the pointer finds: no sheet, no note, nothing is painted over it. A press
+    // on Ajustes opens the settings panel and not the note behind it.
+    let items_now = all(&still, "bottom-nav-item");
+    let slot = still.dom.nodes[items_now[4]].rect;
+    let hit_at = (slot.x + slot.w / 2.0, slot.y + slot.h / 2.0);
+    let bar = *all(&still, "bottom-nav").first().unwrap();
+    let mut hit = still.dom.hit(hit_at.0, hit_at.1);
+    let mut on_nav = false;
+    while let Some(i) = hit {
+        if i == bar {
+            on_nav = true;
+            break;
+        }
+        hit = still.dom.nodes[i].parent;
+    }
+    assert!(on_nav, "the bar is what the pointer finds at the bottom of the window");
+    assert!(app.settings.is_none());
+    app.click(&still, &mut fonts, hit_at.0, hit_at.1, false);
+    assert!(app.settings.is_some(), "the Ajustes destination opens the settings panel");
+    app.run("settings:close");
+
+    // A sheet over the note hides the sidebar behind it, so what it hides is not marked: the
+    // reader sees one destination in force, not two.
+    app.left_open = true;
+    app.panel = Panel::Files;
+    app.right_panel = RightPanel::Ai;
+    app.right_open = true;
+    let covered = frame(&mut app, &mut fonts, 360, 640);
+    let only = active(&covered);
+    assert_eq!(only.len(), 1, "one destination at a time: {only:?}");
+    let text = covered.dom.nodes[only[0]]
+        .children
+        .last()
+        .copied()
+        .and_then(|l| covered.dom.nodes[l].el.text.clone())
+        .unwrap_or_default();
+    assert_eq!(text, "Agente", "the sheet is the destination the reader sees");
 
     // A window with room keeps the ribbon and has no bottom navigation.
     let f = frame(&mut app, &mut fonts, 1366, 768);

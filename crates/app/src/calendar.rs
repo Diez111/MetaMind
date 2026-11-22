@@ -76,6 +76,8 @@ pub struct Row {
 /// A task line of a note: `- [ ] Llamar @{2025-09-16}`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Task {
+    /// Whether the line is already checked (`- [x]`).
+    pub done: bool,
     pub day: Day,
     pub title: String,
     pub note: String,
@@ -372,7 +374,7 @@ impl Calendar {
     }
 
     /// Rebuild the rows of the visible weeks, and of the selected day when it is elsewhere.
-    fn rebuild(&mut self) {
+    pub fn rebuild(&mut self) {
         self.dirty = false;
         let start = grid_start(self.month);
         let from = start.min(self.selected);
@@ -492,11 +494,108 @@ fn rows_of(cal: &Ics, source: Source, note: &str, from: Day, to: Day, out: &mut 
 }
 
 /// The tasks of a note: any line that carries `@{YYYY-MM-DD}`.
+impl crate::shell::App {
+    /// Marks the task of the day panel done, or not done: the checkbox of its line in its note.
+    fn toggle_task(&mut self, day: Day, at: usize) {
+        // A click always comes after the calendar has drawn, but a command can arrive before the
+        // first frame: drain the scan and rebuild the rows so the row it names exists.
+        let root = self.store.root.clone();
+        let rev = crate::dataview::revision(self);
+        if rev != self.calendar.revision() {
+            self.calendar.scan_vault(&self.store, rev);
+        }
+        for _ in 0..8 {
+            self.calendar.tick(&root, &self.store);
+        }
+        let Some(row) = self.calendar.rows_on(day).nth(at).cloned() else {
+            self.notice = Some("La tarea ya no esta en la lista".to_string());
+            return;
+        };
+        if row.source != Source::Tasks {
+            return;
+        }
+        let rel = row.note.clone();
+        let Ok((text, stamp)) = self.store.read(&rel) else {
+            self.notice = Some(format!("No se pudo leer {rel}"));
+            return;
+        };
+        let Some(next) = toggle_task_line(&text, day, &row.title) else {
+            self.notice = Some("La tarea ya no esta en la nota".to_string());
+            return;
+        };
+        let done = next != text && task_done(&next, day, &row.title);
+        if let Err(e) = self.store.write(&rel, &next, Some(stamp)) {
+            self.notice = Some(format!("No se pudo guardar {rel}: {e}"));
+            return;
+        }
+        let rev = crate::dataview::revision(self);
+        self.calendar.scan_vault(&self.store, rev);
+        self.calendar.mark_dirty();
+        self.notice = Some(if done {
+            format!("Hecha: {}", row.title)
+        } else {
+            format!("Pendiente otra vez: {}", row.title)
+        });
+    }
+}
+
+/// The same note with the checkbox of the task `title` on `day` the other way round, or `None`
+/// when no line of the note says that task any more.
+pub fn toggle_task_line(text: &str, day: Day, title: &str) -> Option<String> {
+    let mut out = String::with_capacity(text.len() + 8);
+    let mut found = false;
+    for line in text.split_inclusive('\n') {
+        if found {
+            out.push_str(line);
+            continue;
+        }
+        let body = line.strip_suffix('\n').unwrap_or(line);
+        let hit = task_line(body).is_some_and(|(d, t)| d == day && t == title);
+        if hit {
+            found = true;
+            out.push_str(&flip_checkbox(body));
+        } else {
+            out.push_str(body);
+        }
+        if line.ends_with('\n') {
+            out.push('\n');
+        }
+    }
+    found.then_some(out)
+}
+
+/// Whether the task `title` on `day` is already checked in `text`.
+fn task_done(text: &str, day: Day, title: &str) -> bool {
+    text.lines()
+        .any(|line| task_line(line).is_some_and(|(d, t)| d == day && t == title) && line_done(line))
+}
+
+/// Whether a task line is checked.
+fn line_done(line: &str) -> bool {
+    let t = line.trim_start();
+    let t = t.strip_prefix(['-', '*', '+']).unwrap_or(t).trim_start();
+    t.starts_with("[x]") || t.starts_with("[X]")
+}
+
+/// The same line with its checkbox flipped. A line without one comes back untouched.
+fn flip_checkbox(line: &str) -> String {
+    for (from, to) in [("[ ]", "[x]"), ("[x]", "[ ]"), ("[X]", "[ ]")] {
+        if let Some(i) = line.find(from) {
+            let mut out = String::with_capacity(line.len());
+            out.push_str(&line[..i]);
+            out.push_str(to);
+            out.push_str(&line[i + from.len()..]);
+            return out;
+        }
+    }
+    line.to_string()
+}
+
 pub fn tasks_of(note: &str, text: &str) -> Vec<Task> {
     let mut out = Vec::new();
     for line in text.lines() {
         let Some((day, title)) = task_line(line) else { continue };
-        out.push(Task { day, title, note: note.to_string() });
+        out.push(Task { done: line_done(line), day, title, note: note.to_string() });
     }
     out
 }
@@ -670,6 +769,16 @@ impl crate::shell::App {
                     let key = (Day::from_index(day), at);
                     self.calendar.detail = (self.calendar.detail != Some(key)).then_some(key);
                     self.calendar.desc_open = false;
+                }
+            }
+            return true;
+        }
+        // A task of the day panel is a line of a note: the checkbox writes the line back.
+        if let Some(rest) = command.strip_prefix("cal:done:") {
+            let mut parts = rest.split(':');
+            if let (Some(day), Some(at)) = (parts.next(), parts.next()) {
+                if let (Ok(day), Ok(at)) = (day.parse::<i32>(), at.parse::<usize>()) {
+                    self.toggle_task(Day::from_index(day), at);
                 }
             }
             return true;
@@ -870,6 +979,22 @@ fn day_panel(app: &crate::shell::App, dom: &mut Dom, parent: NodeId, today: Day,
             Some(minute) => format!("{:02}:{:02}", minute / 60, minute % 60),
             None => "Todo el día".to_string(),
         };
+        if row.source == Source::Tasks {
+            // The line is a task of a note: the box writes the note back.
+            let done = cal
+                .tasks
+                .get(&row.note)
+                .and_then(|tasks| tasks.iter().find(|t| t.title == row.title))
+                .is_some_and(|t| t.done);
+            let check = dom.add(
+                line,
+                El::div()
+                    .class("calendar-task-check")
+                    .class_if(done, "is-done")
+                    .action(format!("cal:done:{}:{}", day.index(), at)),
+            );
+            dom.add(check, icons::el("check").class("calendar-task-check-mark"));
+        }
         dom.add(line, El::div().class("calendar-event-time").text(clock));
         dom.add(line, El::div().class("calendar-event-title").text(row.title.clone()));
         if open_detail {
@@ -925,6 +1050,41 @@ fn detail(dom: &mut Dom, parent: NodeId, row: &Row, desc_open: bool) {
 
 /// The weekdays of the day panel, Sunday first, as `Day::weekday` counts them.
 const DAYS: [&str; 7] = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+
+#[cfg(test)]
+mod task_tests {
+    use super::*;
+
+    fn day() -> Day {
+        Day::from_ymd(2026, 11, 22).unwrap()
+    }
+
+    #[test]
+    fn a_task_line_is_flipped_and_the_rest_of_the_note_is_untouched() {
+        let text = "---\ntipo: diario\n---\n\n- [ ] Comprar pan @{2026-11-22}\n- [ ] Otra cosa @{2026-11-23}\n";
+        let next = toggle_task_line(text, day(), "Comprar pan").expect("the task is there");
+        assert!(next.contains("- [x] Comprar pan"), "{next}");
+        assert!(next.contains("- [ ] Otra cosa"), "the other task keeps its box");
+        assert!(next.contains("tipo: diario"), "the front matter is untouched");
+        // And back.
+        let back = toggle_task_line(&next, day(), "Comprar pan").expect("still there");
+        assert!(back.contains("- [ ] Comprar pan"), "{back}");
+        assert!(!line_done("- [ ] Comprar pan"));
+        assert!(line_done("- [x] Comprar pan"));
+        assert!(line_done("* [X] Comprar pan"));
+    }
+
+    #[test]
+    fn a_task_that_moved_day_is_not_the_one_flipped() {
+        let text = "- [ ] Comprar pan @{2026-11-23}\n";
+        assert!(toggle_task_line(text, day(), "Comprar pan").is_none());
+        // A note with the same title on another day keeps its box.
+        let both = "- [ ] Comprar pan @{2026-11-22}\n- [ ] Comprar pan @{2026-11-23}\n";
+        let next = toggle_task_line(both, day(), "Comprar pan").unwrap();
+        assert_eq!(next.matches("- [x]").count(), 1, "{next}");
+        assert_eq!(next.matches("- [ ]").count(), 1, "{next}");
+    }
+}
 
 #[cfg(test)]
 mod tests {

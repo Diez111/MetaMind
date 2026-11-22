@@ -1053,7 +1053,7 @@ fn ai_sheet(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
     // The sheet takes its height from the window the same way the workspace does: the engine does
     // not resolve `position: relative` on an ancestor, so an absolute child with `bottom: 0` would
     // stretch past the note and under the bottom navigation.
-    let body_h = (app.window_h - if app.compact { NAV_H } else { 0.0 }).max(0.0);
+    let body_h = (app.window_h - STATUS_BAR_H - if app.compact { NAV_H } else { 0.0 }).max(0.0);
     let sheet = dom.add(
         parent,
         El::div()
@@ -2877,8 +2877,7 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
     if compact && app.ai_sheet() {
         ai_sheet(app, dom, ws, info);
     }
-    // The status bar gives up its line in a compact window: the navigation is the footer there.
-    let status = dom.add(0, El::div().class("status-bar").class_if(app.compact, "is-hidden"));
+    let status = dom.add(0, El::div().class("status-bar"));
     // What the element under the pointer does, with its hotkey. Rows whose label had to be
     // shortened (the explorer, the tabs) are named in full here: the status bar is this app's
     // tooltip, and a floating one would cover the row it describes.
@@ -3239,12 +3238,11 @@ type NavRow = (&'static str, &'static str, &'static str);
 /// The ⋮ menu, over the window: what the ribbon and the palettes offered, in one list that reads
 /// in a phone-sized window.
 fn more_sheet(app: &App, dom: &mut Dom) {
-    let body_h = (app.window_h - NAV_H).max(0.0);
+    // It ends where the note ends: above the bottom navigation and the status bar under it.
+    let body_h = (app.window_h - STATUS_BAR_H - NAV_H).max(0.0);
     let sheet = dom.add(
         0,
-        El::div()
-            .class("more-sheet")
-            .style(&format!("top: 0; left: 0; right: 0; height: {body_h:.0}px")),
+        El::div().class("more-sheet").style(&format!("top: 0; left: 0; right: 0; height: {body_h:.0}px")),
     );
     let head = dom.add(sheet, El::div().class("more-sheet-header"));
     dom.add(head, icons::el("ellipsis").class("more-sheet-mark"));
@@ -3282,10 +3280,7 @@ fn more_sheet(app: &App, dom: &mut Dom) {
             if app.disabled_by(cmd).is_some() {
                 continue;
             }
-            let row = dom.add(
-                list,
-                El::div().class("more-row").action(format!("more:run:{cmd}")),
-            );
+            let row = dom.add(list, El::div().class("more-row").action(format!("more:run:{cmd}")));
             dom.add(row, icons::el(icon).class("more-row-icon"));
             dom.add(row, El::div().class("more-row-label").text(*label));
         }
@@ -3294,19 +3289,27 @@ fn more_sheet(app: &App, dom: &mut Dom) {
 
 /// The bottom navigation of a compact window: the five places a phone reader moves between,
 /// with the accent on the one in force and an indicator that slides from the old one to the new.
+/// It is a row of the window, between the note and the status bar: neither of them is painted
+/// over, and nothing of it is painted over them.
 fn bottom_nav(app: &App, dom: &mut Dom) {
-    let bar = dom
-        .add(0, El::div().class("bottom-nav").style(&format!("bottom: 0; height: {NAV_H}px")));
-    let agent = if app.compact && app.right_open { app.right_panel == RightPanel::Ai } else { false };
+    let bar = dom.add(0, El::div().class("bottom-nav").style(&format!("height: {NAV_H}px")));
+    // One destination is in force at a time, and it is the one the reader can see: a sheet, a
+    // modal or the menu covers the note, so what it hides is not marked under it.
+    let covered = app.ai_sheet() || app.settings.is_some() || app.more_open;
+    let left = |panel: Panel| !covered && app.left_open && app.panel == panel;
+    let agent = app.ai_sheet();
     let settings = app.settings.is_some();
     let items: [(&str, &str, &str, bool); 5] = [
-        ("folder", "Archivos", "file-explorer:open", app.left_open && app.panel == Panel::Files),
-        ("search", "Buscar", "global-search:open", app.left_open && app.panel == Panel::Search),
-        ("calendar", "Calendario", "calendar:open", app.left_open && app.panel == Panel::Calendar),
+        ("folder", "Archivos", "file-explorer:open", left(Panel::Files)),
+        ("search", "Buscar", "global-search:open", left(Panel::Search)),
+        ("calendar", "Calendario", "calendar:open", left(Panel::Calendar)),
         ("sparkles", "Agente", "ai:open", agent),
         ("settings", "Ajustes", "app:open-settings", settings),
     ];
     // Five destinations and the way into the rest of the app: the ⋮ slot at the right end.
+    // The engine lays every child out at its own width and only the leftover is shared by
+    // `flex-grow`, so an equal share is asked for with the width itself: at 360 px that is 60 px
+    // each, and the name of the longest destination is shortened with an ellipsis, not wrapped.
     let width = (app.window_w / (items.len() + 1) as f32).max(1.0);
     // With no destination in force (the note alone) there is nothing to point at.
     if items.iter().any(|i| i.3) {
@@ -3323,8 +3326,14 @@ fn bottom_nav(app: &App, dom: &mut Dom) {
         );
     }
     for (icon, label, action, active) in items {
-        let item =
-            dom.add(bar, El::div().class("bottom-nav-item").class_if(active, "is-active").action(action));
+        let item = dom.add(
+            bar,
+            El::div()
+                .class("bottom-nav-item")
+                .class_if(active, "is-active")
+                .style(&format!("width: {width:.2}px"))
+                .action(action),
+        );
         dom.add(item, icons::el(icon).class("bottom-nav-icon"));
         dom.add(item, El::div().class("bottom-nav-label").text(label));
     }
@@ -3334,6 +3343,7 @@ fn bottom_nav(app: &App, dom: &mut Dom) {
         El::div()
             .class("bottom-nav-item")
             .class_if(app.more_open, "is-active")
+            .style(&format!("width: {width:.2}px"))
             .action(if app.more_open { "more:close" } else { "more:open" }),
     );
     dom.add(more, icons::el("ellipsis").class("bottom-nav-icon"));
@@ -3346,19 +3356,23 @@ pub fn build(app: &App, viewport_h: f32, solo: Option<usize>) -> (Dom, ViewInfo)
     let mut dom = Dom::new();
     dom.nodes[0].el.classes.push(if app.dark { "theme-dark" } else { "theme-light" }.to_string());
     // A window of its own shows the pane alone, with no status bar under it.
-    // A compact window also keeps the bottom navigation out of the note's area.
-    // A compact window has one footer, not two: the bottom navigation takes the edge and the
-    // status bar gives up its 27 px, which a phone-sized screen cannot spare.
-    let nav_h = if app.compact && solo.is_none() { NAV_H } else { 0.0 };
-    let footer = if nav_h > 0.0 { nav_h } else { STATUS_BAR_H };
-    let body_h = if solo.is_some() { viewport_h } else { (viewport_h - footer).max(0.0) };
+    // In a compact window the window has three rows at the bottom: the note, the navigation and
+    // the status bar. The note takes what is left, so the navigation is a row of the layout and
+    // not a layer over the note: nothing is painted on top of anything else.
     // The bottom navigation belongs to the window, not to a pane: a pop-out shows a pane alone.
     let with_nav = app.compact && solo.is_none();
-    // `flex-grow` in the sheet would let the workspace take the whole window back, over the
-    // bottom navigation: in a compact window its height is the one measured here.
+    let nav_h = if with_nav { NAV_H } else { 0.0 };
+    let body_h = if solo.is_some() { viewport_h } else { (viewport_h - STATUS_BAR_H - nav_h).max(0.0) };
+    // `flex-grow` in the workspace would let it take the whole window back, over the navigation:
+    // in a compact window its height is the one measured here.
     let grow = if with_nav { "flex-grow: 0; " } else { "" };
     let ws = dom.add(0, El::div().class("workspace").style(&format!("{grow}height: {body_h:.1}px")));
     info.workspace = Some(ws);
+    if with_nav {
+        // Right after the workspace: the status bar, which `chrome` adds next, keeps its line
+        // under it, and the sheets, which are children of the workspace, end above it.
+        bottom_nav(app, &mut dom);
+    }
     match solo {
         Some(p) => {
             let root = dom.add(ws, El::div().class("workspace-split mod-root"));
@@ -3378,12 +3392,9 @@ pub fn build(app: &App, viewport_h: f32, solo: Option<usize>) -> (Dom, ViewInfo)
             dom.nodes[n].scroll_y = *y;
         }
     }
-    if with_nav {
-        // Last, so it is painted over the workspace and the sheets: it is the frame of the window.
-        bottom_nav(app, &mut dom);
-        if app.more_open {
-            more_sheet(app, &mut dom);
-        }
+    if with_nav && app.more_open {
+        // Last, so the menu is painted over the note, over a floating sidebar and over the bar.
+        more_sheet(app, &mut dom);
     }
     mark_hover(&mut dom, app.hover_action.as_deref());
     (dom, info)

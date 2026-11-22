@@ -793,6 +793,8 @@ impl App {
                 self.suggest = None;
                 self.settings = Some(SettingsUi::new(self));
                 self.scrolls.remove("settings-content");
+                // The bottom navigation of a compact window follows the destination.
+                self.nav_go(4.0);
             }
             return true;
         }
@@ -2337,9 +2339,9 @@ pub fn modal(app: &App, dom: &mut Dom) {
     let Some(ui) = &app.settings else { return };
     let t = app.anims.t("settings");
     let backdrop = El::div().class("modal-container mod-dim").action("settings:close");
-    // The panel ends where the window's footer begins: the navigation in a compact window, the
-    // status bar otherwise.
-    let footer = if app.compact { crate::view::NAV_H } else { crate::view::STATUS_BAR_H };
+    // The panel ends where the window's footer begins: the status bar, and the navigation over
+    // it in a compact window.
+    let footer = crate::view::STATUS_BAR_H + if app.compact { crate::view::NAV_H } else { 0.0 };
     let mut style = format!("margin-bottom: {footer:.0}px; ");
     // The panel asks for 620 px, which is more than a small window has: it takes the height the
     // window can give, so it never sticks out of the top with its bar cut.
