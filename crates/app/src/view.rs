@@ -914,10 +914,9 @@ fn ai_panel(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
     let b = icon_button(dom, bar, "settings", "ai:settings", false);
     dom.nodes[b].el.attrs.push(("aria-label".into(), "Ajustes de la IA".into()));
     let quick = dom.add(panel, El::div().class("ai-quick"));
-    for (label, action) in [
-        ("Explicar selección", "ai:explain-selection"),
-        ("Resumir nota", "ai:summarize-note"),
-    ] {
+    for (label, action) in
+        [("Explicar selección", "ai:explain-selection"), ("Resumir nota", "ai:summarize-note")]
+    {
         dom.add(quick, El::div().class("ai-quick-button").text(label).action(action));
     }
     let list = dom.add(panel, El::div().class("ai-messages").id("ai-messages"));
@@ -1614,8 +1613,11 @@ pub(crate) fn note_blocks(
             // in live preview: the action sits on the title line (which is the whole box while
             // the body is hidden) and never on the body, where a click has to place the caret.
             if callout.is_some() {
-                let title =
-                    if callout_folded { Some(callout_node) } else { dom.nodes[callout_node].children.first().copied() };
+                let title = if callout_folded {
+                    Some(callout_node)
+                } else {
+                    dom.nodes[callout_node].children.first().copied()
+                };
                 if let Some(n) = title.filter(|&n| n != view) {
                     dom.nodes[n].el.action = Some(format!("callout:toggle:{}", b.start));
                 }
@@ -1627,7 +1629,8 @@ pub(crate) fn note_blocks(
                 el = el.attr("aria-level", &level.to_string());
             }
             let mut bv = BlockView { block: first + i, node: 0, src_start: s, src_end: e, display, map };
-            if let Some((color, ts, te)) = callout {                let (d0, d1) = (bv.to_display(ts), bv.to_display(te));
+            if let Some((color, ts, te)) = callout {
+                let (d0, d1) = (bv.to_display(ts), bv.to_display(te));
                 for sp in spans.iter_mut().filter(|sp| sp.start >= d0 && sp.end <= d1) {
                     sp.color = Some(color);
                 }
@@ -2488,9 +2491,7 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
     let notes = app.store.index.notes().count();
     dom.add(
         status,
-        El::div()
-            .class("status-bar-item")
-            .text(format!("{notes} nota{}", if notes == 1 { "" } else { "s" })),
+        El::div().class("status-bar-item").text(format!("{notes} nota{}", if notes == 1 { "" } else { "s" })),
     );
 }
 
@@ -2502,15 +2503,11 @@ fn video_fullscreen(app: &App, dom: &mut Dom, viewport_h: f32) {
         return;
     }
     let (w, h) = ((app.window_w - 80.0).max(240.0), (viewport_h - 80.0).max(160.0));
-    let backdrop = dom.add(
-        0,
-        El::div().class("modal-container mod-dim video-fullscreen").action("video:fullscreen-close"),
-    );
+    let backdrop = dom
+        .add(0, El::div().class("modal-container mod-dim video-fullscreen").action("video:fullscreen-close"));
     let modal = dom.add(
         backdrop,
-        El::div()
-            .class("modal mod-video")
-            .style(&format!("width: {w:.0}px; height: {h:.0}px")),
+        El::div().class("modal mod-video").style(&format!("width: {w:.0}px; height: {h:.0}px")),
     );
     crate::video::widget(app, dom, modal);
 }
