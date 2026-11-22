@@ -440,6 +440,7 @@ impl Welcome {
         self.anims.tick();
         let mut dom = self.build();
         dom.style(&self.theme, Env { dark: true, high_contrast: self.high_contrast, ..Env::default() });
+        dom.scrollbar_thumb = crate::scrollbar_thumb(&dom);
         dom.layout(fonts, pixmap.width() as f32 / scale, pixmap.height() as f32 / scale);
         icons::paint(&mut dom);
         let scene = dom.paint();

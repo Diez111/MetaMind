@@ -54,7 +54,7 @@ pub const MAX_DIAGRAM_ZOOM: f32 = 4.0;
 
 /// The scrollbar colour the theme asks for (`--scrollbar-thumb`), so the bar of the note and
 /// the bar of a modal are painted alike and follow the scheme.
-fn scrollbar_thumb(dom: &Dom) -> Option<theme_engine::Color> {
+pub(crate) fn scrollbar_thumb(dom: &Dom) -> Option<theme_engine::Color> {
     dom.nodes.first()?.computed.var("--scrollbar-thumb").and_then(|v| theme_engine::parse_color(&v))
 }
 
