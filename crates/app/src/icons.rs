@@ -21,7 +21,7 @@
 //! highlighter, table, scan-text, sparkles, square, circle, diamond, type, minus,
 //! pause, maximize, minimize, download, undo, redo.
 //!
-//! The names are MetaMind's, so a few point at the nearest Lucide icon rather than one with the
+//! The names are MetMind's, so a few point at the nearest Lucide icon rather than one with the
 //! same name: `note` is `file-text`, `note-plus` is `file-plus`, `canvas` is `layout-dashboard`,
 //! `switcher` is `arrow-right-left`, `command` is `terminal`, `graph` is `share-2`, `context` is
 //! `text-align-start`, `sort` is `arrow-up-down`, `edit` is `pencil`, `book` is `book-open`,

@@ -93,7 +93,7 @@ fn write(app: &App, fonts: &mut Fonts, dest: &Path) -> Result<usize, String> {
 
     let extents: Vec<Option<(f32, f32)>> = cmds.iter().map(|c| extent(c, fonts)).collect();
     let mut doc = Document::new();
-    doc.set_metadata(Metadata::new().title(tab.title().to_string()).creator("MetaMind".to_string()));
+    doc.set_metadata(Metadata::new().title(tab.title().to_string()).creator("MetMind".to_string()));
     let mut out = Out { fonts, font_cache: HashMap::new(), images: HashMap::new() };
     for &(top, bottom) in &pages {
         let settings = PageSettings::from_wh(PAGE_W, PAGE_H).ok_or("tamaño de página no válido")?;

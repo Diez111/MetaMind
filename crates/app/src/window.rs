@@ -322,7 +322,7 @@ impl Win {
             .map(|&(id, pane)| {
                 let (tabs, active) = app.pane_tabs(pane);
                 let note =
-                    tabs.get(active).map_or("MetaMind".to_string(), |t| format!("{} - MetaMind", t.title()));
+                    tabs.get(active).map_or("MetMind".to_string(), |t| format!("{} - MetMind", t.title()));
                 (id, note)
             })
             .collect();
@@ -371,10 +371,10 @@ impl Win {
     fn title(&self) -> String {
         match &self.app {
             Some(app) => format!(
-                "{} - MetaMind",
+                "{} - MetMind",
                 app.store.root.file_name().and_then(|n| n.to_str()).unwrap_or("Vault")
             ),
-            None => "MetaMind".to_string(),
+            None => "MetMind".to_string(),
         }
     }
 

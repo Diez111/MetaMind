@@ -338,11 +338,11 @@ impl State {
             State::Checking { manual, rx } => match rx.try_recv().ok()? {
                 Ok(Some(r)) => {
                     let msg =
-                        format!("MetaMind {} está disponible. Instálala desde Ajustes → Acerca de.", r.tag);
+                        format!("MetMind {} está disponible. Instálala desde Ajustes → Acerca de.", r.tag);
                     (State::Available(r), Some(msg))
                 }
                 Ok(None) => {
-                    let msg = manual.then(|| format!("MetaMind v{CURRENT} es la última versión."));
+                    let msg = manual.then(|| format!("MetMind v{CURRENT} es la última versión."));
                     (State::UpToDate, msg)
                 }
                 // Automatic checks fail quietly offline; the error is still in Settings.
@@ -353,7 +353,7 @@ impl State {
             },
             State::Installing { tag, rx } => match rx.try_recv().ok()? {
                 Ok(()) => {
-                    let msg = format!("MetaMind {tag} está instalada. Reinicia para usarla.");
+                    let msg = format!("MetMind {tag} está instalada. Reinicia para usarla.");
                     (State::Installed(tag.clone()), Some(msg))
                 }
                 Err(e) => (State::Failed(e.clone()), Some(format!("Falló la actualización: {e}"))),
@@ -372,7 +372,7 @@ impl State {
             State::UpToDate => "Tienes la última versión.".into(),
             State::Available(r) => format!("{} está disponible.", r.tag),
             State::Installing { tag, .. } => format!("Instalando {tag}…"),
-            State::Installed(tag) => format!("{tag} está instalada. Reinicia MetaMind para usarla."),
+            State::Installed(tag) => format!("{tag} está instalada. Reinicia MetMind para usarla."),
             State::Failed(e) => e.clone(),
         }
     }

@@ -1,5 +1,5 @@
-/* MetaMind base theme. Variable and class names follow the community theme conventions so that
-   community themes and snippets apply; the values are MetaMind's own. */
+/* MetMind base theme. Variable and class names follow the community theme conventions so that
+   community themes and snippets apply; the values are MetMind's own. */
 body {
   --font-text-size: 16px;
   --font-text: sans-serif;
@@ -589,7 +589,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .welcome-card.mod-browser { height: 500px; padding: 28px 32px 24px 32px }
 .welcome-card.mod-scroll { height: 660px }
 .welcome-brand { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; margin-bottom: 26px }
-.welcome-logo { width: 40px; height: 40px; margin-bottom: 12px; color: var(--text-accent) }
+.welcome-logo { width: 64px; height: 64px; margin-bottom: 14px }
 .welcome-name { font-size: 21px; font-weight: 600; color: var(--text-normal); letter-spacing: -0.01em }
 .welcome-data { margin-top: 6px; font-size: var(--font-ui-small); color: var(--text-muted) }
 .welcome-version { margin-top: 2px; font-size: 11px; color: var(--text-muted) }

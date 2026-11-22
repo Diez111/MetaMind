@@ -551,7 +551,7 @@ impl App {
     fn put_clip(&mut self, text: String) {
         if self.system_clipboard {
             if let Err(e) = clipboard::set(&text) {
-                self.notice = Some(format!("Copiado solo dentro de MetaMind: {e}"));
+                self.notice = Some(format!("Copiado solo dentro de MetMind: {e}"));
             }
         }
         self.clip = text;

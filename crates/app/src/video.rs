@@ -32,7 +32,7 @@ use vault_core::path;
 pub const VIDEO_EXTS: [&str; 7] = ["mp4", "webm", "mkv", "mov", "m4v", "ogv", "avi"];
 
 /// What the remote reader is asked with. YouTube's CDN answers 403 to a request without one.
-pub const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 MetaMind";
+pub const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 MetMind";
 
 /// Frame rate assumed when the container does not say one.
 pub const FALLBACK_FPS: f32 = 25.0;

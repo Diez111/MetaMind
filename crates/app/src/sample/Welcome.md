@@ -1,7 +1,7 @@
 ---
 tags: [start]
 ---
-# Welcome to MetaMind
+# Welcome to MetMind
 
 This is a sample vault. A vault is just a folder of Markdown files on your disk, so everything here is yours to edit, move or delete.
 

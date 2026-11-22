@@ -607,7 +607,7 @@ fn fetch(url: &str, meta: &Meta) -> Result<Fetched, String> {
             .build(),
     );
     let mut request =
-        agent.get(url).header("User-Agent", concat!("MetaMind/", env!("CARGO_PKG_VERSION"), " (calendario)"));
+        agent.get(url).header("User-Agent", concat!("MetMind/", env!("CARGO_PKG_VERSION"), " (calendario)"));
     if !meta.etag.is_empty() {
         request = request.header("If-None-Match", &meta.etag);
     }
@@ -914,7 +914,7 @@ fn detail(dom: &mut Dom, parent: NodeId, row: &Row, desc_open: bool) {
         dom.add(
             box_,
             El::div().class("calendar-readonly").text(
-                "Los eventos de Google son de solo lectura: MetaMind los muestra desde la dirección iCal.",
+                "Los eventos de Google son de solo lectura: MetMind los muestra desde la dirección iCal.",
             ),
         );
     }

@@ -18,7 +18,7 @@
 //!
 //! Excalidraw's `fontFamily` numbers map onto the faces this build has: 1 (the hand-drawn face,
 //! Excalidraw's "Virgil") and 2 (its normal sans) both paint in the app's text font — no
-//! hand-lettered face ships with MetaMind — and 3 (the code face) paints in the monospace font.
+//! hand-lettered face ships with MetMind — and 3 (the code face) paints in the monospace font.
 //! A number a newer Excalidraw writes paints in the text font. Sizes, line height and the file's
 //! own colours are used as they are stored.
 //!
