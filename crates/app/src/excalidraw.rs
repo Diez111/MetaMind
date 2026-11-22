@@ -64,7 +64,10 @@ impl Board {
     pub fn parse(src: &str) -> Result<Board, String> {
         let scene = Scene::parse(src).map_err(|e| e.to_string())?;
         let list = scene.display_list();
-        let bounds = bounds(list.ops.iter());
+        let bounds = match list.bounds() {
+            Some(b) => (b.x as f32, b.y as f32, b.width as f32, b.height as f32),
+            None => (0.0, 0.0, 0.0, 0.0),
+        };
         Ok(Board { list, bounds })
     }
 
@@ -144,7 +147,7 @@ pub fn paint(dom: &mut Dom, items: &[Item], fonts: &mut Fonts) {
             if let Some(bg) = it.board.list.background {
                 cmds.push(Cmd::Fill { rect: area, color: solid(bg, 1.0), radius: 0.0 });
             }
-            let pen = Pen { s, ox, oy, base: &base };
+            let pen = Pen::new(s, ox, oy, &base, false);
             for op in &it.board.list.ops {
                 paint_op(&mut cmds, op, &pen, fonts);
             }
@@ -157,24 +160,51 @@ pub fn paint(dom: &mut Dom, items: &[Item], fonts: &mut Fonts) {
     }
 }
 
-/// Scene coordinates to the note's.
-struct Pen<'a> {
-    s: f32,
-    ox: f32,
-    oy: f32,
-    base: &'a TextStyle,
+/// Scene coordinates to the note's (or the board view's) pixels.
+pub(crate) struct Pen<'a> {
+    pub(crate) s: f32,
+    pub(crate) ox: f32,
+    pub(crate) oy: f32,
+    pub(crate) base: &'a TextStyle,
+    /// The board is painted on a dark surface: a near-black stroke would vanish, so the light and
+    /// dark ends swap, the way Excalidraw's own dark theme draws a light board.
+    pub(crate) adapt: bool,
 }
 
-impl Pen<'_> {
-    fn p(&self, x: f64, y: f64) -> (f32, f32) {
+impl<'a> Pen<'a> {
+    pub(crate) fn new(s: f32, ox: f32, oy: f32, base: &'a TextStyle, adapt: bool) -> Pen<'a> {
+        Pen { s, ox, oy, base, adapt }
+    }
+
+    pub(crate) fn p(&self, x: f64, y: f64) -> (f32, f32) {
         (self.ox + x as f32 * self.s, self.oy + y as f32 * self.s)
     }
-    fn pts(&self, pts: &[(f64, f64)]) -> Vec<(f32, f32)> {
+    pub(crate) fn pts(&self, pts: &[(f64, f64)]) -> Vec<(f32, f32)> {
         pts.iter().map(|&(x, y)| self.p(x, y)).collect()
+    }
+    /// An element colour as this board paints it.
+    pub(crate) fn colour(&self, c: Rgba, opacity: f64) -> Color {
+        let c = if self.adapt { flipped(c) } else { c };
+        solid(c, opacity)
     }
 }
 
-fn paint_op(out: &mut Vec<Cmd>, op: &DrawOp, pen: &Pen, fonts: &mut Fonts) {
+/// Light and dark end of a colour swapped, its hue kept: what a dark board needs so that the
+/// near-black strokes Excalidraw writes by default stay readable.
+fn flipped(c: Rgba) -> Rgba {
+    let luma = 0.299 * f32::from(c.r) + 0.587 * f32::from(c.g) + 0.114 * f32::from(c.b);
+    if (60.0..=195.0).contains(&luma) {
+        return c;
+    }
+    let keep = |v: u8| (f32::from(v) * 0.35).round().clamp(0.0, 255.0) as u8;
+    if luma < 60.0 {
+        Rgba { r: 255 - keep(c.r), g: 255 - keep(c.g), b: 255 - keep(c.b), a: c.a }
+    } else {
+        Rgba { r: keep(c.r), g: keep(c.g), b: keep(c.b), a: c.a }
+    }
+}
+
+pub(crate) fn paint_op(out: &mut Vec<Cmd>, op: &DrawOp, pen: &Pen, fonts: &mut Fonts) {
     match op {
         DrawOp::Rect(shape, style) => paint_shape(out, pen, shape, style, ShapeKind::Rect),
         DrawOp::Ellipse(shape, style) => paint_shape(out, pen, shape, style, ShapeKind::Ellipse),
@@ -196,7 +226,7 @@ fn paint_shape(out: &mut Vec<Cmd>, pen: &Pen, shape: &Shape, style: &Style, kind
     let corners = local_corners(shape, kind);
     let pts = pen.pts(&corners);
     if let Some(fill) = style.fill {
-        let color = solid(fill, style.opacity);
+        let color = pen.colour(fill, style.opacity);
         match kind {
             // A box that is not rotated is one rectangle: no polygon scanlines needed.
             ShapeKind::Rect if shape.angle == 0.0 => out.push(Cmd::Fill {
@@ -244,7 +274,7 @@ fn paint_polyline(out: &mut Vec<Cmd>, pen: &Pen, line: &Polyline) {
         return;
     }
     // Arrowheads: the mark the file asked for, at the ends it asked for.
-    let colour = line.style.stroke.map_or(pen.base.color, |c| solid(c, line.style.opacity));
+    let colour = line.style.stroke.map_or(pen.base.color, |c| pen.colour(c, line.style.opacity));
     let width = (line.style.stroke_width as f32 * pen.s).max(0.8);
     for (head, end) in [(&line.start_head, 0usize), (&line.end_head, 1usize)] {
         let Some(head) = head else { continue };
@@ -318,7 +348,7 @@ fn paint_text(out: &mut Vec<Cmd>, pen: &Pen, run: &TextRun, fonts: &mut Fonts) {
     style.italic = false;
     style.mono = matches!(run.family, FontFamily::Code);
     style.color = match run.colour {
-        Some(c) => solid(c, run.opacity),
+        Some(c) => pen.colour(c, run.opacity),
         None => pen.base.color.with_alpha(run.opacity as f32),
     };
     let (x, y) = pen.p(run.x, run.y);
@@ -386,7 +416,7 @@ fn stroke_path(out: &mut Vec<Cmd>, pts: &[(f32, f32)], closed: bool, style: &Sty
         pts.push(pts[0]);
     }
     let width = (style.stroke_width as f32 * pen.s).max(0.5);
-    let color = solid(stroke, style.opacity);
+    let color = pen.colour(stroke, style.opacity);
     let segs = match style.stroke_style {
         excalidraw_core::StrokeStyle::Dashed => crate::rich::dashed(&pts, 6.0 * pen.s, 4.0 * pen.s),
         excalidraw_core::StrokeStyle::Dotted => crate::rich::dashed(&pts, 1.5 * pen.s, 3.0 * pen.s),
@@ -442,53 +472,6 @@ fn solid(c: Rgba, opacity: f64) -> Color {
         b: c.b,
         a: (c.a as f32 * opacity.clamp(0.0, 1.0) as f32).round().clamp(0.0, 255.0) as u8,
     }
-}
-
-/// The box every op paints, in scene coordinates.
-fn bounds<'a>(ops: impl Iterator<Item = &'a DrawOp>) -> (f32, f32, f32, f32) {
-    let (mut x0, mut y0) = (f32::INFINITY, f32::INFINITY);
-    let (mut x1, mut y1) = (f32::NEG_INFINITY, f32::NEG_INFINITY);
-    let mut add = |x: f32, y: f32| {
-        x0 = x0.min(x);
-        y0 = y0.min(y);
-        x1 = x1.max(x);
-        y1 = y1.max(y);
-    };
-    let mut any = false;
-    for op in ops {
-        any = true;
-        match op {
-            DrawOp::Rect(s, _) | DrawOp::Ellipse(s, _) | DrawOp::Diamond(s, _) => {
-                for (x, y) in local_corners(
-                    s,
-                    match op {
-                        DrawOp::Rect(..) => ShapeKind::Rect,
-                        DrawOp::Ellipse(..) => ShapeKind::Ellipse,
-                        _ => ShapeKind::Diamond,
-                    },
-                ) {
-                    add(x as f32, y as f32);
-                }
-            }
-            DrawOp::Polyline(p) => {
-                for &(x, y) in &p.points {
-                    add(x as f32, y as f32);
-                }
-            }
-            DrawOp::TextRun(t) => {
-                add(t.x as f32, t.y as f32);
-                add((t.x + t.width) as f32, (t.y + t.height) as f32);
-            }
-            DrawOp::ImageRef(i) => {
-                add(i.x as f32, i.y as f32);
-                add((i.x + i.width) as f32, (i.y + i.height) as f32);
-            }
-        }
-    }
-    if !any || !x0.is_finite() {
-        return (0.0, 0.0, 0.0, 0.0);
-    }
-    (x0, y0, x1 - x0, y1 - y0)
 }
 
 #[cfg(test)]

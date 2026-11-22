@@ -128,6 +128,7 @@ fn named(k: &NamedKey) -> Option<&'static str> {
         NamedKey::PageUp => "PageUp",
         NamedKey::PageDown => "PageDown",
         NamedKey::Space => " ",
+        NamedKey::F11 => "F11",
         NamedKey::F12 => "F12",
         _ => return None,
     })
@@ -715,10 +716,15 @@ impl Win {
                     key.ctrl = self.mods.control_key() || self.mods.super_key();
                     key.shift = self.mods.shift_key();
                     key.alt = self.mods.alt_key();
-                    // Plain characters are text, not shortcuts, unless a modifier is held.
-                    let plain_char = name.chars().count() == 1 && !key.ctrl && !key.alt;
+                    // Plain characters are text, not shortcuts, unless a modifier is held. The
+                    // space bar is the exception: a board pans while it is held, and a note gets
+                    // its space because the key is not consumed.
+                    let plain_char = name.chars().count() == 1 && name != " " && !key.ctrl && !key.alt;
                     if !plain_char {
                         consumed = app.key(key);
+                    }
+                    if name == " " {
+                        app.exc_space(true);
                     }
                 }
                 if !consumed && !self.mods.control_key() && !self.mods.alt_key() {
@@ -728,6 +734,13 @@ impl Win {
                 }
                 self.after_input(el);
                 self.request_redraw();
+            }
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Released => {
+                // Letting the space bar up stops a board panning with the button still down.
+                if matches!(&event.logical_key, WKey::Named(NamedKey::Space)) {
+                    app.exc_space(false);
+                    self.request_redraw();
+                }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse = (position.x as f32 / scale, position.y as f32 / scale);
@@ -763,9 +776,16 @@ impl Win {
                     self.request_redraw();
                 }
             }
-            WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Middle, .. } => {
+            WindowEvent::MouseInput { state, button: MouseButton::Middle, .. } => {
                 if let Some(frame) = &self.frame {
-                    app.middle_click(frame, self.mouse.0, self.mouse.1);
+                    if state == ElementState::Pressed {
+                        app.middle_click(frame, self.mouse.0, self.mouse.1);
+                        // A board grabs the pointer: its movement is a pan, not a click.
+                        self.dragging = app.exc_view.as_ref().is_some_and(|v| v.panning());
+                    } else {
+                        app.release();
+                        self.dragging = false;
+                    }
                     self.request_redraw();
                 }
             }
@@ -775,7 +795,11 @@ impl Win {
                     MouseScrollDelta::PixelDelta(p) => -(p.y as f32) / 20.0,
                 };
                 if let Some(frame) = &self.frame {
-                    app.wheel(frame, self.mouse.0, self.mouse.1, lines);
+                    if self.mods.control_key() || self.mods.super_key() {
+                        app.ctrl_wheel(frame, self.mouse.0, self.mouse.1, lines);
+                    } else {
+                        app.wheel(frame, self.mouse.0, self.mouse.1, lines);
+                    }
                     self.request_redraw();
                 }
             }

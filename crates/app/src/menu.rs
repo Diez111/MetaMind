@@ -545,7 +545,12 @@ impl App {
     /// Copy (or cut) the selections. With nothing selected the whole line is taken, as in most
     /// code editors.
     fn copy(&mut self, cut: bool) {
-        if self.focus != Focus::Editor || self.show_graph || self.canvas_active() || self.base_active() {
+        if self.focus != Focus::Editor
+            || self.show_graph
+            || self.canvas_active()
+            || self.base_active()
+            || self.exc_active()
+        {
             return;
         }
         let now = fsio::now_ms();
@@ -582,6 +587,7 @@ impl App {
     fn paste(&mut self) {
         let into_note = self.focus == Focus::Editor
             && !self.canvas_active()
+            && !self.exc_active()
             && !self.show_graph
             && self.tab().is_some_and(|t| t.mode != ViewMode::Reading);
         let text = if into_note && self.system_clipboard {
@@ -619,6 +625,9 @@ impl App {
             }
             Focus::Search => self.search_query.push_str(text.lines().next().unwrap_or("")),
             Focus::Editor if self.canvas_active() => self.canvas_text(&text),
+            Focus::Editor if self.exc_active() => {
+                self.exc_text(&text);
+            }
             Focus::Editor => {
                 let now = fsio::now_ms();
                 let shown = !self.show_graph;
@@ -737,7 +746,7 @@ fn tab_items(b: &mut Builder<'_>, i: usize) {
         b.item("folder", "Mostrar en el explorador del sistema", format!("reveal:{p}"));
         if i == b.app.active {
             b.item("book", "Exportar a PDF", "workspace:export-pdf");
-            if !b.app.show_graph && !b.app.canvas_active() && !b.app.base_active() {
+            if !b.app.show_graph && !b.app.canvas_active() && !b.app.base_active() && !b.app.exc_active() {
                 b.item("image", "Copiar captura de pantalla", "workspace:copy-screenshot");
             }
         }

@@ -12,6 +12,7 @@ pub mod dataview;
 pub mod datetime;
 pub mod editing;
 pub mod excalidraw;
+pub mod excalidrawview;
 pub mod graphview;
 pub mod icon;
 pub mod icons;
@@ -106,6 +107,7 @@ pub fn render_window(
     canvasview::add_canvas(app, &mut dom, &info);
     rich::paint(&mut dom, &info.rich, &info.inline, fonts);
     excalidraw::paint(&mut dom, &info.exc, fonts);
+    excalidrawview::add_exc(app, &mut dom, &info, fonts);
     let scene = dom.paint();
     let clear = dom.nodes[0].style.background;
     metamind_ui::render(&scene, fonts, pixmap, scale, clear);
@@ -150,6 +152,13 @@ impl App {
     /// Left click at window coordinates. Two presses in the same spot within [`DOUBLE_CLICK`]
     /// are a double click, which is what swaps a diagram between its drawing and its source.
     pub fn click(&mut self, frame: &Frame, fonts: &mut Fonts, x: f32, y: f32, shift: bool) {
+        // A board shown full screen is a modal of its own: a click outside its box leaves it,
+        // and a click inside belongs to the board.
+        if self.exc_fullscreen && self.exc_active() && !self.exc_rect(frame).is_some_and(|r| r.contains(x, y)) {
+            self.exc_fullscreen = false;
+            self.last_click = None;
+            return;
+        }
         let now = Instant::now();
         let double = self.last_click.is_some_and(|(t, (px, py))| {
             !self.clicked_dragged
@@ -260,6 +269,9 @@ impl App {
         if self.canvas_click(frame, x, y) {
             return;
         }
+        if self.exc_click(frame, x, y) {
+            return;
+        }
         if let Some(off) = view::offset_at(&frame.dom, &frame.info, fonts, x, y) {
             self.focus = shell::Focus::Editor;
             if let Some(t) = self.tab_mut() {
@@ -270,10 +282,13 @@ impl App {
     }
 
     /// What a double click does, wherever it lands: a diagram swaps between its drawing and its
-    /// source. In the note the swap is the block's, in the full-screen view it is the view's, so
-    /// the second press of a click that just opened the view belongs to the block it came from.
-    /// Returns whether it was a double click of ours.
+    /// source, and a board edits the text under the pointer. In the note the swap is the block's,
+    /// in the full-screen view it is the view's, so the second press of a click that just opened
+    /// the view belongs to the block it came from. Returns whether it was a double click of ours.
     pub fn double_click(&mut self, frame: &Frame, x: f32, y: f32) -> bool {
+        if self.exc_active() && self.exc_double_click(frame, x, y) {
+            return true;
+        }
         let note = self.tabs.get(self.active).map(|t| t.path.clone()).unwrap_or_default();
         let fresh = self.diagram_zoom_since.is_some_and(|t| t.elapsed() <= DOUBLE_CLICK);
         // A diagram drawn in the note, or the source a previous double click left there.
@@ -398,6 +413,9 @@ impl App {
         if self.canvas_drag(frame, x, y) {
             return;
         }
+        if self.exc_drag(frame, x, y) {
+            return;
+        }
         if let Some(off) = view::offset_at(&frame.dom, &frame.info, fonts, x, y) {
             if let Some(t) = self.tab_mut() {
                 let anchor = t.editor.buf.sels[0].anchor;
@@ -408,8 +426,21 @@ impl App {
 
     /// Mouse wheel. `lines` is positive when scrolling down.
     pub fn wheel(&mut self, frame: &Frame, x: f32, y: f32, lines: f32) {
+        self.wheel_mod(frame, x, y, lines, false);
+    }
+
+    /// Mouse wheel with Ctrl (or Cmd) held: on a board this zooms about the pointer instead of
+    /// scrolling it.
+    pub fn ctrl_wheel(&mut self, frame: &Frame, x: f32, y: f32, lines: f32) {
+        self.wheel_mod(frame, x, y, lines, true);
+    }
+
+    fn wheel_mod(&mut self, frame: &Frame, x: f32, y: f32, lines: f32, ctrl: bool) {
         self.menu = None;
         self.hover_preview = None;
+        if self.exc_wheel(frame, x, y, lines, ctrl) {
+            return;
+        }
         if self.diagram_zoom.is_some() {
             // Wheel over the full-screen diagram zooms it, around its centre.
             let step = (-lines / 6.0).exp();
@@ -440,9 +471,13 @@ impl App {
         }
     }
 
-    /// Middle click: closes the tab under the pointer.
+    /// Middle click: closes the tab under the pointer, or grabs a board.
     pub fn middle_click(&mut self, frame: &Frame, x: f32, y: f32) {
         self.menu = None;
+        if self.exc_active() {
+            self.exc_middle_press(frame, x, y);
+            return;
+        }
         if !self.press_pane(frame, x, y) {
             return;
         }
@@ -486,6 +521,7 @@ impl App {
             self.graph_clicked(kind);
         }
         self.canvas_release();
+        self.exc_release();
     }
 
     /// The pointer moved with no button held. Returns true when the frame must be redrawn.
