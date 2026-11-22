@@ -82,6 +82,12 @@ pub(crate) const CORE_PLUGINS: &[(&str, &str, &str, &[&str])] = &[
         &["backlinks:open"],
     ),
     ("bookmarks", "Marcadores", "Ten notas y búsquedas a mano.", &["bookmarks:open"]),
+    (
+        "calendar",
+        "Calendario",
+        "Muestra los eventos del mes en la barra lateral, desde una dirección iCal y los .ics de la bóveda.",
+        &["calendar:open", "calendar:refresh"],
+    ),
     ("canvas", "Canvas", "Coloca notas y tarjetas en un tablero.", &["canvas:new"]),
     ("bases", "Bases", "Muestra notas como tablas y tarjetas a partir de sus propiedades.", &["bases:new"]),
     (

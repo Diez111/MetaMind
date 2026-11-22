@@ -209,6 +209,9 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("graph:toggle-panel", "Vista de gráfico: Alternar panel de ajustes", ""),
     ("graph:animate", "Vista de gráfico: Animar disposición", ""),
     ("graph:reset-settings", "Vista de gráfico: Restaurar ajustes predeterminados", ""),
+    ("calendar:open", "Calendario: Abrir el calendario", "Ctrl+Shift+C"),
+    ("calendar:refresh", "Calendario: Actualizar ahora", ""),
+    ("calendar:open-day-note", "Calendario: Abrir la nota del día seleccionado", ""),
     ("daily-notes", "Notas diarias: Abrir la nota diaria de hoy", ""),
     ("daily-notes:goto-prev", "Notas diarias: Abrir nota diaria anterior", ""),
     ("daily-notes:goto-next", "Notas diarias: Abrir nota diaria siguiente", ""),
@@ -258,6 +261,8 @@ pub enum Focus {
     Editor,
     Search,
     Prompt,
+    /// The calendar pane of the left sidebar has the keys: the arrows move the selected day.
+    Calendar,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1654,6 +1659,7 @@ impl App {
             return;
         }
         if self.run_plugin_command(command)
+            || self.run_calendar(command)
             || self.run_panes(command)
             || self.run_templates(command)
             || self.run_workspaces(command)
@@ -2100,6 +2106,26 @@ impl App {
                 }
                 true
             }
+            // The calendar pane: the arrows move the selected day, Page Up and Down the month,
+            // Enter opens the daily note of the day on screen.
+            Focus::Calendar => {
+                match key.key.as_str() {
+                    "ArrowLeft" => self.calendar.step_day(-1),
+                    "ArrowRight" => self.calendar.step_day(1),
+                    "ArrowUp" => self.calendar.step_day(-7),
+                    "ArrowDown" => self.calendar.step_day(7),
+                    "PageUp" => self.calendar.step_month(-1),
+                    "PageDown" => self.calendar.step_month(1),
+                    "Home" => {
+                        let today = crate::calendar::Calendar::today();
+                        self.calendar.select(today);
+                    }
+                    "Enter" => self.run("calendar:open-day-note"),
+                    "Escape" => self.focus = Focus::Editor,
+                    _ => return false,
+                }
+                true
+            }
             Focus::Editor => {
                 if self.canvas_active() {
                     return self.canvas_key(&key);
@@ -2223,6 +2249,8 @@ impl App {
                 self.refresh_prompt();
             }
             Focus::Search => self.search_query.push_str(text),
+            // A letter with the calendar pane focused is not a note edit; the shortcuts still run.
+            Focus::Calendar => {}
             Focus::Editor if self.canvas_active() => self.canvas_text(text),
             Focus::Editor if self.exc_active() => {
                 self.exc_text(text);

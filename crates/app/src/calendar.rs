@@ -288,6 +288,11 @@ impl Calendar {
         self.fetching.then_some(150)
     }
 
+    /// Ask for the rows to be rebuilt on the next frame.
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+
     /// The vault revision the file list and the task queue were built for.
     pub fn revision(&self) -> u64 {
         self.scan_revision
@@ -599,6 +604,73 @@ fn fetch(url: &str, meta: &Meta) -> Result<Fetched, String> {
         response.headers().get(name).and_then(|v| v.to_str().ok()).unwrap_or_default().to_string()
     };
     Ok(Fetched { not_modified: false, body, etag: header("etag"), modified: header("last-modified") })
+}
+
+/// Seconds of the noon of `day`, so the daily note of a day is named by that day whatever the
+/// offset of the zone: at noon a date cannot move when the clock changes.
+fn day_noon(day: Day) -> u64 {
+    let base = i64::from(day.index()) * 86_400 + 43_200;
+    let offset = crate::datetime::local_offset(base.max(0) as u64);
+    (base - offset).max(0) as u64
+}
+
+impl crate::shell::App {
+    /// Handle the `calendar:*` and `cal:*` commands. Returns whether `command` was one of them.
+    pub(crate) fn run_calendar(&mut self, command: &str) -> bool {
+        if let Some(rest) = command.strip_prefix("cal:day:") {
+            if let Ok(index) = rest.parse::<i32>() {
+                self.calendar.select(Day::from_index(index));
+                self.focus = crate::shell::Focus::Calendar;
+            }
+            return true;
+        }
+        if let Some(rest) = command.strip_prefix("cal:event:") {
+            let mut parts = rest.split(':');
+            if let (Some(day), Some(at)) = (parts.next(), parts.next()) {
+                if let (Ok(day), Ok(at)) = (day.parse::<i32>(), at.parse::<usize>()) {
+                    let key = (Day::from_index(day), at);
+                    self.calendar.detail = (self.calendar.detail != Some(key)).then_some(key);
+                    self.calendar.desc_open = false;
+                }
+            }
+            return true;
+        }
+        let root = self.store.root.clone();
+        let url = self.config.app.str("cal.ical_url").unwrap_or_default().to_string();
+        match command {
+            "calendar:open" => {
+                self.left_open = true;
+                self.panel = crate::shell::Panel::Calendar;
+                self.focus = crate::shell::Focus::Calendar;
+                self.calendar.mark_dirty();
+                self.calendar.maybe_fetch(&root, &url);
+            }
+            "calendar:refresh" | "cal:refresh" => {
+                self.left_open = true;
+                self.panel = crate::shell::Panel::Calendar;
+                self.calendar.refresh(&root, &url);
+            }
+            "calendar:open-day-note" => {
+                let secs = day_noon(self.calendar.selected);
+                self.open_daily_note_on(secs);
+            }
+            "cal:prev" => {
+                self.calendar.step_month(-1);
+                self.focus = crate::shell::Focus::Calendar;
+            }
+            "cal:next" => {
+                self.calendar.step_month(1);
+                self.focus = crate::shell::Focus::Calendar;
+            }
+            "cal:today" => {
+                self.calendar.select(Calendar::today());
+                self.focus = crate::shell::Focus::Calendar;
+            }
+            "cal:desc" => self.calendar.desc_open = !self.calendar.desc_open,
+            _ => return false,
+        }
+        true
+    }
 }
 
 /// The month names of the header, January first.
