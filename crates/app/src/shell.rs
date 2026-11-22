@@ -140,6 +140,9 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("outline:open", "Esquema: Mostrar esquema", ""),
     ("ai:open", "Copiloto de IA: Mostrar panel", "Ctrl+Shift+A"),
     ("ai:close", "Copiloto de IA: Cerrar panel", ""),
+    ("dashboard:open", "Tablero: Abrir o crear el tablero", ""),
+    ("more:open", "Menú: Abrir el menú de la ventana", ""),
+    ("more:close", "Menú: Cerrar el menú", ""),
     ("markdown:toggle-preview", "Alternar vista de lectura", "Ctrl+E"),
     ("editor:toggle-source", "Alternar vista previa en vivo / código fuente", ""),
     ("editor:toggle-bold", "Alternar negrita", "Ctrl+B"),
@@ -511,6 +514,8 @@ pub struct App {
     /// Where the bottom navigation's indicator is and where it is going, in destinations.
     pub nav_from: f32,
     pub nav_to: f32,
+    /// The ⋮ menu of a compact window, open over the note.
+    pub more_open: bool,
     /// Width of each sidebar in pixels, while it is open.
     pub left_w: f32,
     pub right_w: f32,
@@ -885,6 +890,7 @@ impl App {
             compact_restore: None,
             nav_from: 0.0,
             nav_to: 0.0,
+            more_open: false,
             left_w: SIDE_W_DEFAULT,
             right_w: SIDE_W_DEFAULT,
             side_drag: None,
@@ -2093,6 +2099,21 @@ impl App {
                     None => self.notice = Some(format!("No encontré la nota «{name}»")),
                 }
             }
+            "more:open" => self.more_open = true,
+            "more:close" => self.more_open = false,
+            // A row of the menu names a command: running it closes the menu behind it.
+            c if c.starts_with("more:run:") => {
+                let cmd = c["more:run:".len()..].to_string();
+                self.more_open = false;
+                self.run(&cmd);
+            }
+            "dashboard:open" => match crate::dashboard::open_or_create(self) {
+                Ok(path) => {
+                    self.more_open = false;
+                    self.open_note(&path);
+                }
+                Err(e) => self.notice = Some(e),
+            },
             "ai:send" => self.ai_send(),
             "ai:clear" => self.ai.clear(),
             "ai:explain-selection" => self.ai_quick(crate::ai::QuickAsk::Selection),

@@ -2765,13 +2765,21 @@ fn side_widths(avail: f32, want: (f32, f32)) -> (f32, f32) {
 /// Width a sidebar takes when it floats over the note: the compact width, or less when the window
 /// cannot give it that much and still shows some of the note behind it.
 fn float_w(avail: f32, want: f32) -> f32 {
-    want.min(crate::shell::SIDE_W_COMPACT).min((avail - 24.0).max(0.0))
+    // A sidebar over the note is a sheet: it takes the space instead of sharing it, which is what
+    // a phone-width window has to give. `want` only says whether it is open at all.
+    if want > 0.01 {
+        avail
+    } else {
+        0.0
+    }
 }
 
 /// The main window: ribbon, sidebars, the split panes and the status bar. `viewport_h` is the
 /// height above the footer: the status bar is not part of the area a note scrolls in.
 fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewInfo, viewport_h: f32) {
-    let show_ribbon = app.config.appearance.bool("showRibbon", true);
+    // A phone-sized window gives those 44 px to the note: the bottom navigation already carries
+    // the places the ribbon offers, and the ⋮ menu of the bar carries the rest.
+    let show_ribbon = app.config.appearance.bool("showRibbon", true) && !app.compact;
     let ribbon = dom.add(ws, El::div().class("workspace-ribbon").class_if(!show_ribbon, "is-hidden"));
     let ribbon_action = |dom: &mut Dom, icon: &str, cmd: &str, active: bool| {
         let b = dom.add(
@@ -3224,15 +3232,70 @@ pub const NAV_H: f32 = 52.0;
 
 /// The window's view. `solo` is a pane shown alone in a window of its own; the menus, prompts
 /// and notices show in the window whose pane has the keyboard.
+/// One row of the ⋮ menu: icon, label and the command it runs.
+type NavRow = (&'static str, &'static str, &'static str);
+
+/// The ⋮ menu, over the window: what the ribbon and the palettes offered, in one list that reads
+/// in a phone-sized window.
+fn more_sheet(app: &App, dom: &mut Dom) {
+    let body_h = (app.window_h - STATUS_BAR_H - NAV_H).max(0.0);
+    let sheet = dom.add(
+        0,
+        El::div()
+            .class("more-sheet")
+            .style(&format!("top: 0; left: 0; right: 0; height: {body_h:.0}px")),
+    );
+    let head = dom.add(sheet, El::div().class("more-sheet-header"));
+    dom.add(head, icons::el("ellipsis").class("more-sheet-mark"));
+    dom.add(head, El::div().class("more-sheet-title").text("Menú"));
+    let close = dom.add(head, El::div().class("ai-sheet-close").action("more:close"));
+    dom.nodes[close].el.attrs.push(("aria-label".into(), "Cerrar el menú".into()));
+    dom.add(close, icons::el("x"));
+    let list = dom.add(sheet, El::div().class("more-list"));
+    let groups: [(&str, &[NavRow]); 2] = [
+        (
+            "Vistas",
+            &[
+                ("layout-dashboard", "Tablero", "dashboard:open"),
+                ("graph", "Gráfico", "graph:open"),
+                ("canvas", "Lienzo", "canvas:new"),
+                ("calendar", "Calendario", "calendar:open"),
+                ("search", "Buscar", "global-search:open"),
+            ],
+        ),
+        (
+            "Bóveda",
+            &[
+                ("folder", "Archivos", "file-explorer:open"),
+                ("sparkles", "Copiloto", "ai:open"),
+                ("command", "Paleta de comandos", "command-palette:open"),
+                ("sun", "Tema claro u oscuro", "theme:toggle-light-dark"),
+                ("vault", "Abrir otra bóveda", "app:open-vault"),
+                ("settings", "Ajustes", "app:open-settings"),
+            ],
+        ),
+    ];
+    for (title, rows) in groups {
+        dom.add(list, El::div().class("more-group").text(title));
+        for (icon, label, cmd) in rows {
+            if app.disabled_by(cmd).is_some() {
+                continue;
+            }
+            let row = dom.add(
+                list,
+                El::div().class("more-row").action(format!("more:run:{cmd}")),
+            );
+            dom.add(row, icons::el(icon).class("more-row-icon"));
+            dom.add(row, El::div().class("more-row-label").text(*label));
+        }
+    }
+}
+
 /// The bottom navigation of a compact window: the five places a phone reader moves between,
 /// with the accent on the one in force and an indicator that slides from the old one to the new.
 fn bottom_nav(app: &App, dom: &mut Dom) {
-    let bar = dom.add(
-        0,
-        El::div()
-            .class("bottom-nav")
-            .style(&format!("bottom: {STATUS_BAR_H}px; height: {NAV_H}px")),
-    );
+    let bar = dom
+        .add(0, El::div().class("bottom-nav").style(&format!("bottom: {STATUS_BAR_H}px; height: {NAV_H}px")));
     let agent = if app.compact && app.right_open { app.right_panel == RightPanel::Ai } else { false };
     let settings = app.settings.is_some();
     let items: [(&str, &str, &str, bool); 5] = [
@@ -3242,7 +3305,8 @@ fn bottom_nav(app: &App, dom: &mut Dom) {
         ("sparkles", "Agente", "ai:open", agent),
         ("settings", "Ajustes", "app:open-settings", settings),
     ];
-    let width = (app.window_w / items.len() as f32).max(1.0);
+    // Five destinations and the way into the rest of the app: the ⋮ slot at the right end.
+    let width = (app.window_w / (items.len() + 1) as f32).max(1.0);
     // With no destination in force (the note alone) there is nothing to point at.
     if items.iter().any(|i| i.3) {
         // The indicator travels from where it was to where it goes, on the window's animation.
@@ -3258,13 +3322,21 @@ fn bottom_nav(app: &App, dom: &mut Dom) {
         );
     }
     for (icon, label, action, active) in items {
-        let item = dom.add(
-            bar,
-            El::div().class("bottom-nav-item").class_if(active, "is-active").action(action),
-        );
+        let item =
+            dom.add(bar, El::div().class("bottom-nav-item").class_if(active, "is-active").action(action));
         dom.add(item, icons::el(icon).class("bottom-nav-icon"));
         dom.add(item, El::div().class("bottom-nav-label").text(label));
     }
+    // What the ribbon used to hold, at the corner the thumb reaches.
+    let more = dom.add(
+        bar,
+        El::div()
+            .class("bottom-nav-item")
+            .class_if(app.more_open, "is-active")
+            .action(if app.more_open { "more:close" } else { "more:open" }),
+    );
+    dom.add(more, icons::el("ellipsis").class("bottom-nav-icon"));
+    dom.add(more, El::div().class("bottom-nav-label").text("Más"));
 }
 
 pub fn build(app: &App, viewport_h: f32, solo: Option<usize>) -> (Dom, ViewInfo) {
@@ -3305,6 +3377,9 @@ pub fn build(app: &App, viewport_h: f32, solo: Option<usize>) -> (Dom, ViewInfo)
     if with_nav {
         // Last, so it is painted over the workspace and the sheets: it is the frame of the window.
         bottom_nav(app, &mut dom);
+        if app.more_open {
+            more_sheet(app, &mut dom);
+        }
     }
     mark_hover(&mut dom, app.hover_action.as_deref());
     (dom, info)

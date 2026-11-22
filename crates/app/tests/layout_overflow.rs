@@ -264,6 +264,7 @@ fn views() -> Vec<(&'static str, Vec<&'static str>)> {
     vec![
         // Nothing open: the state the app shows on a fresh launch.
         ("sin-nota", vec!["close-tab:0"]),
+        ("menu-mas", vec!["more:open"]),
         ("nota", vec![]),
         ("arbol", vec!["file-explorer:open"]),
         ("buscar", vec!["global-search:open"]),
@@ -664,8 +665,22 @@ fn the_bottom_navigation_belongs_to_a_compact_window() {
     assert!((n.y - (w.y + w.h)).abs() < 1.0, "it starts where the note ends: {n:?} {w:?}");
     assert!(n.y + n.h <= 640.0, "and stays inside the window: {n:?}");
 
+    // Five destinations and the way into the rest of the app, the ⋮ at the right end.
     let items = all(&f, "bottom-nav-item");
-    assert_eq!(items.len(), 5, "five destinations");
+    assert_eq!(items.len(), 6, "five destinations and the menu");
+    let more = f.dom.nodes[items[5]].rect;
+    assert!(
+        (more.x + more.w - 360.0).abs() < 1.0,
+        "the menu sits at the bottom right corner: {more:?}"
+    );
+    app.run("more:open");
+    let f = frame(&mut app, &mut fonts, 360, 640);
+    let menu = *all(&f, "more-sheet").first().expect("the menu opens over the note");
+    let r = f.dom.nodes[menu].rect;
+    assert!(r.h > 400.0 && (r.w - 360.0).abs() < 1.0, "the menu takes the window: {r:?}");
+    assert!(all(&f, "more-row").len() >= 8, "the menu lists what the ribbon held");
+    app.run("more:close");
+    let f = frame(&mut app, &mut fonts, 360, 640);
     for &i in &items {
         let r = f.dom.nodes[i].rect;
         assert!(r.x >= -0.5 && r.x + r.w <= 360.5, "a destination stays in the window: {r:?}");

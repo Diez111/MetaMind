@@ -844,10 +844,7 @@ fn day_panel(app: &crate::shell::App, dom: &mut Dom, parent: NodeId, today: Day,
         head,
         El::div().class("calendar-day-title").text(format!("{name} {number} de {month} de {year}{suffix}")),
     );
-    let open = dom.add(
-        head,
-        El::div().class("calendar-day-open").action("calendar:open-day-note"),
-    );
+    let open = dom.add(head, El::div().class("calendar-day-open").action("calendar:open-day-note"));
     // The icon and the label are two boxes: the text of a box is painted at its origin, so an
     // icon added next to it landed on top of the first letter.
     dom.add(open, icons::el("note").class("calendar-day-open-icon"));

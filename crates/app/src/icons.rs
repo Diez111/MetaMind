@@ -1071,6 +1071,8 @@ fn shape(name: &str) -> Shape {
             .m(12.0, 4.0)
             .l(12.0, 20.0),
         "minus" => s.m(5.0, 12.0).l(19.0, 12.0),
+        // lucide `ellipsis`: the three dots of a menu.
+        "ellipsis" => s.dot(5.0, 12.0, 1.7).dot(12.0, 12.0, 1.7).dot(19.0, 12.0, 1.7),
         _ => s.rect(3.0, 3.0, 21.0, 21.0),
     }
 }

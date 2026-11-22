@@ -89,6 +89,36 @@ impl Cache {
     }
 }
 
+/// The note that is a dashboard, opened by the `dashboard:open` command: the first note whose
+/// front matter says it is one, or a `Tablero.md` created at the vault's root so the board is one
+/// click away in a vault that never had one.
+pub fn open_or_create(app: &mut App) -> Result<String, String> {
+    let found = app
+        .store
+        .index
+        .notes()
+        .find(|(_, f)| {
+            // `meta()` hands back a value that has to live long enough to be read here.
+            let meta = f.meta();
+            let Some(props) = meta.as_ref().and_then(|m| m.frontmatter.as_ref()) else { return false };
+            props.iter().any(|(k, v)| {
+                k.eq_ignore_ascii_case("tipo")
+                    && v.as_str().is_some_and(|s| s.trim().eq_ignore_ascii_case("dashboard"))
+            })
+        })
+        .map(|(_, f)| f.path.to_string());
+    if let Some(path) = found {
+        return Ok(path);
+    }
+    let text = "---\ntipo: dashboard\ntags: [tablero]\n---\n\n# Tablero\n\n\
+Este tablero se dibuja a partir de las notas diarias: el sueno, los entrenamientos y las tareas de\
+ la semana, y el calendario de hoy. Rellenar los campos `sueno::`, `pasos::`, `hrv::` y\
+ `entreno::` de la nota del dia alcanza para que aparezcan.\n";
+    app.store.create("Tablero.md", text).map_err(|e| format!("No se pudo crear el tablero: {e}"))?;
+    app.store.refresh("Tablero.md");
+    Ok("Tablero.md".to_string())
+}
+
 /// The day the board is about, in local time.
 pub fn today() -> Day {
     let (y, m, d, _, _, _, _) = crate::datetime::local(vault_core::fsio::now_ms() / 1000);
