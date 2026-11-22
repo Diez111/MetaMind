@@ -923,8 +923,11 @@ impl Win {
         // both stop by themselves.
         // A poster is decoded in a thread and the card changes when it lands: the loop keeps
         // drawing while a decode is in flight, which is bounded by the poster cache itself.
-        let animating =
-            app.graph_animating() || app.anims.active() || app.posters.busy() || app.scrolling() || app.busy.is_some();
+        let animating = app.graph_animating()
+            || app.anims.active()
+            || app.posters.busy()
+            || app.scrolling()
+            || app.busy.is_some();
         if (animating && frame_due) || (self.animating && !animating) {
             self.last_anim = Instant::now();
             redraw = true;

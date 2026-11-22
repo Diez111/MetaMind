@@ -985,3 +985,29 @@ fn no_stylesheet_rule_hides_behind_a_line_break() {
     }
     assert!(offenders.is_empty(), "a selector list split across lines is never read: {offenders:#?}");
 }
+
+#[test]
+fn an_open_diagram_keeps_its_hint_inside_the_window() {
+    let d = vault();
+    let mut app = open(&d);
+    let mut fonts = Fonts::new();
+    // A diagram with enough nodes to fill the box it is given.
+    let src = "flowchart TD\n A[Uno] --> B[Dos]\n B --> C[Tres]\n C --> D[Cuatro]\n";
+    app.open_diagram_zoom(src.to_string());
+    for (w, h) in [(1400, 800), (900, 600), (390, 844)] {
+        let f = frame(&mut app, &mut fonts, w, h);
+        for class in ["diagram-zoom-hint", "mod-diagram"] {
+            let r = f
+                .dom
+                .nodes
+                .iter()
+                .find(|n| n.el.classes.iter().any(|c| c == class))
+                .map(|n| n.rect)
+                .unwrap_or_else(|| panic!("{class} is on screen"));
+            assert!(
+                r.y >= -0.5 && r.y + r.h <= h as f32 + 0.5 && r.x >= -0.5 && r.x + r.w <= w as f32 + 0.5,
+                "{class} stays inside the {w}x{h} window: {r:?}"
+            );
+        }
+    }
+}

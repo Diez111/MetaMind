@@ -1467,7 +1467,7 @@ fn pane(
         _ if app.base_active() => crate::baseview::pane(app.base_view.as_ref().unwrap(), dom, leaf),
         _ if app.exc_active() => crate::excalidrawview::pane(app.exc_view.as_ref().unwrap(), dom, leaf, info),
         _ if app.kanban_active() => {
-            crate::kanbanview::pane(app.kanban_view.as_ref().unwrap(), dom, leaf, info)
+            crate::kanbanview::pane(app.kanban_view.as_ref().unwrap(), dom, leaf, info, app.compact)
         }
         _ if crate::dashboard::is_dashboard(app) => crate::dashboard::pane(app, dom, leaf, width),
         _ => editor(app, dom, leaf, pal, info, app.tab().map(|t| (pane, app.active, t)), true),
@@ -3116,8 +3116,11 @@ fn diagram_zoom(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate:
             .action("mermaid:zoom-close")
             .style(&format!("width: {w:.0}px; height: {h:.0}px; max-width: none")),
     );
+    // The hint lives in a band of its own at the bottom: with the diagram taking the whole box it
+    // was laid out past the window's edge and read as a line cut in half.
+    let (inner_w, inner_h) = (w - 24.0, (h - 44.0 - 12.0 - 26.0).max(120.0));
     if app.diagram_zoom_source {
-        crate::rich::add_zoom_source(dom, modal, src, w - 36.0, h - 64.0);
+        crate::rich::add_zoom_source(dom, modal, src, inner_w, inner_h);
     } else {
         crate::rich::add_zoom(
             dom,
@@ -3125,8 +3128,8 @@ fn diagram_zoom(app: &App, dom: &mut Dom, viewport_h: f32, rich: &mut Vec<crate:
             src,
             rich,
             crate::rich::Zoom {
-                w: w - 36.0,
-                h: h - 64.0,
+                w: inner_w,
+                h: inner_h,
                 pan: app.diagram_zoom_pan,
                 zoom: app.diagram_zoom_scale,
             },

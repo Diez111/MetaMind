@@ -1323,12 +1323,12 @@ impl KanbanView {
             });
             let done = col.cards.iter().filter(|c| c.done).count();
             let shown = if filtered { col.cards.iter().filter(|c| self.visible(c)).count() } else { 0 };
-            let count = if filtered {
-                format!("{shown}/{}", col.cards.len())
-            } else if let Some(n) = limit {
-                // With a limit the counter reads "cards / limit", which is what the accent is
-                // warning about; the done cards are still struck through in place.
+            let count = if let Some(n) = limit {
+                // A column with a limit always counts against it: that is what the accent is
+                // warning about, whether or not a filter is hiding cards.
                 format!("{}/{n}", col.cards.len())
+            } else if filtered {
+                format!("{shown}/{}", col.cards.len())
             } else if done > 0 {
                 format!("{done}/{}", col.cards.len())
             } else {
@@ -1773,8 +1773,14 @@ fn fade_cmd(cmd: &mut Cmd, t: f32) {
 // ---- the pane ----
 
 /// The header of the board and the node its paint pass draws into.
-pub fn pane(v: &KanbanView, dom: &mut Dom, parent: NodeId, info: &mut crate::view::ViewInfo) {
-    let header = dom.add(parent, El::div().class("view-header graph-controls kanban-controls"));
+/// The header of the board and the node its paint pass draws into. In a compact window the bar
+/// cannot wrap (the layout has no wrapping flex lines), so the path makes way for the filter and
+/// the three actions become icons: everything the board can do still fits in one row.
+pub fn pane(v: &KanbanView, dom: &mut Dom, parent: NodeId, info: &mut crate::view::ViewInfo, compact: bool) {
+    let header = dom.add(
+        parent,
+        El::div().class("view-header graph-controls kanban-controls").class_if(compact, "is-compact"),
+    );
     let total = v.board.cards();
     let cards = if v.filter.trim().is_empty() {
         format!("{total} tarjetas")
@@ -1815,12 +1821,21 @@ pub fn pane(v: &KanbanView, dom: &mut Dom, parent: NodeId, info: &mut crate::vie
         dom.add(clear, crate::icons::el("x"));
     }
     let source = if v.show_source { "Ver tablero" } else { "Ver código" };
-    for (label, cmd) in [
-        ("Nueva columna", "kanban:add-column"),
-        ("Nueva tarjeta", "kanban:add-card"),
-        (source, "kanban:source"),
-    ] {
-        dom.add(header, El::div().class("graph-control").text(label).action(cmd));
+    let actions = [
+        ("plus", "Nueva columna", "kanban:add-column"),
+        ("note-plus", "Nueva tarjeta", "kanban:add-card"),
+        ("code", source, "kanban:source"),
+    ];
+    for (icon, label, cmd) in actions {
+        if compact {
+            let button = dom.add(
+                header,
+                El::div().class("graph-control kanban-control-icon").attr("aria-label", label).action(cmd),
+            );
+            dom.add(button, crate::icons::el(icon));
+        } else {
+            dom.add(header, El::div().class("graph-control").text(label).action(cmd));
+        }
     }
     let leaf = dom.add(parent, El::div().class("view-content kanban-wrapper"));
     let colors = dom.add(leaf, El::div().class("kanban-view-colors"));

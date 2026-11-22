@@ -411,6 +411,11 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .kanban-filter .graph-input-text { min-width: 0; flex-grow: 1; flex-shrink: 1 }
 .kanban-filter-clear { display: flex; align-items: center; flex-shrink: 0; color: var(--text-faint) }
 .kanban-filter-clear:hover { color: var(--text-normal) }
+/* A compact bar has no room to wrap and no room for the path: the filter takes what is left and
+   the three actions keep their icons instead of their labels. */
+.kanban-controls.is-compact .graph-count { display: none }
+.kanban-controls.is-compact .kanban-filter { flex-grow: 1; flex-shrink: 1; flex-basis: 0; min-width: 0 }
+.kanban-controls.is-compact .kanban-control-icon { display: flex; align-items: center; padding: 4px 6px }
 .exc-controls .exc-fullscreen-button { border-color: var(--interactive-accent); color: var(--text-normal) }.exc-toolbar { position: absolute; left: 12px; top: 12px; display: flex; flex-direction: column; gap: 2px; padding: 4px; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
 .exc-tool.exc-fold { color: var(--text-faint) }
 .exc-tools-handle { position: absolute; left: 12px; top: 12px; display: flex; align-items: center; gap: 4px; padding: 5px 8px 5px 5px; font-size: var(--font-ui-smaller); color: var(--text-muted); background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
@@ -770,7 +775,9 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
    is lifted here; kept, it clipped a wide film to 640 px and the picture lost its right edge. */
 .modal.mod-video { padding: 0; border: none; background-color: transparent; box-shadow: none }
 .modal.mod-video .video-player { margin: 0; max-width: none }
-.diagram-zoom-hint { color: var(--text-faint); font-size: var(--font-ui-smaller); white-space: nowrap; flex-shrink: 0; text-align: center }
+/* The hint is one line that gives way: shortened with an ellipsis before it is ever cut by
+   the edge of the window, and never wider than the panel. */
+.diagram-zoom-hint { width: 100%; max-width: 100%; color: var(--text-faint); font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; text-align: center }
 .diagram-zoom { border-radius: var(--radius-s) }
 .diagram-zoom-source { align-items: flex-start; justify-content: flex-start; padding: 14px 16px; margin: 0; font-family: monospace; font-size: 13px; line-height: 1.6; color: var(--code-normal); background-color: var(--code-background); white-space: pre-wrap; text-align: left }
 /* A diagram in the note is one block of the column: clipping it is what keeps it from drawing
@@ -929,7 +936,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 
 /* A dropdown list hangs under its own control, aligned to the column's right edge: it is the
    answer to the field the reader just pressed, not a list floating under the label. */
-.setting-menu-wrap { display: flex; justify-content: flex-end; width: 100% }
+.setting-menu-wrap { display: flex; width: 100% }
 .calendar-day-open-icon { width: 12px; height: 12px; flex-shrink: 0 }
 .calendar-day-open-label { white-space: nowrap }
 /* The three previews of the scheme take the row's width when the row has one: they used to hang
@@ -1006,8 +1013,10 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 
 /* An open list takes the width it is given and centres its rows: a menu that sat at the left of
    a column left empty space beside it and read as a table of leftovers. */
-.modal.mod-settings.is-single .setting-menu { width: 100%; max-width: none }
-.modal.mod-settings.is-narrow .setting-menu { width: 100%; max-width: none }
+/* No percentage: in this engine `width: 100%` inside a column flex resolves to auto, and the
+   list kept its 288 px with a band of empty space beside it. A stretched child takes the row. */
+.modal.mod-settings.is-single .setting-menu { flex-grow: 1; width: auto; max-width: none }
+.modal.mod-settings.is-narrow .setting-menu { flex-grow: 1; width: auto; max-width: none }
 .modal.mod-settings.is-single .setting-menu-item { text-align: center }
 .modal.mod-settings.is-narrow .setting-menu-item { text-align: center }
 
