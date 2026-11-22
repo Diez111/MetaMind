@@ -177,11 +177,16 @@ impl Win {
         if surface.resize(w, h).is_err() {
             return;
         }
-        let Ok(mut buffer) = surface.buffer_mut() else { return };
-        for (dst, px) in buffer.iter_mut().zip(pixmap.data().as_chunks::<4>().0) {
-            *dst = (u32::from(px[0]) << 16) | (u32::from(px[1]) << 8) | u32::from(px[2]);
+        // Nothing new to show: the pixels already on the surface are this frame. The event loop
+        // is asleep by then, so skipping the copy and the present is free.
+        let painted = self.frame.as_ref().is_none_or(|f| !f.damage.is_empty());
+        if painted {
+            let Ok(mut buffer) = surface.buffer_mut() else { return };
+            for (dst, px) in buffer.iter_mut().zip(pixmap.data().as_chunks::<4>().0) {
+                *dst = (u32::from(px[0]) << 16) | (u32::from(px[1]) << 8) | u32::from(px[2]);
+            }
+            let _ = buffer.present();
         }
-        let _ = buffer.present();
         self.update_access();
         let caret = self.frame.as_ref().and_then(|f| f.caret);
         if caret != self.ime_area {

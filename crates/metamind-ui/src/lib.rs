@@ -2,13 +2,15 @@
 //! rasterizer. Window integration lives in the `app` crate; everything here is headless and can
 //! render to a pixel buffer for tests.
 
+pub mod damage;
 pub mod dom;
 pub mod image;
 pub mod scene;
 pub mod text;
 
+pub use damage::{render_damaged, Damage, DamageTracker};
 pub use dom::{Dom, El, NodeId, Style};
-pub use scene::{render, Cmd, Image, Rect, Scene};
+pub use scene::{render, Cmd, DevRect, Image, Rect, Scene};
 pub use text::{FontRef, Fonts, GlyphRun, PlacedGlyph, Span, TextBox, TextRect, TextStyle};
 pub use theme_engine::{Color, Env, Theme};
 pub use tiny_skia::{Color as SkColor, IntRect, Pixmap};
