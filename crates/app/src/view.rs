@@ -2738,9 +2738,7 @@ fn video_fullscreen(app: &App, dom: &mut Dom, parent: NodeId) {
     };
     let modal = dom.add(
         backdrop,
-        El::div()
-            .class("modal mod-video")
-            .style(&format!("width: {:.0}px; height: {:.0}px", area.0, area.1)),
+        El::div().class("modal mod-video").style(&format!("width: {:.0}px; height: {:.0}px", area.0, area.1)),
     );
     crate::video::widget(app, dom, modal, crate::video::overlay_space(area));
 }

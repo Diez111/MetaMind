@@ -1045,9 +1045,10 @@ pub const CARD_BORDER: f32 = 1.0;
 /// The air the over-window player keeps between its card and the edge of the workspace.
 pub const OVERLAY_MARGIN: f32 = 20.0;
 
-/// The room the player card asks for in a note: the reading column (644 px, `--file-line-width`
-/// less the 28 px of padding each side) and a height a tall clip cannot pass, so a portrait video
-/// is letterboxed in the note instead of pushing the paragraph under it off screen.
+/// The room the player card asks for in a note: the reading column, which is `--file-line-width`
+/// (700) less the 28 px of padding each side, capped at the 640 px `.video-player` asks for; and a
+/// height a tall clip cannot pass, so a portrait video is letterboxed in the note instead of
+/// pushing the paragraph under it off screen.
 pub const EMBED_SPACE: (f32, f32) = (640.0, 480.0);
 
 /// The box the player card may use over the window, in logical pixels: the workspace less the air

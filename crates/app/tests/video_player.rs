@@ -461,9 +461,8 @@ mod unix {
         let frame = render(&mut app, &mut fonts, &mut pm, 1.0);
 
         let has = |n: &metamind_ui::dom::Node, c: &str| n.el.classes.iter().any(|x| x == c);
-        let rect_of = |class: &str| -> Option<Rect> {
-            frame.dom.nodes.iter().find(|n| has(n, class)).map(|n| n.rect)
-        };
+        let rect_of =
+            |class: &str| -> Option<Rect> { frame.dom.nodes.iter().find(|n| has(n, class)).map(|n| n.rect) };
         let ws = frame.info.workspace.expect("the frame has a workspace");
         let ws_rect = frame.dom.nodes[ws].rect;
         let backdrop = rect_of("video-fullscreen").expect("the overlay has no scrim");
@@ -484,7 +483,9 @@ mod unix {
         //    corta por ningún lado (lo que sobra de la caja es letterbox, no pérdida).
         assert!(pic.w <= stage.w + 0.5 && pic.h <= stage.h + 0.5, "{pic:?} overflows {stage:?}");
         assert!(
-            pic.x >= ws_rect.x && pic.y >= ws_rect.y && pic.x + pic.w <= ws_rect.x + ws_rect.w + 0.5
+            pic.x >= ws_rect.x
+                && pic.y >= ws_rect.y
+                && pic.x + pic.w <= ws_rect.x + ws_rect.w + 0.5
                 && pic.y + pic.h <= ws_rect.y + ws_rect.h + 0.5,
             "{pic:?} is outside the workspace {ws_rect:?}"
         );
@@ -517,7 +518,12 @@ mod unix {
                 .unwrap_or_else(|| panic!("no control for {action}"))
         };
         let (speed, full, close) = (btn("video:speed"), btn("video:fullscreen"), btn("video:close"));
-        assert!((speed.h - full.h).abs() <= 0.5, "the speed control is {} px tall, the rest {}", speed.h, full.h);
+        assert!(
+            (speed.h - full.h).abs() <= 0.5,
+            "the speed control is {} px tall, the rest {}",
+            speed.h,
+            full.h
+        );
         assert!((speed.h - close.h).abs() <= 0.5, "{speed:?} {close:?}");
         let (gap_a, gap_b) = (full.x - (speed.x + speed.w), close.x - (full.x + full.w));
         assert!((gap_a - gap_b).abs() <= 0.5, "gaps of {gap_a} and {gap_b} px in the row");
