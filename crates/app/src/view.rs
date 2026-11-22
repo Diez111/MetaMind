@@ -3743,7 +3743,7 @@ pub fn settings_menu(app: &App, dom: &mut Dom, fonts: &mut Fonts, w: f32, h: f32
     // roomier one when it fits on neither.
     let below = (band.y + band.h - inside - (a.y + a.h) - gap).max(0.0);
     let above = (a.y - band.y - inside - gap).max(0.0);
-    let (want_h, down) = if want_h <= below {
+    let (pick, down) = if want_h <= below {
         (want_h, true)
     } else if want_h <= above {
         (want_h, false)
@@ -3755,7 +3755,7 @@ pub fn settings_menu(app: &App, dom: &mut Dom, fonts: &mut Fonts, w: f32, h: f32
     // A list that fits on neither side still has to be usable: it opens at a couple of rows and
     // scrolls to the rest, never taller than the panel.
     let floor = 80.0_f32.min(want_h);
-    let h_list = want_h.max(floor).min(room);
+    let h_list = pick.max(floor).min(room);
     let y = if down { a.y + a.h + gap } else { a.y - gap - h_list };
     let y = y.clamp(band.y + inside, (band.y + band.h - inside - h_list).max(band.y + inside));
     dom.nodes[list].el.inline_style = Some(format!(
@@ -3763,6 +3763,16 @@ pub fn settings_menu(app: &App, dom: &mut Dom, fonts: &mut Fonts, w: f32, h: f32
         x - pad.x,
         y - pad.y
     ));
+    // The keyboard can walk past the part of the list that fits in the room it got: the list
+    // scrolls so the row the keyboard is on stays in sight. The rows were measured by the pass
+    // above, so their pitch and where they start are known without laying it out again.
+    let kids = dom.nodes[list].children.clone();
+    if h_list + 0.5 < want_h && kids.len() > 1 {
+        let top = dom.nodes[kids[0]].rect.y - dom.nodes[list].rect.y;
+        let pitch = dom.nodes[kids[1]].rect.y - dom.nodes[kids[0]].rect.y;
+        let bottom = top + (menu.at + 1) as f32 * pitch;
+        dom.nodes[list].scroll_y = (bottom - h_list).max(0.0);
+    }
 }
 
 /// The window's view. `solo` is a pane shown alone in a window of its own; the menus, prompts

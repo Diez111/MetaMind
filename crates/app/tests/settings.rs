@@ -1297,3 +1297,52 @@ fn every_dropdown_of_the_panel_opens_a_list() {
         }
     }
 }
+
+#[test]
+fn the_keyboard_walks_the_list_without_losing_the_mark() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    let mut fonts = metamind_ui::Fonts::new();
+    // A short phone-sized window: the list of providers is taller than the room it gets.
+    let mut pm = metamind_ui::Pixmap::new(500, 420).unwrap();
+    app.run("app:open-settings");
+    metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+    app.run("settings:section:ai");
+    app.run("settings:menu:ai.preset:0");
+    for _ in 0..6 {
+        app.key(key("ArrowDown"));
+    }
+    let f = metamind_app::render(&mut app, &mut fonts, &mut pm, 1.0);
+    let menu = app.settings.as_ref().and_then(|s| s.menu.clone()).unwrap();
+    let list = f
+        .dom
+        .nodes
+        .iter()
+        .find(|n| n.el.classes.iter().any(|c| c == "setting-menu"))
+        .map(|n| (n.rect, n.scroll_y))
+        .expect("the list is on screen");
+    let page = f.dom.by_id("settings-content").map(|n| f.dom.nodes[n].rect).unwrap();
+    let active = f
+        .dom
+        .nodes
+        .iter()
+        .find(|n| {
+            n.el.classes
+                .iter()
+                .any(|c| c == "setting-menu-item" && n.el.classes.iter().any(|k| k == "is-active"))
+        })
+        .map(|n| n.rect)
+        .expect("the row the keyboard is on is on screen");
+    assert!(menu.at > 0, "the keyboard moved: {}", menu.at);
+    assert!(list.1 > 0.0, "the list is taller than its room and had to scroll: {:?}", list);
+    assert!(
+        active.y >= page.y - 0.5 && active.y + active.h <= page.y + page.h + 0.5,
+        "the row under the keyboard is inside the page: {active:?} in {page:?} (list {:?})",
+        list
+    );
+    assert!(
+        active.y >= list.0.y - 0.5 && active.y + active.h <= list.0.y + list.0.h + 0.5,
+        "and inside the list that scrolls: {active:?} in {:?}",
+        list.0
+    );
+}
