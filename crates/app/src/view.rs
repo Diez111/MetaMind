@@ -2426,6 +2426,12 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
                     .map(|_| "Cerrar pestaña (el clic central también cierra)".to_string())
             })
             .or_else(|| a.strip_prefix("toggle-pin:").map(|_| "Desanclar pestaña".to_string()))
+            .or_else(|| {
+                // The number beside Plugins in the settings window: how many built-in plugins
+                // are on, and what clicking it does.
+                a.strip_prefix("settings:badge:")
+                    .map(|n| format!("{n} plugins integrados activos · abre la lista de plugins"))
+            })
             .or_else(|| (a == "mermaid:zoom").then(|| "Ampliar el diagrama a pantalla completa".to_string()))
             .or_else(|| (a == "mermaid:zoom-close").then(|| "Cerrar el diagrama (Esc)".to_string()))?;
         let key = app.hotkey_for(a);

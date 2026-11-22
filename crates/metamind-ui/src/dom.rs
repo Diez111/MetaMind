@@ -296,6 +296,9 @@ pub struct Node {
 #[derive(Clone, Debug)]
 pub struct Dom {
     pub nodes: Vec<Node>,
+    /// Colour of the scrollbar thumb, from the theme (`--scrollbar-thumb`). `None` keeps the
+    /// painter's own grey, which is what the welcome screen and the tests get.
+    pub scrollbar_thumb: Option<Color>,
 }
 
 #[derive(Clone, Copy)]
@@ -346,7 +349,7 @@ impl Default for Dom {
 impl Dom {
     /// A tree with a `body` root (node 0).
     pub fn new() -> Dom {
-        let mut d = Dom { nodes: Vec::new() };
+        let mut d = Dom { nodes: Vec::new(), scrollbar_thumb: None };
         d.push(None, El::new("body"));
         d
     }
@@ -740,8 +743,16 @@ impl Dom {
             };
             self.place(fonts, c, r);
         }
-        self.nodes[id].content_h =
-            if s.row { inner.h } else { cursor - if kids.is_empty() { 0.0 } else { s.gap + between } };
+        // The bottom padding is the room the content leaves when it is scrolled all the way
+        // down, the same way the top padding starts it: without it the last row of a long
+        // list sits flush against the edge of its scrollport and looks cut.
+        self.nodes[id].content_h = if s.row {
+            inner.h
+        } else if kids.is_empty() {
+            0.0
+        } else {
+            cursor - s.gap - between + s.padding[2]
+        };
         // Absolutely positioned children: relative to this node's padding box.
         let abs: Vec<NodeId> = self.nodes[id]
             .children
@@ -886,7 +897,7 @@ impl Dom {
             let y = r.y + (track - thumb) * (n.scroll_y / max_scroll).clamp(0.0, 1.0);
             scene.cmds.push(Cmd::Fill {
                 rect: Rect::new(r.x + r.w - 7.0, y, 5.0, thumb),
-                color: Color { r: 128, g: 128, b: 128, a: 110 },
+                color: self.scrollbar_thumb.unwrap_or(Color { r: 128, g: 128, b: 128, a: 110 }),
                 radius: 2.5,
             });
         }
