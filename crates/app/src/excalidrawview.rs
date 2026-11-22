@@ -37,7 +37,7 @@
 //! `excalidraw-core` and of the painter it feeds; the toolbar has no frame, embed or image tool,
 //! undo is the editor's (the board writes as it goes), and a selection is one element at a time.
 
-use crate::excalidraw::{paint_op, Pen};
+use crate::excalidraw::{grid, luma, paint_op, surface, Pen};
 use crate::shell::{App, Focus};
 use excalidraw_core::{new_element, ElementType, Rgba, Scene};
 use metamind_ui::{Cmd, Dom, El, Fonts, NodeId, Rect, TextStyle};
@@ -61,10 +61,6 @@ const MIN_ZOOM: f32 = 0.1;
 const MAX_ZOOM: f32 = 8.0;
 /// Room kept around the board by *Ajustar*, so no element touches the edge of the pane.
 const FIT_MARGIN: f32 = 48.0;
-/// Scene units between two dots of the grid.
-const GRID: f64 = 20.0;
-/// The grid coarsens instead of painting more dots than this.
-const MAX_DOTS: f32 = 12_000.0;
 /// Screen pixels a wheel line scrolls the board by.
 const WHEEL_PAN: f32 = 42.0;
 /// How far the pointer travels before a press becomes a drag.
@@ -73,6 +69,9 @@ const DRAG_START: f32 = 3.0;
 const MIN_SIZE: f64 = 2.0;
 /// Advance of the text font, as a fraction of its size, for a box nobody has measured.
 const CHAR_W: f64 = 0.55;
+/// Edits kept for `Ctrl+Z`. A board is a few kilobytes of JSON: a hundred is a comfortable
+/// history without holding on to anything large.
+const HISTORY: usize = 100;
 
 /// The drawing tools of the left toolbar.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -603,48 +602,14 @@ impl ExcView {
 
     /// The page colour: the board's own, unless it is the white that dazzles on a dark theme.
     fn surface(&self, c: &[Color; 12], dark: bool) -> Color {
-        let saved = self.scene.app_state.view_background_color.as_deref().and_then(Rgba::parse);
-        match saved {
-            // Pure white is Excalidraw's default, not a choice: on a dark theme it becomes the
-            // theme's own very soft grey.
-            Some(bg) if dark && bg.r > 240 && bg.g > 240 && bg.b > 240 => mix(c[0], c[2], 0.06),
-            Some(bg) => Color { r: bg.r, g: bg.g, b: bg.b, a: 255 },
-            None if dark => mix(c[0], c[2], 0.06),
-            None => Color::rgb(255, 255, 255),
-        }
+        surface(self.scene.app_state.view_background_color.as_deref().and_then(Rgba::parse), c, dark)
     }
 
     /// The faint dot grid, so the board reads as a surface and not as a blank pane.
     fn grid(&self, cmds: &mut Vec<Cmd>, rect: Rect, board: Color, dark: bool) {
-        let z = f64::from(self.zoom);
-        if z <= 0.0 {
-            return;
-        }
-        let mut step = GRID * z;
-        while (f64::from(rect.w) / step) * (f64::from(rect.h) / step) > f64::from(MAX_DOTS) {
-            step *= 2.0;
-        }
-        if step < 6.0 {
-            return;
-        }
-        let ws = step / z;
-        let left = f64::from(self.cam[0]) - f64::from(rect.w) / 2.0 / z;
-        let top = f64::from(self.cam[1]) - f64::from(rect.h) / 2.0 / z;
-        let (right, bottom) = (left + f64::from(rect.w) / z, top + f64::from(rect.h) / z);
-        let radius = if step > 26.0 { 1.5 } else { 1.0 };
-        let mut items = Vec::new();
-        let mut y = (top / ws).ceil() * ws;
-        while y <= bottom {
-            let mut x = (left / ws).ceil() * ws;
-            while x <= right {
-                let (sx, sy) = self.to_screen(&rect, x, y);
-                items.push([sx, sy, radius]);
-                x += ws;
-            }
-            y += ws;
-        }
-        let faint = if dark { Color::rgb(255, 255, 255) } else { Color::rgb(0, 0, 0) };
-        cmds.push(Cmd::Circles { items, color: mix(board, faint, if dark { 0.2 } else { 0.12 }) });
+        let ox = rect.x + rect.w / 2.0 - self.cam[0] * self.zoom;
+        let oy = rect.y + rect.h / 2.0 - self.cam[1] * self.zoom;
+        grid(rect, self.zoom, ox, oy, board, dark, cmds);
     }
 
     pub fn paint(
@@ -736,15 +701,6 @@ impl ExcView {
     pub fn to_json(&self) -> String {
         self.scene.to_json()
     }
-}
-
-fn mix(a: Color, b: Color, t: f32) -> Color {
-    let m = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round() as u8;
-    Color { r: m(a.r, b.r), g: m(a.g, b.g), b: m(a.b, b.b), a: 255 }
-}
-
-fn luma(c: Color) -> f32 {
-    (0.299 * f32::from(c.r) + 0.587 * f32::from(c.g) + 0.114 * f32::from(c.b)) / 255.0
 }
 
 // ---- the pane ----
@@ -966,6 +922,12 @@ impl App {
     pub(crate) fn run_exc(&mut self, command: &str) -> bool {
         let Some(rest) = command.strip_prefix("exc:") else { return false };
         if rest == "none" {
+            return true;
+        }
+        // A press on a board embedded in a note: `exc:open:<path>` opens the file in its own tab.
+        // It is answered with no board open, which is the normal case for an embed.
+        if let Some(rel) = rest.strip_prefix("open:") {
+            self.open_exc(rel);
             return true;
         }
         if self.exc_view.is_none() {

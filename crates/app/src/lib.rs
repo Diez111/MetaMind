@@ -119,7 +119,7 @@ pub fn render_window(
     view::add_graph(app, &mut dom, &info);
     canvasview::add_canvas(app, &mut dom, &info);
     rich::paint(&mut dom, &info.rich, &info.inline, fonts);
-    excalidraw::paint(&mut dom, &info.exc, fonts);
+    excalidraw::paint(&mut dom, &info.exc, fonts, app.dark);
     excalidrawview::add_exc(app, &mut dom, &info, fonts);
     let scene = dom.paint();
     let clear = dom.nodes[0].style.background;
