@@ -932,3 +932,32 @@ fn a_click_on_a_provider_row_keeps_the_panel_open() {
         "https://opencode.ai/inference/go/openai/v1"
     );
 }
+
+#[test]
+fn changing_the_scheme_from_a_swatch_keeps_the_panel_open() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    let mut fonts = metamind_ui::Fonts::new();
+    app.run("app:open-settings");
+    app.run("settings:section:appearance");
+    let frame = draw(&mut app);
+    let swatch = frame
+        .dom
+        .nodes
+        .iter()
+        .find(|n| n.el.classes.iter().any(|c| c == "theme-swatch"))
+        .map(|n| n.rect)
+        .expect("the scheme previews are on screen");
+    app.click(&frame, &mut fonts, swatch.x + swatch.w / 2.0, swatch.y + swatch.h / 2.0, false);
+    assert!(app.settings.is_some(), "choosing a scheme keeps the panel open");
+}
+
+#[test]
+fn the_active_tab_mark_never_paints_over_the_panel() {
+    let d = vault();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("app:open-settings");
+    let frame = draw(&mut app);
+    let mark = metamind_app::view::tab_indicator(&app, &frame.dom, &frame.info);
+    assert!(mark.is_none(), "a window over the app covers the tab bar: no mark on top of it");
+}

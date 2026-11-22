@@ -1631,6 +1631,15 @@ pub fn tab_indicator(app: &App, dom: &Dom, info: &ViewInfo) -> Option<metamind_u
     if !n.el.classes.iter().any(|c| c == "is-active") {
         return None;
     }
+    // A window over the app covers the tab bar: its mark has no business on top of the panel.
+    if app.settings.is_some()
+        || app.prompt.is_some()
+        || app.diagram_zoom.is_some()
+        || app.video_fullscreen
+        || app.more_open
+    {
+        return None;
+    }
     let t = app.anims.t("tab");
     let (x, w) = match app.tab_from.filter(|_| t < 1.0) {
         Some((fp, fi)) if (fp, fi) != (pane, to) => {
@@ -1639,10 +1648,28 @@ pub fn tab_indicator(app: &App, dom: &Dom, info: &ViewInfo) -> Option<metamind_u
         }
         _ => (n.rect.x, n.rect.w),
     };
-    // Inset from the corners of the tab, two pixels tall, sitting on the line that closes the bar.
+    // Inset from the corners of the tab, two pixels tall, sitting on the line that closes the bar,
+    // and never past the bar: a tab scrolled half out of it used to leave its mark hanging over
+    // whatever was drawn beside the tab strip.
     let h = 2.0;
+    let mut cur = Some(node);
+    let mut bar = None;
+    while let Some(id) = cur {
+        if dom.nodes[id].el.classes.iter().any(|c| c == "workspace-tab-header-container") {
+            bar = Some(dom.nodes[id].rect);
+            break;
+        }
+        cur = dom.nodes[id].parent;
+    }
+    let bar = bar?;
+    let (lo, hi) = (bar.x, bar.x + bar.w);
+    let x0 = (x + 5.0).max(lo);
+    let x1 = (x + w - 5.0).min(hi);
+    if x1 - x0 < 4.0 {
+        return None;
+    }
     Some(metamind_ui::Cmd::Fill {
-        rect: metamind_ui::Rect::new(x + 5.0, n.rect.y + n.rect.h - h, (w - 10.0).max(8.0), h),
+        rect: metamind_ui::Rect::new(x0, n.rect.y + n.rect.h - h, x1 - x0, h),
         color: info.accent,
         radius: 1.0,
     })
