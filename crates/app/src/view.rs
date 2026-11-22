@@ -1410,6 +1410,7 @@ fn pane(
         _ if app.kanban_active() => {
             crate::kanbanview::pane(app.kanban_view.as_ref().unwrap(), dom, leaf, info)
         }
+        _ if crate::dashboard::is_dashboard(app) => crate::dashboard::pane(app, dom, leaf),
         _ => editor(app, dom, leaf, pal, info, app.tab().map(|t| (pane, app.active, t)), true),
     }
     info.panes.push((pane, leaf, None));

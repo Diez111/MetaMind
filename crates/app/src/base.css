@@ -807,3 +807,38 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .setting-input:focus, .setting-input.is-editing, .setting-hotkey.is-capturing { border: 2px solid var(--interactive-accent); padding: 3px 9px }
 .welcome-input { border: 2px solid var(--interactive-accent); padding: 5px 9px }
 .metadata-input.is-editing { border: 2px solid var(--interactive-accent); padding: 1px 5px }
+
+/* The dashboard: a note of `tipo: dashboard` drawn as a board instead of as text. Every colour
+   comes from the theme's variables, so a community theme recolours it with the rest. */
+.dash { display: flex; flex-direction: column; gap: 18px; flex-grow: 1; padding: 26px 30px; overflow-y: auto; width: 100% }
+.dash-head { display: flex; align-items: baseline; gap: 12px; flex-shrink: 0 }
+.dash-title { font-size: 26px; font-weight: 700; color: var(--text-normal); letter-spacing: -0.01em }
+.dash-date { font-size: 14px; color: var(--text-muted) }
+.dash-grid { display: flex; flex-wrap: wrap; gap: 16px; align-items: stretch }
+.dash-card { display: flex; flex-direction: column; gap: 10px; flex-grow: 1; flex-basis: 300px; min-width: 250px; max-width: 520px; padding: 16px 18px; border: 1px solid var(--background-modifier-border); border-radius: 12px; background-color: var(--background-secondary) }
+.dash-card-title { font-size: 13px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.02em }
+.dash-empty { font-size: 13px; color: var(--text-faint); line-height: 1.5 }
+.dash-big-row { display: flex; align-items: baseline; gap: 10px }
+.dash-big { font-size: 30px; font-weight: 700; color: var(--text-normal); letter-spacing: -0.02em }
+.dash-big-note { font-size: 12px; color: var(--text-muted) }
+.dash-bars { display: flex; align-items: flex-end; gap: 6px; height: 96px; margin-top: 4px }
+.dash-bar-col { display: flex; flex-direction: column; align-items: center; gap: 6px; flex-grow: 1 }
+.dash-bar-track { display: flex; align-items: flex-end; justify-content: center; width: 100%; height: 74px }
+.dash-bar { width: 100%; max-width: 26px; border-radius: 5px; background-color: var(--interactive-accent) }
+.dash-bar.is-good { background-color: #4caf78 }
+.dash-bar.is-missing { background-color: var(--background-modifier-border) }
+.dash-bar-label { font-size: 11px; color: var(--text-faint) }
+.dash-stat { display: flex; flex-direction: column; gap: 2px; padding: 7px 0; border-top: 1px solid var(--background-modifier-border) }
+.dash-stat:first-of-type { border-top: none }
+.dash-stat-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.dash-stat-line { display: flex; align-items: baseline; gap: 8px }
+.dash-stat-value { font-size: 19px; font-weight: 700; color: var(--text-normal); white-space: nowrap; letter-spacing: -0.01em }
+.dash-stat-note { font-size: 12px; color: var(--text-faint); white-space: nowrap }
+.dash-event { display: flex; gap: 10px; padding: 4px 0; border-top: 1px solid var(--background-modifier-border) }
+.dash-event:first-of-type { border-top: none }
+.dash-event-time { font-size: 12px; color: var(--text-accent); width: 78px; flex-shrink: 0 }
+.dash-event-title { font-size: 13px; color: var(--text-normal) }
+.dash-note { display: flex; align-items: baseline; gap: 10px; padding: 5px 6px; border-radius: var(--radius-s); cursor: pointer }
+.dash-note:hover { background-color: var(--background-modifier-hover) }
+.dash-note-title { flex-grow: 1; font-size: 13px; color: var(--text-normal); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.dash-note-ago { font-size: 11px; color: var(--text-faint) }

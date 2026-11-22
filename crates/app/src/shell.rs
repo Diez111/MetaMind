@@ -560,6 +560,8 @@ pub struct App {
     pub ai: crate::ai::AiPanel,
     /// The models the AI panel's provider listed, fetched in the background from Ajustes → IA.
     pub ai_models: crate::ai::ModelList,
+    /// The dashboard: the last week of daily notes, read once per vault revision.
+    pub dash: crate::dashboard::Cache,
     /// UI scale factor (window scale).
     pub scale: f32,
     pub video_waker: Option<Box<dyn Fn() + Send>>,
@@ -762,6 +764,7 @@ impl App {
             video_area: (0.0, 0.0),
             ai: Default::default(),
             ai_models: Default::default(),
+            dash: Default::default(),
             scale: 1.0,
             video_waker: None,
             recovery: Recovery::new(root),
@@ -1957,8 +1960,21 @@ impl App {
             "ai:focus-input" => {
                 self.ai.editing = true;
             }
-            "ai:send" => self.ai_send(),
-            "ai:clear" => self.ai.clear(),
+            // A card of the dashboard opens the note it names.
+            c if c.starts_with("dashboard:open:") => {
+                let name = &c["dashboard:open:".len()..];
+                let found = self
+                    .store
+                    .index
+                    .notes()
+                    .find(|(_, f)| vault_core::path::stem(&f.path) == name)
+                    .map(|(_, f)| f.path.to_string());
+                match found {
+                    Some(path) => self.open_note(&path),
+                    None => self.notice = Some(format!("No encontré la nota «{name}»")),
+                }
+            }
+            "ai:send" => self.ai_send(),            "ai:clear" => self.ai.clear(),
             "ai:explain-selection" => self.ai_quick(crate::ai::QuickAsk::Selection),
             "ai:summarize-note" => self.ai_quick(crate::ai::QuickAsk::Summary),
             c if c.starts_with("ai:profile:") => {
