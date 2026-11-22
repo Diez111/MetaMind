@@ -1667,7 +1667,14 @@ fn ai_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
             .action(format!("settings:ai-preset:{at}")),
     );
     let ctl = row(dom, parent, "URL base", "Origen de la API, con o sin su /v1.");
-    input(dom, ctl, &format!("ai.p:base_url:{at}"), &p.base_url, ui.edit.as_ref(), Some("https://api.deepseek.com"));
+    input(
+        dom,
+        ctl,
+        &format!("ai.p:base_url:{at}"),
+        &p.base_url,
+        ui.edit.as_ref(),
+        Some("https://api.deepseek.com"),
+    );
     let ctl = row(dom, parent, "Modelo", "Nombre del modelo tal como lo espera el proveedor.");
     input(dom, ctl, &format!("ai.p:model:{at}"), &p.model, ui.edit.as_ref(), Some("deepseek-v4.1-flash"));
     let ctl = row(
