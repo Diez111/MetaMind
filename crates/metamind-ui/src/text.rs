@@ -60,7 +60,10 @@ pub struct TextBox {
 pub struct Fonts {
     system: FontSystem,
     swash: SwashCache,
-    cache: HashMap<u64, Buffer>,
+    cache: HashMap<u64, (Buffer, u64)>,
+    /// Grows with every run that is shaped, so the cache can drop what has not been used for the
+    /// longest instead of everything at once.
+    stamp: u64,
     sans: String,
     mono: String,
     /// Installed family names by lowercase name.
@@ -142,7 +145,7 @@ impl Fonts {
         let has = |name: &&&str| names.contains_key(&name.to_lowercase());
         let sans = SANS_CANDIDATES.iter().find(has).map_or_else(String::new, |s| s.to_string());
         let mono = MONO_CANDIDATES.iter().find(has).map_or_else(String::new, |s| s.to_string());
-        Fonts { system, swash: SwashCache::new(), cache: HashMap::new(), sans, mono, names }
+        Fonts { system, swash: SwashCache::new(), cache: HashMap::new(), stamp: 0, sans, mono, names }
     }
 
     pub fn font_count(&self) -> usize {
@@ -174,11 +177,20 @@ impl Fonts {
 
     fn buffer(&mut self, text: &str, spans: &[Span], style: &TextStyle, width: Option<f32>) -> u64 {
         let k = key(text, spans, style, width);
-        if self.cache.contains_key(&k) {
+        self.stamp += 1;
+        let stamp = self.stamp;
+        if let Some(entry) = self.cache.get_mut(&k) {
+            entry.1 = stamp;
             return k;
         }
+        // A full clear was the worst case: the visible text of a long note is exactly what has to
+        // be shaped again, so the next frames stutter. Half the cache goes, the oldest half, and
+        // what is on screen stays.
         if self.cache.len() > 4000 {
-            self.cache.clear();
+            let mut ages: Vec<u64> = self.cache.values().map(|(_, s)| *s).collect();
+            ages.sort_unstable();
+            let cut = ages[ages.len() / 2];
+            self.cache.retain(|_, (_, s)| *s >= cut);
         }
         let mut buf = Buffer::new(&mut self.system, Metrics::new(style.size, style.line_height));
         buf.set_size(if style.wrap { width } else { None }, None);
@@ -222,7 +234,7 @@ impl Fonts {
             buf.set_rich_text(runs, &base, Shaping::Advanced, None);
         }
         buf.shape_until_scroll(&mut self.system, false);
-        self.cache.insert(k, buf);
+        self.cache.insert(k, (buf, stamp));
         k
     }
 
@@ -238,7 +250,7 @@ impl Fonts {
             return (0.0, style.line_height);
         }
         let k = self.buffer(text, spans, style, width);
-        let buf = &self.cache[&k];
+        let buf = &self.cache[&k].0;
         let (mut w, mut h) = (0.0f32, 0.0f32);
         for run in buf.layout_runs() {
             w = w.max(run.line_w);
@@ -262,7 +274,7 @@ impl Fonts {
             return vec![TextRect { x: 0.0, y: 0.0, w: 0.0, h: style.line_height }];
         }
         let k = self.buffer(text, spans, style, width);
-        let buf = &self.cache[&k];
+        let buf = &self.cache[&k].0;
         // Byte offset of each buffer line within the whole text.
         let mut line_starts = vec![0usize];
         for (i, b) in text.bytes().enumerate() {
@@ -316,7 +328,7 @@ impl Fonts {
             return None;
         }
         let k = self.buffer(text, spans, style, width);
-        let buf = self.cache.get(&k)?;
+        let buf = &self.cache.get(&k)?.0;
         let mut line_starts = vec![0usize];
         for (i, b) in text.bytes().enumerate() {
             if b == b'\n' {
@@ -354,7 +366,7 @@ impl Fonts {
             return 0;
         }
         let k = self.buffer(text, spans, style, width);
-        let buf = &self.cache[&k];
+        let buf = &self.cache[&k].0;
         let mut line_starts = vec![0usize];
         for (i, b) in text.bytes().enumerate() {
             if b == b'\n' {
@@ -395,7 +407,7 @@ impl Fonts {
             return;
         }
         let k = self.buffer(text, spans, style, width);
-        let Some(buf) = self.cache.get_mut(&k) else { return };
+        let Some(buf) = self.cache.get_mut(&k).map(|e| &mut e.0) else { return };
         let c = cosmic_text::Color::rgba(style.color.r, style.color.g, style.color.b, style.color.a);
         buf.draw(&mut self.system, &mut self.swash, c, |x, y, w, h, col| {
             f(x, y, w, h, Color { r: col.r(), g: col.g(), b: col.b(), a: col.a() });
@@ -415,7 +427,7 @@ impl Fonts {
             return Vec::new();
         }
         let k = self.buffer(text, spans, style, width);
-        let buf = &self.cache[&k];
+        let buf = &self.cache[&k].0;
         let mut out: Vec<GlyphRun> = Vec::new();
         for run in buf.layout_runs() {
             let mut cur: Option<GlyphRun> = None;

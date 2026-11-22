@@ -43,7 +43,11 @@ pub struct Computed {
     /// Custom properties visible to this element (own and inherited), unresolved.
     pub vars: Arc<HashMap<Box<str>, Box<str>>>,
     /// Ordinary properties with `var()` substituted.
-    pub props: HashMap<Box<str>, Box<str>>,
+    ///
+    /// Shared, because it never changes after the cascade computes it: a node whose style comes
+    /// from an identical one in the same frame (rows, icons, labels) clones this instead of
+    /// rebuilding a map of a few dozen boxed strings, and a clone is two refcount bumps.
+    pub props: Arc<HashMap<Box<str>, Box<str>>>,
 }
 
 const INHERITED: &[&str] = &[
@@ -401,7 +405,7 @@ impl Theme {
                 }
             }
         }
-        Computed { vars, props }
+        Computed { vars, props: Arc::new(props) }
     }
 
     /// The rules that match an element, highest priority first.
