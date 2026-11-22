@@ -523,7 +523,10 @@ fn the_copilot_sheet_covers_the_workspace_in_a_compact_window() {
     let ws = classed(&f, "workspace").expect("the workspace");
     let (s, w) = (f.dom.nodes[sheet].rect, f.dom.nodes[ws].rect);
     assert!((s.x - w.x).abs() < 1.0 && (s.w - w.w).abs() < 1.0, "the sheet covers the workspace: {s:?}");
-    assert!((s.y - w.y).abs() < 1.0 && (s.h - w.h).abs() < 1.0, "and ends where it does: {s:?}");
+    assert!(
+        (s.y - w.y).abs() < 1.0 && (s.h - w.h).abs() < 1.0,
+        "and ends where it does: sheet {s:?} workspace {w:?}"
+    );
     // The way out is inside the window, whatever the profile is called.
     let close = f.dom.nodes[classed(&f, "ai-sheet-close").expect("the close button")].rect;
     assert!(close.x >= 0.0 && close.x + close.w <= 360.0, "the close button stays visible: {close:?}");
@@ -637,4 +640,64 @@ fn the_copilot_sheet_slides_in_and_reduced_motion_skips_it() {
         classed(&now, "workspace").expect("the workspace"),
     );
     assert!((now.dom.nodes[sheet].rect.x - now.dom.nodes[ws].rect.x).abs() < 1.0);
+}
+
+#[test]
+fn the_bottom_navigation_belongs_to_a_compact_window() {
+    let d = vault();
+    let mut app = open(&d);
+    let mut fonts = Fonts::new();
+    let f = frame(&mut app, &mut fonts, 360, 640);
+    let all = |f: &Frame, class: &str| -> Vec<usize> {
+        f.dom
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n.el.classes.iter().any(|c| c == class))
+            .map(|(i, _)| i)
+            .collect()
+    };
+    let nav = *all(&f, "bottom-nav").first().expect("a compact window has the bottom navigation");
+    let ws = classed(&f, "workspace").expect("the workspace");
+    let (n, w) = (f.dom.nodes[nav].rect, f.dom.nodes[ws].rect);
+    assert!((n.w - 360.0).abs() < 1.0, "the bar spans the window: {n:?}");
+    assert!((n.y - (w.y + w.h)).abs() < 1.0, "it starts where the note ends: {n:?} {w:?}");
+    assert!(n.y + n.h <= 640.0, "and stays inside the window: {n:?}");
+
+    let items = all(&f, "bottom-nav-item");
+    assert_eq!(items.len(), 5, "five destinations");
+    for &i in &items {
+        let r = f.dom.nodes[i].rect;
+        assert!(r.x >= -0.5 && r.x + r.w <= 360.5, "a destination stays in the window: {r:?}");
+        assert!(r.h >= 40.0, "its touch area is comfortable: {r:?}");
+    }
+    // With the note in front and no pane open, no destination is in force.
+    let active = |f: &Frame| -> Vec<usize> {
+        f.dom
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| {
+                n.el.classes.iter().any(|c| c == "bottom-nav-item")
+                    && n.el.classes.iter().any(|c| c == "is-active")
+            })
+            .map(|(i, _)| i)
+            .collect()
+    };
+    assert!(active(&f).is_empty(), "the note alone marks no destination");
+    // Opening one marks exactly that one.
+    app.run("global-search:open");
+    let f = frame(&mut app, &mut fonts, 360, 640);
+    let marked = active(&f);
+    assert_eq!(marked.len(), 1, "exactly one destination is in force: {marked:?}");
+    let label = f.dom.nodes[marked[0]].children.last().copied();
+    let text = label.and_then(|l| f.dom.nodes[l].el.text.clone()).unwrap_or_default();
+    assert_eq!(text, "Buscar", "the marked destination is the one that opened");
+    let dot = *all(&f, "bottom-nav-indicator").first().expect("the indicator");
+    let d = f.dom.nodes[dot].rect;
+    assert!(d.x >= -0.5 && d.x + d.w <= 360.5, "the indicator stays inside the bar: {d:?}");
+
+    // A window with room keeps the ribbon and has no bottom navigation.
+    let f = frame(&mut app, &mut fonts, 1366, 768);
+    assert!(all(&f, "bottom-nav").is_empty(), "the desktop is untouched");
 }

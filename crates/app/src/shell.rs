@@ -508,6 +508,9 @@ pub struct App {
     /// What the sidebars were doing before the window went compact, to put them back when it
     /// grows again: a resize is not an instruction to lose what the reader had open.
     pub compact_restore: Option<(bool, bool)>,
+    /// Where the bottom navigation's indicator is and where it is going, in destinations.
+    pub nav_from: f32,
+    pub nav_to: f32,
     /// Width of each sidebar in pixels, while it is open.
     pub left_w: f32,
     pub right_w: f32,
@@ -777,6 +780,15 @@ impl App {
         }
     }
 
+    /// Moves the bottom navigation's indicator to `to`, from wherever it is right now: pressing a
+    /// destination mid-slide continues from the point on screen, not from the previous one.
+    pub fn nav_go(&mut self, to: f32) {
+        let t = self.anims.t("bottom-nav");
+        self.nav_from += (self.nav_to - self.nav_from) * t;
+        self.nav_to = to;
+        self.anims.start("bottom-nav", 180.0);
+    }
+
     /// Shows a sidebar because a command asked for one of its panes. In a compact window a
     /// sidebar floats over the note, so the other one makes room.
     pub fn show_side(&mut self, left: bool) {
@@ -871,6 +883,8 @@ impl App {
             compact_seen: false,
             sidebar_asked: false,
             compact_restore: None,
+            nav_from: 0.0,
+            nav_to: 0.0,
             left_w: SIDE_W_DEFAULT,
             right_w: SIDE_W_DEFAULT,
             side_drag: None,
@@ -1833,11 +1847,13 @@ impl App {
             "command-palette:open" => self.open_prompt(PromptKind::Commands),
             "switcher:open" => self.open_prompt(PromptKind::Switcher),
             "global-search:open" => {
+                self.nav_go(1.0);
                 self.show_side(true);
                 self.panel = Panel::Search;
                 self.focus = Focus::Search;
             }
             "file-explorer:open" => {
+                self.nav_go(0.0);
                 self.show_side(true);
                 self.panel = Panel::Files;
             }
@@ -2040,6 +2056,9 @@ impl App {
             }
             "backlinks:edit-filter" => self.backlinks_editing = self.backlinks_filter.is_some(),
             "backlinks:open" | "outgoing-links:open" | "outline:open" | "ai:open" => {
+                if command == "ai:open" {
+                    self.nav_go(3.0);
+                }
                 self.show_side(false);
                 self.right_panel = match command {
                     "backlinks:open" => RightPanel::Backlinks,

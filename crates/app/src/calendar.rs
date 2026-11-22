@@ -678,6 +678,9 @@ impl crate::shell::App {
         let url = self.config.app.str("cal.ical_url").unwrap_or_default().to_string();
         match command {
             "calendar:open" => {
+                // The bottom navigation of a compact window follows the destination.
+                self.nav_go(2.0);
+                self.sidebar_asked = true;
                 self.left_open = true;
                 self.panel = crate::shell::Panel::Calendar;
                 self.focus = crate::shell::Focus::Calendar;

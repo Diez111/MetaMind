@@ -792,7 +792,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 /* The copilot in a compact window: there is no column to give it, so the panel covers the
    workspace as a sheet with a header of its own. It is absolute over the note and ends where the
    workspace ends, which is the top of the status bar; the input keeps a margin off that edge. */
-.ai-sheet { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: flex; flex-direction: column; overflow: hidden; background-color: var(--background-primary); border-left: 1px solid var(--background-modifier-border) }
+.ai-sheet { position: absolute; right: 0; left: 0; display: flex; flex-direction: column; overflow: hidden; background-color: var(--background-primary); border-left: 1px solid var(--background-modifier-border) }
 .ai-sheet-header { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background-color: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border) }
 .ai-sheet-mark { width: 16px; height: 16px; flex-shrink: 0; color: var(--interactive-accent); display: flex; align-items: center; justify-content: center }
 .ai-sheet-title { flex-shrink: 0; color: var(--text-normal); font-size: var(--font-ui-small); font-weight: 600; white-space: nowrap }
@@ -922,3 +922,16 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .modal.mod-settings.is-narrow .setting-item-control > .theme-swatches { width: 100%; justify-content: flex-start }
 .modal.mod-settings.is-narrow .theme-swatch-item { flex: 1 1 0; min-width: 0 }
 .modal.mod-settings.is-narrow .theme-swatch { width: 100%; max-width: 52px }
+
+/* The bottom navigation of a compact window: five destinations over the status bar, each with
+   its icon and its name, and an indicator that slides to the one in force. It only exists below
+   the shell's breakpoint, so the desktop layout is untouched. */
+.bottom-nav { position: absolute; left: 0; right: 0; display: flex; align-items: stretch; background-color: var(--background-secondary); border-top: 1px solid var(--background-modifier-border) }
+.bottom-nav-item { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding-bottom: 4px; color: var(--text-muted); cursor: pointer }
+.bottom-nav-item:hover { color: var(--text-normal) }
+.bottom-nav-item.is-active { color: var(--text-accent) }
+.bottom-nav-icon { width: 18px; height: 18px; flex-shrink: 0 }
+/* The label takes the slot's width: a child of a centred column flex with only a max-width
+   measured to zero and painted nothing. */
+.bottom-nav-label { width: 100%; text-align: center; font-size: 10px; line-height: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.bottom-nav-indicator { position: absolute; bottom: 0; height: 2px; border-radius: 2px; background-color: var(--interactive-accent) }
