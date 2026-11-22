@@ -446,14 +446,16 @@ impl Welcome {
             card = card.style(&format!("margin-top: {:.1}px", 18.0 * (1.0 - t)));
         }
         let card = dom.add(wrap, card);
-        let brand = dom.add(card, El::div().class("welcome-brand"));
-        dom.add(brand, icons::el("vault").class("welcome-logo"));
-        dom.add(brand, El::div().class("welcome-name").text("MetaMind"));
-        dom.add(brand, El::div().class("welcome-data").text("50 000 notas · abre en 0,2 s"));
-        dom.add(
-            brand,
-            El::div().class("welcome-version").text(format!("Versión {}", env!("CARGO_PKG_VERSION"))),
-        );
+        if self.screen == Screen::Home {
+            let brand = dom.add(card, El::div().class("welcome-brand"));
+            dom.add(brand, icons::el("vault").class("welcome-logo"));
+            dom.add(brand, El::div().class("welcome-name").text("MetaMind"));
+            dom.add(brand, El::div().class("welcome-data").text("50 000 notas · abre en 0,2 s"));
+            dom.add(
+                brand,
+                El::div().class("welcome-version").text(format!("Versión {}", env!("CARGO_PKG_VERSION"))),
+            );
+        }
         let main = dom.add(card, El::div().class("welcome-main"));
         match self.screen {
             Screen::Home => self.home(&mut dom, main),

@@ -541,7 +541,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .welcome-recents { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--rs-rule) }
 .welcome-section-title { flex-shrink: 0; margin-bottom: 8px; color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase }
 .welcome-list { flex-grow: 1; min-height: 0; overflow-y: auto; padding-right: 6px }
-.welcome-folders { border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); padding: 4px 10px 4px 4px; flex-grow: 0 }
+.welcome-folders { border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); padding: 4px 10px 4px 4px }
 .welcome-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 1px solid transparent; border-radius: var(--radius-m); color: var(--text-muted) }
 .welcome-row:hover, .welcome-row.is-focused { background-color: var(--background-modifier-hover); border-color: var(--background-modifier-border); color: var(--text-normal) }
 .welcome-row-icon { width: 15px; height: 15px; color: var(--text-accent) }
