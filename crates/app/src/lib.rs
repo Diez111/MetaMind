@@ -121,7 +121,12 @@ pub fn render_window(
     rich::paint(&mut dom, &info.rich, &info.inline, fonts);
     excalidraw::paint(&mut dom, &info.exc, fonts, app.dark);
     excalidrawview::add_exc(app, &mut dom, &info, fonts);
-    let scene = dom.paint();
+    let mut scene = dom.paint();
+    // The tab indicator is measured from the boxes the tab bar got, so it is the one mark that
+    // cannot be built before layout. It goes last: it sits on the line that closes the bar.
+    if let Some(cmd) = view::tab_indicator(app, &dom, &info) {
+        scene.cmds.push(cmd);
+    }
     let clear = dom.nodes[0].style.background;
     metamind_ui::render(&scene, fonts, pixmap, scale, clear);
     app.last_frame_us = t.elapsed().as_micros() as u64;

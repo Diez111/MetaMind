@@ -164,6 +164,8 @@ impl BlockView {
 
 #[derive(Default)]
 pub struct ViewInfo {
+    /// The accent of the theme, for the marks painted after layout (the tab indicator).
+    pub accent: theme_engine::Color,
     pub blocks: Vec<BlockView>,
     pub editor: Option<NodeId>,
     /// The workspace element: everything the windows show above the status bar. The over-window
@@ -882,6 +884,9 @@ fn sidebar_files(app: &App, dom: &mut Dom, parent: NodeId, viewport_h: f32) {
     if last < rows.len() {
         dom.add(list, El::div().style(&format!("height: {}px", (rows.len() - last) as f32 * h)));
     }
+    if rows.is_empty() {
+        empty_pane(dom, list, "folder", "Esta bóveda no tiene notas todavía.");
+    }
 }
 
 fn sidebar_search(app: &App, dom: &mut Dom, parent: NodeId) {
@@ -892,13 +897,29 @@ fn sidebar_search(app: &App, dom: &mut Dom, parent: NodeId) {
     } else {
         format!("{}{caret}", app.search_query)
     };
-    dom.add(parent, El::div().class("search-input-container").text(shown).action("focus:search"));
+    let field = dom.add(
+        parent,
+        El::div()
+            .class("search-input-container")
+            .class_if(app.focus == Focus::Search, "is-editing")
+            .text(shown)
+            .action("focus:search"),
+    );
+    if app.focus == Focus::Search {
+        // The ring on the field the keyboard is in, the same one every other field wears.
+        dom.nodes[field].focus = true;
+    }
     if app.focus == Focus::Search && app.search_query.is_empty() {
         search_options(dom, parent, "search:insert:");
     }
     let list = dom.add(parent, El::div().class("nav-files-container").id("search-results"));
     if let Some(e) = &app.search_error {
-        dom.add(list, El::div().class("search-result-file-match").text(format!("Error en la búsqueda: {e}")));
+        empty_pane(dom, list, "warning", format!("Error en la búsqueda: {e}"));
+        return;
+    }
+    if app.search_results.is_empty() && !app.search_query.trim().is_empty() {
+        // A search that found nothing is an answer, not an empty pane.
+        empty_pane(dom, list, "search", format!("Nada coincide con «{}».", app.search_query.trim()));
     }
     for r in &app.search_results {
         dom.add(
@@ -1009,11 +1030,11 @@ fn ai_panel(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
     }
     let list = dom.add(panel, El::div().class("ai-messages").id("ai-messages"));
     if app.ai.messages.is_empty() {
-        dom.add(
+        empty_pane(
+            dom,
             list,
-            El::div()
-                .class("pane-empty")
-                .text("Pregunta sobre la nota abierta. Las fórmulas se escriben con $...$."),
+            "ai",
+            "Pregunta sobre la nota abierta. Las fórmulas se escriben con $...$.",
         );
     }
     for m in &app.ai.messages {
@@ -1128,7 +1149,7 @@ fn outgoing(app: &App, tab: &crate::shell::Tab, dom: &mut Dom, parent: NodeId) {
         );
     }
     if seen.is_empty() {
-        dom.add(list, El::div().class("pane-empty").text("No hay enlaces salientes."));
+        empty_pane(dom, list, "arrow-up-right", "No hay enlaces salientes.");
     }
 }
 
@@ -1178,7 +1199,16 @@ fn backlinks(app: &App, dom: &mut Dom, parent: NodeId) {
     dom.add(header, El::div().class("tree-item-flair").text(files.len().to_string()));
     let back = dom.add(parent, El::div().class("pane-section"));
     if files.is_empty() {
-        dom.add(back, El::div().class("pane-empty").text("No se encontraron retroenlaces."));
+        empty_pane(
+            dom,
+            back,
+            "link",
+            if needle.is_empty() {
+                "Ninguna nota enlaza a esta todavía.".to_string()
+            } else {
+                format!("Ningún retroenlace coincide con «{needle}».")
+            },
+        );
     }
     let ordered: Box<dyn Iterator<Item = _>> =
         if app.backlinks_desc { Box::new(files.iter().rev()) } else { Box::new(files.iter()) };
@@ -1210,7 +1240,7 @@ fn backlinks(app: &App, dom: &mut Dom, parent: NodeId) {
     let list = dom.add(parent, El::div().class("pane-section"));
     let files = app.mentions.as_ref().map(|m| m.files.as_slice()).unwrap_or(&[]);
     if files.is_empty() {
-        dom.add(list, El::div().class("pane-empty").text("No hay menciones sin vínculo."));
+        empty_pane(dom, list, "link", "No hay menciones sin vínculo.");
     }
     for (p, snippets) in files {
         let row = dom.add(list, El::div().class("tree-item-self bookmark").action(format!("open:{p}")));
@@ -1295,7 +1325,11 @@ fn pane(
         |dom: &mut Dom, icon: &str, title: &str, dirty, active, focus: String, close: (String, &str)| {
             let tab = dom.add(
                 tabs,
-                El::div().class("workspace-tab-header").class_if(active, "is-active").action(focus),
+                El::div()
+                    .class("workspace-tab-header")
+                    .class_if(active, "is-active")
+                    .id(&format!("tab-{pane}-{}", dom.nodes[tabs].children.len()))
+                    .action(focus),
             );
             dom.add(tab, icons::el(icon).class("workspace-tab-header-inner-icon"));
             dom.add(tab, El::div().class("workspace-tab-header-inner-title").text(title.to_string()));
@@ -1491,6 +1525,60 @@ pub fn scroll_views(app: &mut App, dom: &mut Dom, info: &ViewInfo) {
         }
         app.ai.scroll_to_end = false;
     }
+    // The palette's list follows the keyboard. It scrolls to the row the selection moved to and
+    // leaves the offset alone the rest of the time, so the wheel keeps what the reader asked for.
+    if let Some(p) = &mut app.prompt {
+        if let Some(sel) = p.scroll_to.take() {
+            if let Some(list) = dom.by_id("prompt-results") {
+                if let Some(&row) = dom.nodes[list].children.get(sel) {
+                    let view = dom.content_rect(list);
+                    let r = dom.nodes[row].rect;
+                    let cur = dom.nodes[list].scroll_y;
+                    let want = if r.y < view.y {
+                        cur - (view.y - r.y)
+                    } else if r.y + r.h > view.y + view.h {
+                        cur + (r.y + r.h - view.y - view.h)
+                    } else {
+                        cur
+                    };
+                    if (want - cur).abs() > 0.5 {
+                        let y = want.clamp(0.0, dom.max_scroll(list));
+                        dom.set_scroll(list, y);
+                        app.scrolls.insert("prompt-results".to_string(), y);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The mark under the tab that has the focus, drawn after layout because it is measured from the
+/// boxes the tab bar really got. It slides from the tab that had the focus to the one that took
+/// it, so the change of tab reads as one thing moving instead of two tabs blinking.
+pub fn tab_indicator(app: &App, dom: &Dom, info: &ViewInfo) -> Option<metamind_ui::Cmd> {
+    let (pane, to) = (app.pane, app.active);
+    let node = dom.by_id(&format!("tab-{pane}-{to}"))?;
+    let n = &dom.nodes[node];
+    // Only the tab that is really the active one wears the mark: a pane covered by the graph or
+    // a board keeps its tabs but none of them is the one in front.
+    if !n.el.classes.iter().any(|c| c == "is-active") {
+        return None;
+    }
+    let t = app.anims.t("tab");
+    let (x, w) = match app.tab_from.filter(|_| t < 1.0) {
+        Some((fp, fi)) if (fp, fi) != (pane, to) => {
+            let from = &dom.nodes[dom.by_id(&format!("tab-{fp}-{fi}"))?].rect;
+            (from.x + (n.rect.x - from.x) * t, from.w + (n.rect.w - from.w) * t)
+        }
+        _ => (n.rect.x, n.rect.w),
+    };
+    // Inset from the corners of the tab, two pixels tall, sitting on the line that closes the bar.
+    let h = 2.0;
+    Some(metamind_ui::Cmd::Fill {
+        rect: metamind_ui::Rect::new(x + 5.0, n.rect.y + n.rect.h - h, (w - 10.0).max(8.0), h),
+        color: info.accent,
+        radius: 1.0,
+    })
 }
 
 /// Add the note's blocks `range` to `view` as `mode` shows them. Without `cursor` the lines
@@ -2215,6 +2303,14 @@ fn section_header(dom: &mut Dom, parent: NodeId, icon: &str, title: &str) {
     dom.add(header, El::div().class("nav-header-title").text(title));
 }
 
+/// A pane with nothing in it, said out loud: a faint icon and one line. Silence reads as a pane
+/// that failed to draw; a sentence reads as a state the reader can act on.
+fn empty_pane(dom: &mut Dom, parent: NodeId, icon: &str, text: impl Into<String>) {
+    let row = dom.add(parent, El::div().class("pane-empty"));
+    dom.add(row, icons::el(icon));
+    dom.add(row, El::div().class("pane-empty-text").text(text.into()));
+}
+
 /// Shown in the main pane when no note is open: what to do next, with the hotkeys.
 fn empty_state(app: &App, dom: &mut Dom, parent: NodeId) {
     let wrap = dom.add(parent, El::div().class("empty-state"));
@@ -2814,7 +2910,8 @@ fn overlays(app: &App, dom: &mut Dom, workspace: Option<NodeId>, viewport_h: f32
         let t = app.anims.t("prompt");
         let mut el = El::div().class("prompt");
         if t < 1.0 {
-            el = el.style(&format!("top: {:.1}px", 68.0 + 12.0 * t));
+            // Down and in: the box arrives from four pixels above, fading while it lands.
+            el = el.style(&format!("top: {:.1}px; opacity: {:.2}", 80.0 - 4.0 * (1.0 - t), 0.55 + 0.45 * t));
         }
         let modal = dom.add(0, el);
         let placeholder = match p.kind {
@@ -2844,7 +2941,7 @@ fn overlays(app: &App, dom: &mut Dom, workspace: Option<NodeId>, viewport_h: f32
             }),
         );
         dom.add(input, El::div().class("prompt-input").text(shown));
-        let results = dom.add(modal, El::div().class("prompt-results"));
+        let results = dom.add(modal, El::div().class("prompt-results").id("prompt-results"));
         for (i, item) in p.items.iter().enumerate() {
             let row = dom.add(
                 results,
@@ -2865,10 +2962,13 @@ fn overlays(app: &App, dom: &mut Dom, workspace: Option<NodeId>, viewport_h: f32
             if m.x + crate::menu::WIDTH > app.window_w { (m.x - crate::menu::WIDTH).max(0.0) } else { m.x };
         let y = if m.y + m.height() > viewport_h { (viewport_h - m.height()).max(0.0) } else { m.y };
         let t = app.anims.t("menu");
+        // Fen and up into place: four pixels of travel is enough to read as an entrance and not
+        // as a box that was always there. It ends exactly where the pointer asked for it.
         let el = El::div().class("menu").style(&format!(
-            "left: {x:.1}px; top: {:.1}px; width: {:.0}px",
+            "left: {x:.1}px; top: {:.1}px; width: {:.0}px; opacity: {:.2}",
             y - 4.0 * (1.0 - t),
-            crate::menu::WIDTH
+            crate::menu::WIDTH,
+            0.5 + 0.5 * t
         ));
         let menu = dom.add(0, el);
         for (i, item) in m.items.iter().enumerate() {
@@ -2898,7 +2998,9 @@ fn overlays(app: &App, dom: &mut Dom, workspace: Option<NodeId>, viewport_h: f32
         let info = app.plugins.no_port_notice.as_ref().is_some_and(|m| m == n);
         let mut el = El::div().class("notice").class_if(info, "mod-info").attr("role", "status");
         if t < 1.0 {
-            el = el.style(&format!("top: {:.1}px", 12.0 * t));
+            // The toast is anchored to the bottom of the window, so it rises: it starts ten
+            // pixels lower and fading, and lands on its own line above the status bar.
+            el = el.style(&format!("bottom: {:.1}px; opacity: {:.2}", 46.0 - 10.0 * (1.0 - t), 0.35 + 0.65 * t));
         }
         let toast = dom.add(0, el);
         dom.add(toast, icons::el(if info { "sparkles" } else { "warning" }));
@@ -2930,7 +3032,7 @@ pub const STATUS_BAR_H: f32 = 27.0;
 /// and notices show in the window whose pane has the keyboard.
 pub fn build(app: &App, viewport_h: f32, solo: Option<usize>) -> (Dom, ViewInfo) {
     let pal = palette(app);
-    let mut info = ViewInfo::default();
+    let mut info = ViewInfo { accent: pal.accent, ..ViewInfo::default() };
     let mut dom = Dom::new();
     dom.nodes[0].el.classes.push(if app.dark { "theme-dark" } else { "theme-light" }.to_string());
     // A window of its own shows the pane alone, with no status bar under it.
