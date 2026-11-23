@@ -1255,9 +1255,6 @@ pub fn pane(v: &ExcView, dom: &mut Dom, parent: NodeId, info: &mut crate::view::
         label.push_str(&skipped);
     }
     dom.add(header, El::div().class("graph-count").text(label));
-    for (label, cmd) in [("Ajustar", "exc:zoom-fit"), ("100%", "exc:zoom-reset")] {
-        dom.add(header, El::div().class("graph-control").text(label).action(cmd));
-    }
     // The full-screen button shows what it will do: maximize while the board is in its pane.
     let full =
         dom.add(header, El::div().class("graph-control exc-fullscreen-button").action("exc:fullscreen"));

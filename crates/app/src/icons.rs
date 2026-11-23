@@ -534,17 +534,20 @@ fn shape(name: &str) -> Shape {
         "chevron-right" => s.m(9.0, 18.0).l(15.0, 12.0).l(9.0, 6.0),
         // lucide `chevron-left`
         "chevron-left" => s.m(15.0, 18.0).l(9.0, 12.0).l(15.0, 6.0),
-        // lucide `eraser`
+        // lucide `eraser`, as a slanted block with its tray: at 16 px the outline has to read.
         "eraser" => s
-            .m(7.0, 21.0)
-            .l(3.0, 17.0)
-            .l(11.0, 9.0)
-            .l(19.0, 17.0)
-            .l(15.0, 21.0)
-            .l(7.0, 21.0)
+            .m(7.0, 20.0)
+            .l(3.0, 16.0)
+            .l(12.0, 7.0)
+            .l(18.0, 13.0)
+            .l(11.0, 20.0)
             .z()
-            .m(6.0, 12.0)
-            .l(11.0, 17.0),
+            .m(12.0, 7.0)
+            .l(15.0, 4.0)
+            .l(21.0, 10.0)
+            .l(18.0, 13.0)
+            .m(3.0, 22.0)
+            .l(21.0, 22.0),
         // lucide `chevron-down`
         "chevron-down" => s.m(6.0, 9.0).l(12.0, 15.0).l(18.0, 9.0),
         // lucide `arrow-left`

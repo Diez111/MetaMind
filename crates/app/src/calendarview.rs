@@ -166,6 +166,9 @@ pub fn pane(app: &crate::shell::App, dom: &mut Dom, parent: NodeId) -> NodeId {
     let body = dom.add(parent, El::div().class("view-content calview-body"));
     match view.mode {
         Mode::Month => month(&app.calendar, view, dom, body),
+        // Seven columns do not fit a phone: under this width the week is the list of its days,
+        // which is what a reader can actually use there.
+        Mode::Week if app.window_w < 560.0 => week_list(&app.calendar, view, dom, body),
         Mode::Week => week(&app.calendar, view, dom, body),
         Mode::Day => day(&app.calendar, view, dom, body),
         Mode::Agenda => agenda(&app.calendar, view, dom, body),
@@ -289,6 +292,47 @@ fn week(cal: &Calendar, view: &CalendarView, dom: &mut Dom, body: NodeId) {
                 None => String::new(),
             };
             dom.add(node, El::div().class("calview-event-text").text(format!("{clock}{}", row.title)));
+        }
+    }
+}
+
+/// The week as the list of its seven days: a phone cannot hold seven columns, and a list with the
+/// same events is what fits.
+fn week_list(cal: &Calendar, view: &CalendarView, dom: &mut Dom, body: NodeId) {
+    let start = week_start(view.selected);
+    let today = Calendar::today();
+    for i in 0..7 {
+        let day = start.add_days(i);
+        let (_, m, d) = day.ymd();
+        let month = MONTHS.get(m as usize - 1).copied().unwrap_or_default();
+        let head = dom.add(
+            body,
+            El::div()
+                .class("calview-agenda-day")
+                .class_if(day == today, "is-today")
+                .action(format!("calview:day:{}", day.index())),
+        );
+        dom.add(
+            head,
+            El::div().class("calview-agenda-title").text(format!("{} {d} de {month}", DAYS[i as usize])),
+        );
+        let rows: Vec<&Row> = cal.rows_on(day).collect();
+        if rows.is_empty() {
+            dom.add(body, El::div().class("calview-week-empty").text("Sin eventos"));
+            continue;
+        }
+        let list = dom.add(body, El::div().class("calview-agenda-rows"));
+        for row in rows {
+            let line = dom.add(list, El::div().class("calview-agenda-row").class(row.source.css()));
+            if let Some(hex) = row.color.as_deref().map(color_hex) {
+                dom.nodes[line].el.inline_style = Some(format!("border-left-color: {hex}"));
+            }
+            let clock = match row.minute {
+                Some(m) => format!("{:02}:{:02}", m / 60, m % 60),
+                None => "Todo el día".to_string(),
+            };
+            dom.add(line, El::div().class("calview-agenda-clock").text(clock));
+            dom.add(line, El::div().class("calview-agenda-text").text(row.title.clone()));
         }
     }
 }

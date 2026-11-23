@@ -1091,31 +1091,38 @@ fn day_panel(app: &crate::shell::App, dom: &mut Dom, parent: NodeId, today: Day,
     let head = dom.add(parent, El::div().class("calendar-day-head"));
     let (year, month, number) = day.ymd();
     let name = DAYS[day.weekday() as usize];
+    let name = &name[..name.len().min(3)];
     let month = MONTHS.get(month as usize - 1).copied().unwrap_or_default();
-    let suffix = if day == today { " · hoy" } else { "" };
+    let month = &month[..month.len().min(3)];
+    // Three letters each, and the year only when it is not this one: the sidebar is 250 px wide
+    // and "lunes 23 de noviembre de 2026" needed more than the panel has.
+    let same_year = today.ymd().0 == year;
+    let suffix = if !same_year { format!(" {year}") } else { String::new() };
+    let today_mark = if day == today { " · hoy" } else { "" };
     dom.add(
         head,
         El::div()
             .class("calendar-day-title")
             .id("calendar-day-title")
             .attr("data-day", &day.index().to_string())
-            .text(format!("{name} {number} de {month} de {year}{suffix}")),
+            .text(format!("{name} {number} {month}{suffix}{today_mark}")),
     );
+    // Icons, with their name in the accessibility tree: the date needs the room the two labels
+    // were taking in a 250 px sidebar.
     let add = dom.add(head, El::div().class("calendar-day-add").action("cal:new"));
     dom.add(add, icons::el("plus"));
-    dom.add(add, El::div().class("calendar-day-open-label").text("Evento"));
+    dom.nodes[add].el.attrs.push(("aria-label".into(), "Nuevo evento".into()));
     let open = dom.add(head, El::div().class("calendar-day-open").action("calendar:open-day-note"));
-    // The icon and the label are two boxes: the text of a box is painted at its origin, so an
-    // icon added next to it landed on top of the first letter.
-    dom.add(open, icons::el("note").class("calendar-day-open-icon"));
-    dom.add(open, El::div().class("calendar-day-open-label").text("Nota"));
+    dom.add(open, icons::el("note"));
+    dom.nodes[open].el.attrs.push(("aria-label".into(), "Abrir la nota del día".into()));
 
     let list = dom.add(parent, El::div().class("nav-files-container calendar-day-list").id("calendar-day"));
     let rows: Vec<&Row> = cal.rows_on(day).collect();
     let _ = viewport_h;
     if rows.is_empty() {
-        let empty = dom.add(list, El::div().class("pane-empty").text("Sin eventos este día."));
-        dom.add(empty, El::div().class("pane-empty-action").text("Crear evento").action("cal:new"));
+        let empty = dom.add(list, El::div().class("calendar-empty"));
+        dom.add(empty, El::div().class("calendar-empty-text").text("Sin eventos este día."));
+        dom.add(empty, El::div().class("calendar-empty-action").text("Crear evento").action("cal:new"));
     }
     for (at, row) in rows.iter().enumerate() {
         let open_detail = cal.detail == Some((day, at));
@@ -1553,7 +1560,7 @@ pub fn editor(app: &crate::shell::App, dom: &mut Dom) {
     dom.add(
         line,
         El::div()
-            .class("cal-when-text")
+            .class("cal-date")
             .class_if(form.day == today, "is-today")
             .text(format!("{name} {number} de {month} de {year}")),
     );
@@ -1583,7 +1590,7 @@ pub fn editor(app: &crate::shell::App, dom: &mut Dom) {
             dom.add(plus, icons::el("plus"));
         };
         clock(dom, form.start, "cal:step:start:15", "cal:step:start:-15");
-        dom.add(line, El::div().class("cal-when-text").text("a"));
+        dom.add(line, El::div().class("cal-clock-sep").text("a"));
         clock(dom, form.end, "cal:step:end:15", "cal:step:end:-15");
     }
 

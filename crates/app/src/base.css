@@ -1130,7 +1130,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .kanban-new-folder .svg-icon { width: 14px; height: 14px; color: var(--text-faint) }
 .kanban-new-path { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .kanban-new-templates { display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px }
-.kanban-new-template { flex-grow: 1; flex-basis: 150px; min-width: 140px; display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background-color: var(--background-primary) }
+.kanban-new-template { flex-grow: 1; flex-basis: 0; min-width: 130px; display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background-color: var(--background-primary) }
 .kanban-new-template:hover { border-color: var(--background-modifier-border-hover, var(--interactive-accent)) }
 .kanban-new-template.is-active { border-color: var(--interactive-accent); box-shadow: inset 0 0 0 1px var(--interactive-accent) }
 .kanban-new-cols { display: flex; flex-direction: row; gap: 3px; height: 34px; align-items: stretch }
@@ -1202,3 +1202,20 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .calview-agenda-row:hover { background-color: var(--background-modifier-hover) }
 .calview-agenda-clock { flex-shrink: 0; width: 76px; color: var(--text-faint); font-size: var(--font-ui-smaller) }
 .calview-agenda-text { min-width: 0; color: var(--text-normal); font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+
+/* The calendar's day panel: the empty state is a block with its own action, not a sentence with
+   a button printed over it. */
+.calendar-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px 4px }
+.calendar-empty-text { color: var(--text-faint); font-size: var(--font-ui-smaller) }
+.calendar-empty-action { padding: 3px 10px; border: 1px solid var(--rs-rule-strong); border-radius: var(--radius-s); color: var(--text-normal); font-size: var(--font-ui-smaller) }
+.calendar-empty-action:hover { background-color: var(--interactive-accent); border-color: var(--interactive-accent); color: var(--text-on-accent) }
+/* The month reads as a grid: the lines between cells carry the structure. */
+.calendar-cell { border-right-color: var(--rs-rule-strong); border-bottom-color: var(--rs-rule-strong) }
+.calendar-day-add, .calendar-day-open { width: 24px; height: 24px; justify-content: center; padding: 0; border-radius: var(--radius-s) }
+.calendar-day-add:hover, .calendar-day-open:hover { background-color: var(--background-modifier-hover); text-decoration: none }
+/* The clock row of the editor: the date grows between its arrows, the "a" does not. */
+.cal-date { flex-grow: 1; min-width: 0; color: var(--text-normal); font-size: var(--font-ui-small) }
+.cal-date.is-today { color: var(--text-accent) }
+.cal-clock-sep { flex-shrink: 0; color: var(--text-faint); font-size: var(--font-ui-smaller); padding: 0 2px }
+/* The week as a list, for a phone. */
+.calview-week-empty { color: var(--text-faint); font-size: var(--font-ui-smaller); padding: 0 6px 6px 6px }

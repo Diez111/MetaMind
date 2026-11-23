@@ -603,6 +603,8 @@ pub struct KanbanView {
     content: (f32, f32),
     /// The pane the last paint used.
     rect: Rect,
+    /// The least height a column takes: the pane's, so an empty board still reads as a board.
+    column_height: f32,
     pub selected: Option<u64>,
     editing: Option<Editing>,
     /// The board as text instead of as columns: the `<>` toggle.
@@ -652,6 +654,7 @@ impl KanbanView {
             scroll: (0.0, 0.0),
             content: (0.0, 0.0),
             rect: Rect::new(0.0, 0.0, 1.0, 1.0),
+            column_height: 0.0,
             selected: None,
             editing: None,
             show_source: false,
@@ -1264,6 +1267,9 @@ impl KanbanView {
     ) {
         self.clamp_scroll();
         let top = rect.y + EDGE - self.scroll.1;
+        // A column is at least as tall as the pane: three short cards floating over an empty
+        // board is what made the whole view read as empty.
+        self.column_height = (rect.h - 2.0 * EDGE).max(MIN_CARD_H);
         // A board narrower than the pane is centred: three columns pinned to the left edge of a
         // wide screen is what read as "todo chico y re vacío".
         let columns = self.board.columns.len() as f32;
@@ -1304,7 +1310,9 @@ impl KanbanView {
                 }
             }
             let add = Rect::new(x + INSET, y, COL_W - 2.0 * INSET, FOOT_H);
-            let height = if col.collapsed { HEAD_H } else { (add.y + add.h) - top };
+            // A folded column is its header and nothing else; an open one is at least as tall as
+            // the pane, so an empty board still reads as a board.
+            let height = if col.collapsed { HEAD_H } else { ((add.y + add.h) - top).max(self.column_height) };
             let rect_col = Rect::new(x, top, COL_W, height);
             bottom = bottom.max(top + height);
 

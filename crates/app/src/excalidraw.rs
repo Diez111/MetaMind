@@ -456,7 +456,9 @@ fn flipped(c: Rgba) -> Rgba {
     if (60.0..=195.0).contains(&luma) {
         return c;
     }
-    let keep = |v: u8| (f32::from(v) * 0.35).round().clamp(0.0, 255.0) as u8;
+    // A pastel fill is toned down, not thrown away: 0.35 turned `#a5d8ff` into a muddy navy on a
+    // dark page, which is not what the file says the shape looks like.
+    let keep = |v: u8| (f32::from(v) * 0.7).round().clamp(0.0, 255.0) as u8;
     if luma < 60.0 {
         Rgba { r: 255 - keep(c.r), g: 255 - keep(c.g), b: 255 - keep(c.b), a: c.a }
     } else {
