@@ -2,8 +2,9 @@
 //!
 //! Layout supports `display: flex|block|none`, `flex-direction`, `flex-grow`, `flex-shrink`,
 //! `flex-basis`, `width/height` (px, %, auto) with min/max, padding, margin, border, `gap`,
-//! `align-items`, `justify-content`, `position: absolute` with insets, and `overflow`.
-//! Not supported: grid, wrapping flex lines, floats, inline layout of mixed elements.
+//! `row-gap`/`column-gap`, `flex-wrap: wrap` on a row, `align-items`, `align-content`,
+//! `justify-content`, `position: absolute` with insets, and `overflow`.
+//! Not supported: grid, wraps in a column, floats, inline layout of mixed elements.
 
 use crate::scene::{Cmd, Rect, Scene};
 use crate::text::{Fonts, Span, TextStyle};
@@ -49,7 +50,12 @@ pub struct Style {
     pub background: Color,
     pub radius: f32,
     pub gap: f32,
+    /// Between lines of a wrapped row (`row-gap`). A `gap` shorthand sets both this and `gap`.
+    pub gap_cross: f32,
+    /// `flex-wrap: wrap` on a row. A column ignores it, as the browser does for a fixed height.
+    pub wrap: bool,
     pub align: Align,
+    pub align_content: Align,
     pub justify: Align,
     pub clip: bool,
     pub scroll: bool,
@@ -82,7 +88,10 @@ impl Default for Style {
             background: Color::TRANSPARENT,
             radius: 0.0,
             gap: 0.0,
+            gap_cross: 0.0,
+            wrap: false,
             align: Align::Stretch,
+            align_content: Align::Start,
             justify: Align::Start,
             clip: false,
             scroll: false,
@@ -103,6 +112,28 @@ impl Default for Style {
             opacity: 1.0,
         }
     }
+}
+
+/// The ranges of children that fit on each line of a wrapping row. A child wider than the whole
+/// line gets a line to itself, which is what a browser does: it is never cut in half to fit.
+fn break_lines(mains: &[f32], main_avail: f32, gap: f32) -> Vec<(usize, usize)> {
+    let mut lines = Vec::new();
+    let mut start = 0;
+    let mut used = 0.0f32;
+    for (i, &w) in mains.iter().enumerate() {
+        let add = if i == start { w } else { w + gap };
+        if i > start && main_avail.is_finite() && used + add > main_avail {
+            lines.push((start, i));
+            start = i;
+            used = w;
+        } else {
+            used += add;
+        }
+    }
+    if !mains.is_empty() {
+        lines.push((start, mains.len()));
+    }
+    lines
 }
 
 fn dim(c: &Computed, name: &str, cx: &LengthCx) -> Dim {
@@ -180,7 +211,19 @@ impl Style {
                 },
             )
             .unwrap_or(0.0),
+            gap_cross: len(
+                if display.contains("flex")
+                    && !c.get("flex-direction").is_some_and(|v| v.trim().starts_with("column"))
+                {
+                    "row-gap"
+                } else {
+                    "column-gap"
+                },
+            )
+            .unwrap_or(0.0),
+            wrap: c.get("flex-wrap").is_some_and(|v| v.trim().starts_with("wrap")),
             align: align(c.get("align-items"), Align::Stretch),
+            align_content: align(c.get("align-content"), Align::Start),
             justify: align(c.get("justify-content"), Align::Start),
             clip: ox != "visible" || oy != "visible",
             scroll: matches!(oy.as_str(), "auto" | "scroll"),
@@ -486,7 +529,12 @@ impl Dom {
             }
             if s.row {
                 w += gaps;
-                if avail.is_finite() && w > avail {
+                if s.wrap && avail.is_finite() {
+                    // A wrapping row is as tall as its lines, and as wide as its widest line.
+                    let (widest, total) = self.wrap_metrics(&kids, &preferred, avail, s);
+                    w = widest;
+                    h = total;
+                } else if avail.is_finite() && w > avail {
                     h = self.row_height(fonts, &kids, &preferred, avail, w);
                 }
             } else {
@@ -666,6 +714,16 @@ impl Dom {
             grow_total += cs.grow;
             sizes.push((cw, ch));
         }
+        // A wrapping row is laid out a line at a time, by `place_wrap`. It is a path of its own
+        // on purpose: the single-line path below is what every existing panel goes through, and
+        // changing it to also handle lines would risk a regression nobody sees until it is on
+        // screen. Absolute children are placed the same way by both.
+        if s.row && s.wrap {
+            let content_h = self.place_wrap(fonts, id, inner, &s, &kids, sizes, scroll);
+            self.nodes[id].content_h = content_h;
+            self.place_absolute(fonts, id, rect);
+            return;
+        }
         // Distribute free space (grow) or remove overflow (shrink).
         let definite_main = s.row || self.nodes[id].style.height != Dim::Auto || rect.h > 0.0;
         let free = main_avail - used;
@@ -775,13 +833,21 @@ impl Dom {
         } else {
             cursor - s.gap - between + s.padding[2]
         };
-        // Absolutely positioned children: relative to this node's padding box.
+        self.place_absolute(fonts, id, rect);
+    }
+
+    /// Lays out the absolutely positioned children against this node's padding box.
+    fn place_absolute(&mut self, fonts: &mut Fonts, id: NodeId, rect: Rect) {
+        let s = self.nodes[id].style.clone();
         let abs: Vec<NodeId> = self.nodes[id]
             .children
             .iter()
             .copied()
             .filter(|&c| self.nodes[c].style.absolute && !self.nodes[c].style.display_none)
             .collect();
+        if abs.is_empty() {
+            return;
+        }
         let pad = Rect::new(
             rect.x + s.border[3],
             rect.y + s.border[0],
@@ -818,6 +884,159 @@ impl Dom {
             };
             self.place(fonts, c, Rect::new(x, y, w, h));
         }
+    }
+
+    /// The width of the widest line and the total height of all lines of a wrapping row that is
+    /// laid out `avail` wide. Used to measure the row before it is placed, so a popover can size
+    /// itself to its wrapped content.
+    fn wrap_metrics(
+        &self,
+        kids: &[NodeId],
+        preferred: &[(f32, f32)],
+        avail: f32,
+        s: &Style,
+    ) -> (f32, f32) {
+        let mains: Vec<f32> = kids
+            .iter()
+            .zip(preferred)
+            .map(|(&c, &(cw, _))| {
+                let m = self.nodes[c].style.margin;
+                cw + m[1] + m[3]
+            })
+            .collect();
+        let lines = break_lines(&mains, avail, s.gap);
+        let mut widest = 0.0f32;
+        let mut total = 0.0f32;
+        for &(a, b) in &lines {
+            let w: f32 = mains[a..b].iter().sum::<f32>() + s.gap * (b - a).saturating_sub(1) as f32;
+            widest = widest.max(w);
+            let mut h = 0.0f32;
+            for i in a..b {
+                let m = self.nodes[kids[i]].style.margin;
+                h = h.max(preferred[i].1 + m[0] + m[2]);
+            }
+            total += h;
+        }
+        total += s.gap_cross * lines.len().saturating_sub(1) as f32;
+        (widest.min(avail), total)
+    }
+
+    /// Places the children of a wrapping row, one line at a time, and returns the height the
+    /// content takes (for a scrolling container). Each line grows and shrinks on its own, and the
+    /// lines are stacked with `row-gap` between them; `align-content` decides where the block of
+    /// lines sits when the container is taller than its content.
+    fn place_wrap(
+        &mut self,
+        fonts: &mut Fonts,
+        _id: NodeId,
+        inner: Rect,
+        s: &Style,
+        kids: &[NodeId],
+        mut sizes: Vec<(f32, f32)>,
+        scroll: f32,
+    ) -> f32 {
+        let main_avail = inner.w.max(0.0);
+        let mains: Vec<f32> = kids
+            .iter()
+            .zip(&sizes)
+            .map(|(&c, sz)| {
+                let m = self.nodes[c].style.margin;
+                sz.0 + m[1] + m[3]
+            })
+            .collect();
+        let lines = break_lines(&mains, main_avail, s.gap);
+        let mut heights: Vec<f32> = Vec::with_capacity(lines.len());
+        for &(a, b) in &lines {
+            let mut h = 0.0f32;
+            for i in a..b {
+                let m = self.nodes[kids[i]].style.margin;
+                h = h.max(sizes[i].1 + m[0] + m[2]);
+            }
+            heights.push(h);
+        }
+        let total_h = heights.iter().sum::<f32>()
+            + s.gap_cross * lines.len().saturating_sub(1) as f32;
+        let cross_free = (inner.h - total_h).max(0.0);
+        let (mut y, line_extra) = match s.align_content {
+            Align::Center => (cross_free / 2.0, 0.0),
+            Align::End => (cross_free, 0.0),
+            Align::SpaceBetween if lines.len() > 1 => (0.0, cross_free / (lines.len() - 1) as f32),
+            _ => (0.0, 0.0),
+        };
+        for (li, &(a, b)) in lines.iter().enumerate() {
+            let line_h = heights[li];
+            let n = b - a;
+            let gaps = s.gap * n.saturating_sub(1) as f32;
+            let mut used = gaps;
+            for i in a..b {
+                used += mains[i];
+            }
+            let free = main_avail - used;
+            if free > 0.0 {
+                let grow_total: f32 = (a..b).map(|i| self.nodes[kids[i]].style.grow).sum();
+                if grow_total > 0.0 {
+                    for i in a..b {
+                        let g = self.nodes[kids[i]].style.grow;
+                        if g > 0.0 {
+                            sizes[i].0 += free * g / grow_total;
+                        }
+                    }
+                }
+            } else if free < 0.0 {
+                let shrinkable: Vec<usize> = (a..b)
+                    .filter(|&i| {
+                        let cs = &self.nodes[kids[i]].style;
+                        cs.shrink > 0.0
+                            && !matches!(cs.width, Dim::Px(_))
+                            && (cs.grow > 0.0 || cs.clip)
+                    })
+                    .collect();
+                let total: f32 = shrinkable.iter().map(|&i| sizes[i].0).sum();
+                if total > 0.0 {
+                    for &i in &shrinkable {
+                        sizes[i].0 = (sizes[i].0 + free * sizes[i].0 / total).max(0.0);
+                    }
+                }
+            }
+            let used: f32 = gaps
+                + (a..b)
+                    .map(|i| {
+                        let m = self.nodes[kids[i]].style.margin;
+                        sizes[i].0 + m[1] + m[3]
+                    })
+                    .sum::<f32>();
+            let leftover = (main_avail - used).max(0.0);
+            let (mut cursor, between) = match s.justify {
+                Align::Center => (leftover / 2.0, 0.0),
+                Align::End => (leftover, 0.0),
+                Align::SpaceBetween if n > 1 => (0.0, leftover / (n - 1) as f32),
+                _ => (0.0, 0.0),
+            };
+            for i in a..b {
+                let c = kids[i];
+                let cs = self.nodes[c].style.clone();
+                let m = cs.margin;
+                let (cw, mut ch) = sizes[i];
+                if self.nodes[c].el.text.is_some() {
+                    ch = ch.max(self.height_at(fonts, c, cw));
+                }
+                let cross = (line_h - m[0] - m[2]).max(0.0);
+                let dy = match s.align {
+                    Align::Stretch if cs.height == Dim::Auto => {
+                        ch = cross.clamp(cs.min_h, cs.max_h);
+                        0.0
+                    }
+                    Align::Center => (cross - ch) / 2.0,
+                    Align::End => cross - ch,
+                    _ => 0.0,
+                };
+                let r = Rect::new(inner.x + cursor + m[3], inner.y + y + m[0] + dy - scroll, cw, ch);
+                cursor += cw + m[1] + m[3] + s.gap + between;
+                self.place(fonts, c, r);
+            }
+            y += line_h + s.gap_cross + line_extra;
+        }
+        total_h + s.padding[0] + s.padding[2]
     }
 
     fn content_box(&self, id: NodeId) -> Rect {

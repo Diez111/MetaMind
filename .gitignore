@@ -4,3 +4,5 @@
 *.snap.new
 /perf-vaults
 .metamind/
+/.dream-rsi*/
+/.taskman/
