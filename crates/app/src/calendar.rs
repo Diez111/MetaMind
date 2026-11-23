@@ -12,6 +12,7 @@
 //! error type of the HTTP client.
 
 use crate::icons;
+use calendar_core::local::{color_hex, Owned, OwnedEvent, NAMED_COLORS};
 use calendar_core::{Calendar as Ics, Day, Occurrence};
 use metamind_ui::{Dom, El, NodeId};
 use serde_json::{json, Value};
@@ -20,6 +21,9 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
 use std::time::Duration;
 use vault_core::{fsio, path, VaultStore};
+
+/// The events the user writes, under the vault. Read and written atomically by `calendar-core`.
+pub const OWNED_JSON: &str = ".metamind/calendar/events.json";
 
 /// The cached body and its validators, under the vault.
 const CACHE_ICS: &str = ".metamind/cache/calendar.ics";
@@ -37,6 +41,8 @@ const TASK_BATCH: usize = 1500;
 pub enum Source {
     Google,
     Vault,
+    /// An event the user wrote, in the vault's own `events.json`.
+    Owned,
     Tasks,
 }
 
@@ -45,6 +51,7 @@ impl Source {
         match self {
             Source::Google => "Google",
             Source::Vault => "Bóveda",
+            Source::Owned => "Propios",
             Source::Tasks => "Tareas",
         }
     }
@@ -53,6 +60,7 @@ impl Source {
         match self {
             Source::Google => "calendar-source-google",
             Source::Vault => "calendar-source-vault",
+            Source::Owned => "calendar-source-owned",
             Source::Tasks => "calendar-source-tasks",
         }
     }
@@ -71,6 +79,8 @@ pub struct Row {
     /// The note to open when the row is clicked (a task line, or the `.ics` file of the vault).
     pub note: String,
     pub uid: String,
+    /// The colour an event the user wrote carries, as a palette id or `#rrggbb`.
+    pub color: Option<String>,
 }
 
 /// A task line of a note: `- [ ] Llamar @{2025-09-16}`.
@@ -117,6 +127,11 @@ pub struct Calendar {
     pub desc_open: bool,
     /// The events of the visible weeks plus the selected day, ready to draw.
     pub rows: Vec<Row>,
+    /// The events the user wrote, and why the file could not be read when it could not.
+    pub owned: Owned,
+    pub owned_note: Option<String>,
+    /// The event being written, when the editor is open.
+    pub form: Option<Form>,
     /// Why the last fetch failed, in words that never carry the URL.
     pub error: Option<String>,
     /// When the cached body was last confirmed by the server.
@@ -150,9 +165,13 @@ impl Calendar {
     pub fn new(root: &Path, url: &str) -> Calendar {
         let (y, m, d, ..) = crate::datetime::local(fsio::now_ms() / 1000);
         let today = Day::from_ymd(y as i32, m, d).unwrap_or(Day::from_index(0));
+        let (owned, owned_note) = Owned::load(&root.join(OWNED_JSON));
         let mut cal = Calendar {
             month: today.month_start(),
             selected: today,
+            owned,
+            owned_note,
+            form: None,
             detail: None,
             desc_open: false,
             rows: Vec::new(),
@@ -390,6 +409,22 @@ impl Calendar {
                 rows_of(&cal, Source::Vault, &file.path, from, to, &mut rows);
             }
         }
+        // The events the user wrote come first: they are the ones the app can edit, and a row of
+        // theirs must be the one on top of a Google event with the same id.
+        for (index, occ) in self.owned.expand(from, to) {
+            let Some(ev) = self.owned.events.get(index) else { continue };
+            rows.push(Row {
+                day: occ.start.day,
+                minute: occ.start.minute,
+                title: if ev.title.trim().is_empty() { "(sin título)".to_string() } else { ev.title.clone() },
+                location: ev.location.clone(),
+                description: ev.description.clone(),
+                source: Source::Owned,
+                note: ev.note.clone().unwrap_or_default(),
+                uid: ev.id.clone(),
+                color: Some(ev.color.clone()),
+            });
+        }
         for (note, tasks) in &self.tasks {
             for task in tasks {
                 if task.day < from || task.day > to {
@@ -404,6 +439,7 @@ impl Calendar {
                     source: Source::Tasks,
                     note: note.clone(),
                     uid: format!("task:{note}:{}", task.title),
+                    color: None,
                 });
             }
         }
@@ -446,7 +482,23 @@ impl Calendar {
         self.dirty = true;
     }
 
+    /// Pick a day. The month only follows when the day is outside the six weeks on screen: a
+    /// click on a cell must not move the grid under the pointer.
     pub fn select(&mut self, day: Day) {
+        if self.selected == day {
+            return;
+        }
+        self.selected = day;
+        let start = grid_start(self.month);
+        if day < start || day > start.add_days(41) {
+            self.month = day.month_start();
+        }
+        self.detail = None;
+        self.dirty = true;
+    }
+
+    /// Pick a day and show its month, which is what "Hoy" and the week view do.
+    pub fn select_in_month(&mut self, day: Day) {
         self.selected = day;
         self.month = day.month_start();
         self.detail = None;
@@ -489,6 +541,7 @@ fn rows_of(cal: &Ics, source: Source, note: &str, from: Day, to: Day, out: &mut 
             source,
             note: note.to_string(),
             uid: ev.uid.clone(),
+            color: None,
         });
     }
 }
@@ -761,13 +814,83 @@ impl crate::shell::App {
             }
             return true;
         }
+        // The editor: every command below belongs to the form, and leaves it as it was when it
+        // has nothing to do.
+        if let Some(rest) = command.strip_prefix("cal:field:") {
+            if let (Ok(index), Some(form)) = (rest.parse::<usize>(), &mut self.calendar.form) {
+                form.field = index.min(FIELDS - 1);
+            }
+            return true;
+        }
+        if let Some(rest) = command.strip_prefix("cal:color:") {
+            if let Some(form) = &mut self.calendar.form {
+                if calendar_core::local::valid_color(rest) {
+                    form.color = rest.to_string();
+                }
+            }
+            return true;
+        }
+        if let Some(rest) = command.strip_prefix("cal:stepday:") {
+            if let (Ok(delta), Some(form)) = (rest.parse::<i32>(), &mut self.calendar.form) {
+                form.day = form.day.add_days(delta.clamp(-366, 366));
+            }
+            return true;
+        }
+        if let Some(rest) = command.strip_prefix("cal:step:") {
+            let mut parts = rest.split(':');
+            let which = parts.next().unwrap_or_default();
+            let delta = parts.next().and_then(|d| d.parse::<i32>().ok()).unwrap_or(0);
+            if let Some(form) = &mut self.calendar.form {
+                let step = |value: u16, delta: i32| -> u16 {
+                    let v = i32::from(value) + delta;
+                    v.clamp(0, i32::from(24 * 60 - 1)) as u16
+                };
+                match which {
+                    "start" => {
+                        form.start = step(form.start, delta);
+                        if form.end < form.start {
+                            form.end = form.start;
+                        }
+                    }
+                    "end" => form.end = step(form.end, delta),
+                    _ => {}
+                }
+            }
+            return true;
+        }
+        if let Some(rest) = command.strip_prefix("cal:edit:") {
+            if !self.calendar.edit_form(rest) {
+                // Not one of ours: the detail of a read-only event is all there is to show.
+                if let Some(row) = self.calendar.rows.iter().find(|r| r.uid == rest) {
+                    let (day, at) = (row.day, 0);
+                    self.calendar.detail = Some((day, at));
+                }
+            }
+            return true;
+        }
         if let Some(rest) = command.strip_prefix("cal:event:") {
             let mut parts = rest.split(':');
             if let (Some(day), Some(at)) = (parts.next(), parts.next()) {
                 if let (Ok(day), Ok(at)) = (day.parse::<i32>(), at.parse::<usize>()) {
-                    let key = (Day::from_index(day), at);
-                    self.calendar.detail = (self.calendar.detail != Some(key)).then_some(key);
-                    self.calendar.desc_open = false;
+                    let day = Day::from_index(day);
+                    // An event of ours opens its editor; one that comes from an `.ics` file has
+                    // nothing to edit and shows its detail instead.
+                    let owned = self
+                        .calendar
+                        .rows_on(day)
+                        .nth(at)
+                        .filter(|r| r.source == Source::Owned)
+                        .map(|r| r.uid.clone());
+                    match owned {
+                        Some(uid) => {
+                            self.calendar.edit_form(&uid);
+                        }
+                        None => {
+                            let key = (day, at);
+                            self.calendar.detail = (self.calendar.detail != Some(key)).then_some(key);
+                            self.calendar.desc_open = false;
+                        }
+                    }
                 }
             }
             return true;
@@ -785,6 +908,20 @@ impl crate::shell::App {
         let root = self.store.root.clone();
         let url = self.config.app.str("cal.ical_url").unwrap_or_default().to_string();
         match command {
+            "cal:none" => {}
+            "cal:new" | "cal:today-new" => {
+                self.calendar.new_form(self.calendar.selected);
+            }
+            "cal:save" => self.save_form(),
+            "cal:cancel" => {
+                self.calendar.form = None;
+            }
+            "cal:del" => self.delete_form_event(),
+            "cal:allday" => {
+                if let Some(form) = &mut self.calendar.form {
+                    form.all_day = !form.all_day;
+                }
+            }
             "calendar:open" => {
                 // The bottom navigation of a compact window follows the destination.
                 self.nav_go(2.0);
@@ -814,7 +951,7 @@ impl crate::shell::App {
                 self.focus = crate::shell::Focus::Calendar;
             }
             "cal:today" => {
-                self.calendar.select(Calendar::today());
+                self.calendar.select_in_month(Calendar::today());
                 self.focus = crate::shell::Focus::Calendar;
             }
             "cal:desc" => self.calendar.desc_open = !self.calendar.desc_open,
@@ -847,6 +984,9 @@ pub const PANE_MIN_GRID: f32 = 210.0;
 
 /// Events drawn in one cell before the rest is counted as "+N".
 const DOTS_PER_CELL: usize = 4;
+/// Chips (`09:30 Título`) drawn in one cell before the rest is counted: a chip is three lines
+/// tall, and a cell that showed ten would leave no room for its own number.
+const CHIPS_PER_CELL: usize = 3;
 
 /// The calendar pane of the left sidebar: the month (or, in a narrow sidebar, the selected day),
 /// and under it the events of the selected day.
@@ -888,51 +1028,75 @@ pub fn panel(app: &crate::shell::App, dom: &mut Dom, parent: NodeId, viewport_h:
 
     let today = Calendar::today();
     if app.left_w >= PANE_MIN_GRID {
-        grid(cal, dom, parent, today);
+        grid(cal, dom, parent, today, app.left_w);
     }
     day_panel(app, dom, parent, today, viewport_h);
 }
 
-/// The six weeks of the month, a row of weekday labels above them.
-fn grid(cal: &Calendar, dom: &mut Dom, parent: NodeId, today: Day) {
+/// The six weeks of the month, a row of weekday labels above them. The cells share their borders
+/// —one frame around the block, a line between cells— so the month reads as a calendar and not as
+/// twenty-eight separate chips.
+fn grid(cal: &Calendar, dom: &mut Dom, parent: NodeId, today: Day, width: f32) {
     let labels = dom.add(parent, El::div().class("calendar-weekdays"));
     for name in WEEKDAYS {
         dom.add(labels, El::div().class("calendar-weekday").text(name));
     }
     let body = dom.add(parent, El::div().class("calendar-grid"));
     let start = grid_start(cal.month);
+    // A cell narrower than this cannot hold `09:30 Título`: there the day shows dots instead.
+    let cell_w = (width - 16.0 - 2.0) / 7.0;
+    let chips = cell_w >= 46.0;
     for week in 0..6 {
         let row = dom.add(body, El::div().class("calendar-row"));
         for weekday in 0..7 {
             let day = start.add_days(week * 7 + weekday);
-            let classes = "calendar-cell";
             let cell = dom.add(
                 row,
                 El::div()
-                    .class(classes)
+                    .class("calendar-cell")
                     .class_if(day.month_start() != cal.month, "is-other-month")
                     .class_if(day == today, "is-today")
                     .class_if(day == cal.selected, "is-selected")
                     .action(format!("cal:day:{}", day.index())),
             );
             let (_, _, number) = day.ymd();
-            dom.add(cell, El::div().class("calendar-day-num").text(number.to_string()));
-            let count = cal.count_on(day);
-            if count > 0 {
-                let marks = dom.add(cell, El::div().class("calendar-marks"));
-                for row in cal.rows_on(day).take(DOTS_PER_CELL) {
+            let head = dom.add(cell, El::div().class("calendar-day-head"));
+            dom.add(head, El::div().class("calendar-day-num").text(number.to_string()));
+            let rows: Vec<&Row> = cal.rows_on(day).collect();
+            if chips && !rows.is_empty() {
+                let list = dom.add(cell, El::div().class("calendar-chips"));
+                for row in rows.iter().take(CHIPS_PER_CELL) {
+                    let color = row.color.as_deref().map(color_hex);
+                    let chip = dom.add(list, El::div().class("calendar-chip").class(row.source.css()));
+                    if let Some(hex) = &color {
+                        dom.nodes[chip].el.inline_style =
+                            Some(format!("background-color: {}1f; border-left-color: {hex}", hex));
+                    }
+                    let clock = match row.minute {
+                        Some(m) => format!("{:02}:{:02} ", m / 60, m % 60),
+                        None => String::new(),
+                    };
+                    dom.add(chip, El::div().class("calendar-chip-text").text(format!("{clock}{}", row.title)));
+                }
+                if rows.len() > CHIPS_PER_CELL {
                     dom.add(
-                        marks,
-                        El::div()
-                            .class("calendar-dot")
-                            .class(row.source.css())
-                            .attr("aria-label", row.title.as_str()),
+                        list,
+                        El::div().class("calendar-more").text(format!("+{}", rows.len() - CHIPS_PER_CELL)),
                     );
                 }
-                if count > DOTS_PER_CELL {
+            } else if !rows.is_empty() {
+                let marks = dom.add(cell, El::div().class("calendar-marks"));
+                for row in rows.iter().take(DOTS_PER_CELL) {
+                    let dot = dom.add(marks, El::div().class("calendar-dot").class(row.source.css()));
+                    dom.nodes[dot].el.attrs.push(("aria-label".into(), row.title.clone()));
+                    if let Some(hex) = row.color.as_deref().map(color_hex) {
+                        dom.nodes[dot].el.inline_style = Some(format!("background-color: {hex}"));
+                    }
+                }
+                if rows.len() > DOTS_PER_CELL {
                     dom.add(
                         marks,
-                        El::div().class("calendar-more").text(format!("+{}", count - DOTS_PER_CELL)),
+                        El::div().class("calendar-more").text(format!("+{}", rows.len() - DOTS_PER_CELL)),
                     );
                 }
             }
@@ -951,19 +1115,27 @@ fn day_panel(app: &crate::shell::App, dom: &mut Dom, parent: NodeId, today: Day,
     let suffix = if day == today { " · hoy" } else { "" };
     dom.add(
         head,
-        El::div().class("calendar-day-title").text(format!("{name} {number} de {month} de {year}{suffix}")),
+        El::div()
+            .class("calendar-day-title")
+            .id("calendar-day-title")
+            .attr("data-day", &day.index().to_string())
+            .text(format!("{name} {number} de {month} de {year}{suffix}")),
     );
+    let add = dom.add(head, El::div().class("calendar-day-add").action("cal:new"));
+    dom.add(add, icons::el("plus"));
+    dom.add(add, El::div().class("calendar-day-open-label").text("Evento"));
     let open = dom.add(head, El::div().class("calendar-day-open").action("calendar:open-day-note"));
     // The icon and the label are two boxes: the text of a box is painted at its origin, so an
     // icon added next to it landed on top of the first letter.
     dom.add(open, icons::el("note").class("calendar-day-open-icon"));
-    dom.add(open, El::div().class("calendar-day-open-label").text("Abrir nota"));
+    dom.add(open, El::div().class("calendar-day-open-label").text("Nota"));
 
     let list = dom.add(parent, El::div().class("nav-files-container calendar-day-list").id("calendar-day"));
     let rows: Vec<&Row> = cal.rows_on(day).collect();
     let _ = viewport_h;
     if rows.is_empty() {
-        dom.add(list, El::div().class("pane-empty").text("Sin eventos este día."));
+        let empty = dom.add(list, El::div().class("pane-empty").text("Sin eventos este día."));
+        dom.add(empty, El::div().class("pane-empty-action").text("Crear evento").action("cal:new"));
     }
     for (at, row) in rows.iter().enumerate() {
         let open_detail = cal.detail == Some((day, at));
@@ -975,6 +1147,9 @@ fn day_panel(app: &crate::shell::App, dom: &mut Dom, parent: NodeId, today: Day,
                 .class_if(open_detail, "is-open")
                 .action(format!("cal:event:{}:{}", day.index(), at)),
         );
+        if let Some(hex) = row.color.as_deref().map(color_hex) {
+            dom.nodes[line].el.inline_style = Some(format!("border-left-color: {hex}"));
+        }
         let clock = match row.minute {
             Some(minute) => format!("{:02}:{:02}", minute / 60, minute % 60),
             None => "Todo el día".to_string(),
@@ -1030,7 +1205,16 @@ fn detail(dom: &mut Dom, parent: NodeId, row: &Row, desc_open: bool) {
     let source = dom.add(box_, El::div().class("calendar-detail-source"));
     dom.add(source, El::div().class("calendar-dot").class(row.source.css()));
     dom.add(source, El::div().class("calendar-detail-text").text(format!("Origen: {}", row.source.label())));
-    if row.source != Source::Google {
+    if row.source == Source::Owned {
+        dom.add(
+            box_,
+            El::div()
+                .class("calendar-detail-open")
+                .text("Editar evento")
+                .action(format!("cal:edit:{}", row.uid)),
+        );
+    }
+    if row.source != Source::Google && row.source != Source::Owned && !row.note.is_empty() {
         dom.add(
             box_,
             El::div()
@@ -1043,7 +1227,7 @@ fn detail(dom: &mut Dom, parent: NodeId, row: &Row, desc_open: bool) {
         dom.add(
             box_,
             El::div().class("calendar-readonly").text(
-                "Los eventos de Google son de solo lectura: MetMind los muestra desde la dirección iCal.",
+                "Los eventos de Google son de solo lectura: MetaMind los muestra desde la dirección iCal.",
             ),
         );
     }
@@ -1192,5 +1376,383 @@ mod tests {
         assert_eq!(grid_start(october), Day::from_ymd(2025, 9, 29).expect("existe"));
         // Six weeks always fit a month.
         assert!(grid_start(october).add_days(41) >= Day::from_ymd(2025, 10, 31).expect("existe"));
+    }
+}
+
+// ---- the event editor ----
+
+/// The event being written, with the field the keyboard is in.
+///
+/// The form is a value of its own so the modal can be drawn from it and the save can be tested
+/// without a window: `to_event` is where the rules live (an end before the start is a mistake, an
+/// empty title is not).
+#[derive(Clone, PartialEq, Debug)]
+pub struct Form {
+    /// The event being edited; `None` while a new one is being written.
+    pub id: Option<String>,
+    pub title: String,
+    pub location: String,
+    pub description: String,
+    pub day: Day,
+    pub all_day: bool,
+    /// Minutes after midnight. Ignored while `all_day`.
+    pub start: u16,
+    pub end: u16,
+    pub color: String,
+    /// 0 title, 1 location, 2 description: where a letter goes.
+    pub field: usize,
+    pub error: Option<String>,
+    /// The event as it was when the form opened, so a save can be undone from the notice.
+    pub before: Option<OwnedEvent>,
+    /// The delete was asked for once: the second press does it.
+    pub confirm_delete: bool,
+}
+
+/// How many text fields the form has.
+pub const FIELDS: usize = 3;
+
+impl Form {
+    /// A new event on `day`, at the next quarter of an hour.
+    pub fn new(day: Day, now_minute: u16) -> Form {
+        let start = (now_minute / 15 + 1) * 15;
+        let start = if start >= 23 * 60 { 9 * 60 } else { start };
+        Form {
+            id: None,
+            title: String::new(),
+            location: String::new(),
+            description: String::new(),
+            day,
+            all_day: false,
+            start,
+            end: (start + 60).min(24 * 60 - 1),
+            color: NAMED_COLORS[0].to_string(),
+            field: 0,
+            error: None,
+            before: None,
+            confirm_delete: false,
+        }
+    }
+
+    /// The form that edits `ev`.
+    pub fn from_event(ev: &OwnedEvent) -> Form {
+        Form {
+            id: Some(ev.id.clone()),
+            title: ev.title.clone(),
+            location: ev.location.clone(),
+            description: ev.description.clone(),
+            day: ev.day,
+            all_day: ev.is_all_day(),
+            start: ev.start_minute.unwrap_or(9 * 60),
+            end: ev.end_minute.unwrap_or(10 * 60).max(ev.start_minute.unwrap_or(9 * 60)),
+            color: ev.color.clone(),
+            field: 0,
+            error: None,
+            before: Some(ev.clone()),
+            confirm_delete: false,
+        }
+    }
+
+    /// The text of the field the keyboard is in.
+    pub fn active(&self) -> &str {
+        match self.field {
+            1 => &self.location,
+            2 => &self.description,
+            _ => &self.title,
+        }
+    }
+
+    pub fn active_mut(&mut self) -> &mut String {
+        match self.field {
+            1 => &mut self.location,
+            2 => &mut self.description,
+            _ => &mut self.title,
+        }
+    }
+
+    /// The event this form describes, or why it cannot be one yet.
+    pub fn to_event(&self, now_ms: u64) -> Result<OwnedEvent, String> {
+        let title = self.title.trim();
+        if title.is_empty() {
+            return Err("Poné un título: es lo que se ve en la grilla.".to_string());
+        }
+        if !self.all_day && self.end < self.start {
+            return Err("La hora de fin es anterior a la de inicio.".to_string());
+        }
+        let mut ev = OwnedEvent::all_day(title, self.day, &self.color);
+        ev.id = self.id.clone().unwrap_or_default();
+        ev.location = self.location.trim().to_string();
+        ev.description = self.description.trim().to_string();
+        ev.color = if calendar_core::local::valid_color(&self.color) {
+            self.color.clone()
+        } else {
+            NAMED_COLORS[0].to_string()
+        };
+        if !self.all_day {
+            ev.start_minute = Some(self.start);
+            ev.end_minute = Some(self.end.max(self.start));
+        }
+        ev.updated_ms = now_ms;
+        ev.created_ms = now_ms;
+        Ok(ev)
+    }
+
+    /// `09:30`, or `Todo el día`.
+    pub fn when(&self) -> String {
+        if self.all_day {
+            return "Todo el día".to_string();
+        }
+        format!("{:02}:{:02}–{:02}:{:02}", self.start / 60, self.start % 60, self.end / 60, self.end % 60)
+    }
+}
+
+impl Calendar {
+    /// Open the editor on a new event for `day`.
+    pub fn new_form(&mut self, day: Day) {
+        let (_, _, _, h, m, _, _) = crate::datetime::local(fsio::now_ms() / 1000);
+        self.form = Some(Form::new(day, h as u16 * 60 + m as u16));
+    }
+
+    /// Open the editor on the event `uid`, when it is one the app can edit.
+    pub fn edit_form(&mut self, uid: &str) -> bool {
+        let Some(ev) = self.owned.events.iter().find(|e| e.id == uid) else { return false };
+        self.form = Some(Form::from_event(ev));
+        true
+    }
+}
+
+/// The editor over the window: a small card with the event in it.
+pub fn editor(app: &crate::shell::App, dom: &mut Dom) {
+    let Some(form) = &app.calendar.form else { return };
+    let backdrop = dom.add(0, El::div().class("modal-container mod-dim cal-modal").action("cal:cancel"));
+    let card = dom.add(backdrop, El::div().class("cal-form").action("cal:none"));
+    let head = dom.add(card, El::div().class("cal-form-head"));
+    dom.add(
+        head,
+        El::div().class("cal-form-title").text(if form.id.is_some() { "Editar evento" } else { "Nuevo evento" }),
+    );
+    let close = dom.add(head, El::div().class("clickable-icon").action("cal:cancel"));
+    dom.add(close, icons::el("x"));
+
+    let field = |dom: &mut Dom, index: usize, label: &str, text: &str, placeholder: &str, multi: bool| {
+        let row = dom.add(card, El::div().class("cal-field"));
+        dom.add(row, El::div().class("cal-field-label").text(label));
+        let input = dom.add(
+            row,
+            El::div()
+                .class("cal-input")
+                .class_if(form.field == index, "is-focus")
+                .class_if(multi, "is-multi")
+                .action(format!("cal:field:{index}")),
+        );
+        if text.is_empty() {
+            dom.add(input, El::div().class("cal-placeholder").text(placeholder));
+        } else {
+            dom.add(input, El::div().class("cal-input-text").text(text.to_string()));
+        }
+    };
+    field(dom, 0, "Título", &form.title, "Qué pasa ese día", false);
+
+    let when = dom.add(card, El::div().class("cal-field"));
+    dom.add(when, El::div().class("cal-field-label").text("Cuándo"));
+    let line = dom.add(when, El::div().class("cal-when"));
+    let step = |dom: &mut Dom, text: &str, action: &str| {
+        dom.add(line, El::div().class("cal-step").text(text.to_string()).action(action.to_string()));
+    };
+    step(dom, "‹", "cal:stepday:-1");
+    let (year, month, number) = form.day.ymd();
+    let name = DAYS[form.day.weekday() as usize];
+    let month = MONTHS.get(month as usize - 1).copied().unwrap_or_default();
+    dom.add(line, El::div().class("cal-when-text").text(format!("{name} {number} de {month} de {year}")));
+    step(dom, "›", "cal:stepday:1");
+
+    let all_day = dom.add(card, El::div().class("cal-field cal-field-row"));
+    dom.add(all_day, El::div().class("cal-field-label").text("Todo el día"));
+    dom.add(
+        all_day,
+        El::div()
+            .class("cal-toggle")
+            .class_if(form.all_day, "is-on")
+            .action("cal:allday")
+            .attr("aria-label", "Todo el día"),
+    );
+
+    if !form.all_day {
+        let times = dom.add(card, El::div().class("cal-field"));
+        dom.add(times, El::div().class("cal-field-label").text("Horario"));
+        let line = dom.add(times, El::div().class("cal-when"));
+        let clock = |dom: &mut Dom, minute: u16, up: &str, down: &str| {
+            let group = dom.add(line, El::div().class("cal-clock"));
+            dom.add(group, El::div().class("cal-step").text("–").action(down.to_string()));
+            dom.add(
+                group,
+                El::div().class("cal-clock-text").text(format!("{:02}:{:02}", minute / 60, minute % 60)),
+            );
+            dom.add(group, El::div().class("cal-step").text("+").action(up.to_string()));
+        };
+        clock(dom, form.start, "cal:step:start:15", "cal:step:start:-15");
+        dom.add(line, El::div().class("cal-when-text").text("a"));
+        clock(dom, form.end, "cal:step:end:15", "cal:step:end:-15");
+    }
+
+    let colors = dom.add(card, El::div().class("cal-field"));
+    dom.add(colors, El::div().class("cal-field-label").text("Color"));
+    let row = dom.add(colors, El::div().class("cal-colors"));
+    for name in NAMED_COLORS {
+        let on = form.color == name;
+        let hex = color_hex(name);
+        dom.add(
+            row,
+            El::div()
+                .class("cal-color")
+                .class_if(on, "is-active")
+                .style(&format!("background-color: {hex}"))
+                .action(format!("cal:color:{name}"))
+                .attr("aria-label", calendar_core::local::color_label(name)),
+        );
+    }
+
+    field(dom, 1, "Lugar", &form.location, "Aula, dirección, enlace", false);
+    field(dom, 2, "Notas", &form.description, "Detalles del evento", true);
+
+    if let Some(error) = &form.error {
+        dom.add(card, El::div().class("cal-error").text(error.clone()));
+    }
+    let actions = dom.add(card, El::div().class("cal-actions"));
+    let save = dom.add(actions, El::div().class("cal-button mod-cta").action("cal:save"));
+    dom.add(save, El::div().text("Guardar"));
+    let cancel = dom.add(actions, El::div().class("cal-button").action("cal:cancel"));
+    dom.add(cancel, El::div().text("Cancelar"));
+    if form.id.is_some() {
+        let delete = dom.add(
+            actions,
+            El::div()
+                .class("cal-button cal-button-danger")
+                .class_if(form.confirm_delete, "is-confirming")
+                .action("cal:del"),
+        );
+        dom.add(
+            delete,
+            El::div().text(if form.confirm_delete { "¿Borrar? Sí" } else { "Borrar" }),
+        );
+    }
+}
+
+impl crate::shell::App {
+    /// Write the event the editor is showing, and say so when it cannot be written.
+    fn save_form(&mut self) {
+        let root = self.store.root.clone();
+        let now = fsio::now_ms();
+        let Some(form) = self.calendar.form.clone() else { return };
+        let mut ev = match form.to_event(now) {
+            Ok(ev) => ev,
+            Err(why) => {
+                if let Some(form) = &mut self.calendar.form {
+                    form.error = Some(why);
+                }
+                return;
+            }
+        };
+        if let Some(before) = &form.before {
+            ev.created_ms = before.created_ms;
+        }
+        self.calendar.owned.upsert(ev);
+        match self.calendar.owned.save_atomic(&root.join(OWNED_JSON)) {
+            Ok(()) => {
+                self.calendar.form = None;
+                self.calendar.owned_note = None;
+                self.calendar.detail = None;
+                self.calendar.select_in_month(form.day);
+                // The rows are what the panel lists: rebuilt now, so the event is on screen
+                // without waiting for the next frame (and a test sees it too).
+                self.calendar.rebuild();
+                self.notice = Some("Evento guardado".to_string());
+            }
+            Err(e) => {
+                if let Some(form) = &mut self.calendar.form {
+                    form.error = Some(format!("No se pudo guardar: {e}"));
+                }
+            }
+        }
+    }
+
+    /// Take the event out of the file. The first press asks, the second does it.
+    fn delete_form_event(&mut self) {
+        let Some(form) = self.calendar.form.clone() else { return };
+        if !form.confirm_delete {
+            if let Some(form) = &mut self.calendar.form {
+                form.confirm_delete = true;
+            }
+            return;
+        }
+        let Some(id) = form.id.clone() else { return };
+        let root = self.store.root.clone();
+        self.calendar.owned.remove(&id);
+        match self.calendar.owned.save_atomic(&root.join(OWNED_JSON)) {
+            Ok(()) => {
+                self.calendar.form = None;
+                self.calendar.detail = None;
+                self.calendar.mark_dirty();
+                self.calendar.rebuild();
+                self.notice = Some("Evento borrado".to_string());
+            }
+            Err(e) => {
+                if let Some(form) = &mut self.calendar.form {
+                    form.error = Some(format!("No se pudo guardar: {e}"));
+                }
+            }
+        }
+    }
+
+    /// The keys of the event editor. True when the key was one of them, so the note behind the
+    /// modal never sees it.
+    pub(crate) fn calendar_key(&mut self, key: &crate::Key) -> bool {
+        if self.calendar.form.is_none() {
+            return false;
+        }
+        match key.key.as_str() {
+            "Escape" => {
+                self.calendar.form = None;
+                true
+            }
+            "Enter" => {
+                self.run("cal:save");
+                true
+            }
+            "Tab" => {
+                if let Some(form) = &mut self.calendar.form {
+                    let n = FIELDS;
+                    form.field = if key.shift { (form.field + n - 1) % n } else { (form.field + 1) % n };
+                }
+                true
+            }
+            "Backspace" => {
+                if let Some(form) = &mut self.calendar.form {
+                    form.active_mut().pop();
+                    form.error = None;
+                }
+                true
+            }
+            "Delete" => {
+                self.run("cal:del");
+                true
+            }
+            "ArrowUp" => {
+                self.run("cal:step:start:15");
+                true
+            }
+            "ArrowDown" => {
+                self.run("cal:step:start:-15");
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// A letter or a digit while the editor is open: it goes into the focused field.
+    pub(crate) fn calendar_text(&mut self, text: &str) -> bool {
+        let Some(form) = &mut self.calendar.form else { return false };
+        form.active_mut().push_str(text);
+        form.error = None;
+        true
     }
 }

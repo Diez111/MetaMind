@@ -371,3 +371,38 @@ fn event_to_json(ev: &OwnedEvent) -> Value {
     }
     Value::Object(map)
 }
+
+/// The hex a colour id draws with: the eight names have a colour of their own, and a custom
+/// `#rrggbb` is kept as written. An unknown id falls back to the first name instead of drawing
+/// nothing.
+pub fn color_hex(id: &str) -> String {
+    let named = match id {
+        "azul" => "#3b82f6",
+        "verde" => "#2f9e44",
+        "ambar" => "#f08c00",
+        "rojo" => "#e03131",
+        "rosa" => "#e64980",
+        "cian" => "#0c8599",
+        "gris" => "#868e96",
+        _ => "#8a5cf5",
+    };
+    if id.starts_with('#') && valid_color(id) {
+        id.to_string()
+    } else {
+        named.to_string()
+    }
+}
+
+/// The name shown next to a colour in the picker.
+pub fn color_label(id: &str) -> &'static str {
+    match id {
+        "azul" => "Azul",
+        "verde" => "Verde",
+        "ambar" => "Ámbar",
+        "rojo" => "Rojo",
+        "rosa" => "Rosa",
+        "cian" => "Cian",
+        "gris" => "Gris",
+        _ => "Violeta",
+    }
+}

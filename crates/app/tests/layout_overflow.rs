@@ -323,6 +323,8 @@ fn views() -> Vec<(&'static str, Vec<&'static str>)> {
         ("kanban", vec!["open:Tablero.md"]),
         ("canvas", vec!["open:Lienzo.canvas"]),
         ("base", vec!["open:Tablero.base"]),
+        // The calendar with its editor open: a modal with fields, steppers and colours.
+        ("calendario-editor", vec!["calendar:open", "cal:new"]),
     ]
 }
 

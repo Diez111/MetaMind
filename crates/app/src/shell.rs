@@ -2371,6 +2371,9 @@ impl App {
         if let Some(r) = self.modal_key(&key) {
             return r;
         }
+        if self.calendar_key(&key) {
+            return true;
+        }
         // A diagram shown full screen is a modal of its own: Escape, or a click on the backdrop,
         // closes it.
         if self.diagram_zoom.is_some() && key.key == "Escape" {
@@ -2593,6 +2596,11 @@ impl App {
             return;
         }
         self.menu = None;
+        // The event editor is a modal: a letter belongs to the field it is editing, never to the
+        // note behind it.
+        if self.calendar_text(text) {
+            return;
+        }
         if self.modal_text(text) {
             return;
         }
