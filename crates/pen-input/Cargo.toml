@@ -1,0 +1,11 @@
+[package]
+name = "pen-input"
+description = "A drawing tablet on Linux: pressure, tilt and the eraser end, read from evdev"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

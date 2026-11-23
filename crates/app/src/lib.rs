@@ -26,6 +26,7 @@ pub mod menu;
 pub mod ospref;
 pub mod panes;
 pub mod pdf;
+pub mod pen;
 pub mod plugins;
 pub mod popover;
 pub mod posters;

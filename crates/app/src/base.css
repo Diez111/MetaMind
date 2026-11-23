@@ -1108,3 +1108,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .kanban-help-head { display: flex; align-items: center; gap: 6px }
 .kanban-help-title { flex-grow: 1; min-width: 0; color: var(--text-normal); font-size: var(--font-ui-small); font-weight: 600 }
 .kanban-help-text { color: var(--text-muted); font-family: var(--font-monospace); font-size: var(--font-ui-smaller); line-height: 1.5; white-space: pre-wrap }
+
+/* The pressure meter of Ajustes → Lápiz: how hard the pen is pressing right now. */
+.pen-meter { width: 160px; height: 8px; border-radius: 4px; background-color: var(--background-modifier-border); overflow: hidden }
+.pen-meter-fill { height: 8px; background-color: var(--interactive-accent) }

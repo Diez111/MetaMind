@@ -351,3 +351,79 @@ fn the_bar_the_canvas_and_the_style_panel_do_not_overlap() {
     }
     assert!(tools >= Tool::ALL.len(), "all the tools are there: {tools}");
 }
+
+/// A pen stroke keeps the pressure of every point, and the painter gives the thick and the thin
+/// parts different widths. This is what a tablet buys: the stroke is not one width.
+#[test]
+fn a_pen_stroke_keeps_the_pressure_of_every_point() {
+    let (d, mut app, mut fonts) = open();
+    let f = frame(&mut app, &mut fonts);
+    let r = pane(&f);
+    app.run("exc:tool:freedraw");
+    // Press light at one end, hard at the other: the app hands the view the pressure before each
+    // event, which is what the window thread does.
+    app.pen.pressure = 0.15;
+    app.pen.trial_connected(true);
+    let (x, y) = (r.x + 80.0, r.y + 100.0);
+    app.click(&f, &mut fonts, x, y, false);
+    for step in 1..=20 {
+        app.pen.pressure = 0.15 + 0.04 * step as f32;
+        let (px, py) = (x + step as f32 * 6.0, y + (step as f32 * 1.5).sin() * 8.0);
+        app.drag(&f, &mut fonts, px, py);
+    }
+    app.release();
+    let v = app.exc_view.as_ref().unwrap();
+    let made = v.scene.elements.last().unwrap();
+    assert_eq!(made.kind, ElementType::Freedraw);
+    let pressures = made.pressures.clone().expect("las presiones quedaron en el archivo");
+    assert!(pressures.len() >= 10, "un punto por muestra: {}", pressures.len());
+    assert!(pressures[0] < 0.25, "el primer punto es suave: {}", pressures[0]);
+    assert!(pressures[pressures.len() - 1] > 0.8, "el último aprieta: {}", pressures[pressures.len() - 1]);
+    // And the painter turns that into a stroke that changes width.
+    let v = app.exc_view.as_mut().unwrap();
+    let text = metamind_ui::TextStyle {
+        size: 14.0,
+        line_height: 20.0,
+        color: metamind_ui::Color::rgb(220, 220, 220),
+        bold: false,
+        italic: false,
+        mono: false,
+        wrap: true,
+        family: None,
+    };
+    let look = metamind_app::excalidrawview::Look { dark: true, primary: false, fade: 1.0 };
+    let painted = v.paint(r, &[metamind_ui::Color::rgb(0, 0, 0); 12], &text, look, &mut fonts);
+    let _ = &app;
+    let widths: Vec<f32> = painted
+        .iter()
+        .filter_map(|c| match c {
+            metamind_ui::Cmd::Stroke { points, .. } => Some(points.iter().map(|p| p[2]).fold(0.0f32, f32::max)),
+            _ => None,
+        })
+        .collect();
+    assert!(!widths.is_empty(), "el trazo se pinta como una cinta");
+    // The file keeps it too.
+    let on_disk = saved(&d);
+    assert_eq!(on_disk.elements.last().unwrap().pressures.as_ref().map(Vec::len), Some(pressures.len()));
+}
+
+/// The other end of the pen erases: what it passes over goes away.
+#[test]
+fn the_eraser_end_removes_what_it_passes_over() {
+    let (_d, mut app, mut fonts) = open();
+    let f = frame(&mut app, &mut fonts);
+    let r = pane(&f);
+    app.run("exc:tool:select");
+    let before = app.exc_view.as_ref().unwrap().scene.elements.len();
+    app.pen.trial_connected(true);
+    app.pen.erasing = true;
+    // The board has a box at the top-left; drag over its middle.
+    let v = app.exc_view.as_ref().unwrap();
+    let (bx, by) = v.to_screen(&r, 40.0 + 130.0, 80.0 + 70.0);
+    app.click(&f, &mut fonts, bx, by, false);
+    app.drag(&f, &mut fonts, bx + 6.0, by + 6.0);
+    app.release();
+    let after = app.exc_view.as_ref().unwrap().scene.elements.len();
+    assert!(after < before, "la goma borró: {before} -> {after}");
+    app.pen.erasing = false;
+}

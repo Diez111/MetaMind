@@ -591,6 +591,8 @@ pub struct App {
     /// Where the suggestion closed with Escape stays closed until the cursor leaves it.
     pub(crate) suggest_dismissed: Option<usize>,
     pub anims: crate::anim::Anims,
+    /// The drawing tablet, when the machine has one: pressure for the pen strokes.
+    pub pen: crate::pen::Pen,
     /// Where the tab indicator comes from while it slides to the tab that just took the focus.
     pub tab_from: Option<(usize, usize)>,
     /// The in-app video player, while a note's video card is playing.
@@ -997,6 +999,7 @@ impl App {
             hover_preview: None,
             suggest_dismissed: None,
             anims: Default::default(),
+            pen: Default::default(),
             tab_from: None,
             seen: None,
             notice_since: None,

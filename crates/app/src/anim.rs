@@ -119,13 +119,18 @@ impl crate::App {
         self.busy = Some(Busy::new(label));
     }
 
-    /// Advance the spinner one frame and clear it when its time is up.
+    /// Advance the spinner one frame and clear it when its time is up, and take what the pen
+    /// reported since the last frame.
     pub fn busy_tick(&mut self) {
         if let Some(b) = &mut self.busy {
             if !b.tick() {
                 self.busy = None;
             }
         }
+        // The tablet is asked once, and then read every frame: a pen stroke needs its pressure
+        // before the next report, not after a menu was opened.
+        self.pen.open_once();
+        self.pen.poll();
     }
 }
 

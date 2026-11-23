@@ -168,6 +168,8 @@ enum Drag {
     Free { id: String },
     /// The select tool dragged a box over the surface: everything it touches is selected.
     Band { from: [f64; 2] },
+    /// The pen's eraser end, dragged over the board.
+    Erase,
     /// A press that does nothing until the second half of a double click.
     Idle,
 }
@@ -226,6 +228,11 @@ pub struct ExcView {
     history: Vec<Scene>,
     /// Scenes `Ctrl+Z` took away, for `Ctrl+Shift+Z`.
     redo: Vec<Scene>,
+    /// The pressure the pen reports, 0..=1, for the next point of a freehand stroke. A mouse
+    /// leaves it at 0.5.
+    pub pen_pressure: f32,
+    /// The pen is turned around: a stroke erases instead of drawing.
+    pub pen_erasing: bool,
     /// The element just created, fading in while the editor's `exc-new` clock runs.
     pub fade: Option<String>,
     /// The clock for `fade` was started: a finished clock must not start it again.
@@ -263,6 +270,8 @@ impl ExcView {
             surface,
             history: Vec::new(),
             redo: Vec::new(),
+            pen_pressure: 0.5,
+            pen_erasing: false,
             fade: None,
             fade_started: false,
             dirty: false,
@@ -450,6 +459,8 @@ impl ExcView {
         }
         if matches!(e.kind, ElementType::Freedraw) {
             e.points = Some(vec![[0.0, 0.0]]);
+            // One pressure for the first point: the stroke keeps one per point from here on.
+            e.pressures = Some(vec![f64::from(self.pen_pressure.clamp(0.0, 1.0))]);
         }
         let id = e.id.clone();
         self.scene.elements.push(e);
@@ -590,6 +601,11 @@ impl ExcView {
             self.start_pan(x, y);
             return;
         }
+        if self.pen_erasing {
+            self.checkpoint();
+            self.press = Some(Press { drag: Drag::Erase, at: (x, y), moved: false });
+            return;
+        }
         match self.tool {
             Tool::Select => match self.scene.hit(w[0], w[1]).map(|e| e.id.clone()) {
                 Some(id) => {
@@ -680,6 +696,27 @@ impl ExcView {
                 }
                 self.dirty = true;
             }
+            Drag::Erase => {
+                // A disc the size of a knuckle: what the eraser passes over goes away.
+                let radius = f64::from(10.0 / self.zoom.max(0.2));
+                let gone: Vec<String> = self
+                    .scene
+                    .elements
+                    .iter()
+                    .filter(|e| e.painted() && !e.locked)
+                    .filter(|e| {
+                        let cx = e.x + e.width / 2.0;
+                        let cy = e.y + e.height / 2.0;
+                        let half = (e.width.max(e.height) / 2.0).max(radius);
+                        (cx - w[0]).abs() <= half + radius && (cy - w[1]).abs() <= half + radius
+                    })
+                    .map(|e| e.id.clone())
+                    .collect();
+                for id in gone {
+                    self.scene.remove(&id);
+                    self.dirty = true;
+                }
+            }
             Drag::Free { id } => {
                 if let Some(e) = self.scene.element_mut(id) {
                     let (dx, dy) = (w[0] - e.x, w[1] - e.y);
@@ -688,6 +725,9 @@ impl ExcView {
                         pts.push([dx, dy]);
                         e.width = e.width.max(dx);
                         e.height = e.height.max(dy);
+                        // One pressure per point, the same as the pen reported for it.
+                        let pressure = self.pen_pressure.clamp(0.0, 1.0);
+                        e.pressures.get_or_insert_with(Vec::new).push(f64::from(pressure));
                     }
                 }
                 self.dirty = true;
@@ -1582,7 +1622,10 @@ impl App {
     pub fn exc_click(&mut self, frame: &crate::Frame, x: f32, y: f32) -> bool {
         let Some(rect) = self.exc_rect(frame) else { return false };
         let inside = rect.contains(x, y);
+        let (pressure, erasing) = (self.pen.pressure, self.pen.erasing);
         if let Some(v) = self.exc_view.as_mut().filter(|_| inside) {
+            v.pen_pressure = pressure;
+            v.pen_erasing = erasing;
             v.press(&rect, x, y);
         }
         true
@@ -1596,7 +1639,10 @@ impl App {
 
     pub fn exc_drag(&mut self, frame: &crate::Frame, x: f32, y: f32) -> bool {
         let Some(rect) = self.exc_rect(frame) else { return false };
+        let (pressure, erasing) = (self.pen.pressure, self.pen.erasing);
         if let Some(v) = &mut self.exc_view {
+            v.pen_pressure = pressure;
+            v.pen_erasing = erasing;
             v.drag(&rect, x, y);
         }
         true

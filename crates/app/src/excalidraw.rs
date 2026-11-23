@@ -42,7 +42,7 @@ use excalidraw_core::{
     Arrowhead, DisplayList, DrawOp, FontFamily, ImageRef, Polyline, Rgba, Scene, Shape, Style, TextAlign,
     TextRun, VerticalAlign,
 };
-use metamind_ui::{Cmd, Color, Dom, El, Fonts, NodeId, Rect, TextStyle};
+use metamind_ui::{Cap, Cmd, Color, Dom, El, Fonts, NodeId, Rect, TextStyle};
 use std::sync::Arc;
 
 /// The width a board is laid out for: the default `--file-line-width` of the note column.
@@ -526,7 +526,21 @@ fn local_corners(shape: &Shape, kind: ShapeKind) -> Vec<(f64, f64)> {
 fn paint_polyline(out: &mut Vec<Cmd>, pen: &Pen, line: &Polyline) {
     let pts = pen.pts(&line.points);
     if let Some(stroke) = line.style.stroke {
-        stroke_path(out, &pts, false, &line.style, pen, stroke);
+        if line.pressures.len() == pts.len() && pts.len() > 1 {
+            // A pen stroke: the width follows the pressure along the line, as a single ribbon.
+            let base = (line.style.stroke_width as f32 * pen.s).max(0.8);
+            let points: Vec<[f32; 3]> = pts
+                .iter()
+                .zip(&line.pressures)
+                .map(|(&(x, y), &p)| {
+                    let w = base * (0.35 + 1.15 * p as f32);
+                    [x, y, w.max(0.6)]
+                })
+                .collect();
+            out.push(Cmd::Stroke { points, color: pen.colour(stroke, line.style.opacity), cap: Cap::Round });
+        } else {
+            stroke_path(out, &pts, false, &line.style, pen, stroke);
+        }
     }
     if pts.len() < 2 {
         return;

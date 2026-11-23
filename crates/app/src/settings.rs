@@ -16,6 +16,7 @@ pub enum Section {
     Appearance,
     Editor,
     Calendar,
+    Pen,
     Ai,
     Plugins,
     Advanced,
@@ -23,7 +24,7 @@ pub enum Section {
 
 /// The settings categories, in the order they appear: (section, slug in commands, name, one-line
 /// description, icon).
-const SECTIONS: [(Section, &str, &str, &str, &str); 6] = [
+const SECTIONS: [(Section, &str, &str, &str, &str); 7] = [
     (
         Section::Appearance,
         "appearance",
@@ -44,6 +45,13 @@ const SECTIONS: [(Section, &str, &str, &str, &str); 6] = [
         "Calendario",
         "Suscripción iCal de Google y archivos .ics de la bóveda.",
         "calendar",
+    ),
+    (
+        Section::Pen,
+        "pen",
+        "Lápiz",
+        "Tableta de dibujo: presión del lápiz, goma y diagnóstico.",
+        "edit",
     ),
     (Section::Ai, "ai", "IA", "Perfiles de proveedores, modelos y claves del copiloto.", "sparkles"),
     (
@@ -67,6 +75,7 @@ fn section_for_slug(slug: &str) -> Option<Section> {
         "appearance" => Section::Appearance,
         "editor" => Section::Editor,
         "calendar" => Section::Calendar,
+        "pen" | "lapiz" | "tablet" => Section::Pen,
         "ai" => Section::Ai,
         "plugins" | "core-plugins" => Section::Plugins,
         // The old tabs fold into Avanzado; keeping their slugs means old links still work.
@@ -659,6 +668,9 @@ impl App {
     /// Make a changed setting take effect.
     pub(crate) fn setting_changed(&mut self, key: &str) {
         match key {
+            "pen.pressure" => {
+                self.pen.enabled = self.config.app.bool("pen.pressure", true);
+            }
             "vimMode" => {
                 let on = self.config.app.bool("vimMode", false);
                 self.vim = on;
@@ -1089,6 +1101,19 @@ impl App {
                 }
             }
             "cal-test" => self.calendar_test(),
+            "pen-toggle" => {
+                let on = !self.config.app.bool("pen.pressure", true);
+                self.save_setting(File::App, "pen.pressure", Value::Bool(on));
+                self.pen.enabled = on;
+            }
+            "pen-refresh" => {
+                self.pen.refresh();
+                self.notice = Some(match (&self.pen.device, &self.pen.error) {
+                    (_, Some(error)) => error.clone(),
+                    (Some(device), None) => format!("Leyendo {}", device.name),
+                    (None, None) => "No se detectó ninguna tableta".to_string(),
+                });
+            }
             "perf" => self.perf = !self.perf,
             "core" => {
                 if CORE_PLUGINS.iter().any(|c| c.0 == arg) {
@@ -2139,6 +2164,7 @@ fn search_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, needle
                 }
                 Section::Ai => usize::from(ai_matches(needle)),
                 Section::Calendar => usize::from(calendar_matches(needle)),
+                Section::Pen => usize::from(pen_matches(needle)),
                 _ => ITEMS.iter().filter(|i| i.section == sec && matches(needle, i.name, i.desc)).count(),
             }
         };
@@ -2150,6 +2176,7 @@ fn search_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, needle
         match sec {
             Section::Plugins => plugins_view(app, dom, parent, ui, if whole { "" } else { needle }),
             Section::Calendar => calendar_view(app, dom, parent, ui),
+            Section::Pen => pen_view(app, dom, parent),
             Section::Ai => ai_view(app, dom, parent, ui),
             Section::Appearance if whole => appearance_view(app, dom, parent, ui, false),
             Section::Advanced => advanced_view(app, dom, parent, ui, if whole { "" } else { needle }),
@@ -2573,6 +2600,7 @@ pub fn modal(app: &App, dom: &mut Dom) {
             Section::Appearance => appearance_view(app, dom, content, ui, true),
             Section::Editor => items_view(app, dom, content, ui, Section::Editor, "", false),
             Section::Calendar => calendar_view(app, dom, content, ui),
+            Section::Pen => pen_view(app, dom, content),
             Section::Ai => ai_view(app, dom, content, ui),
             Section::Plugins => plugins_view(app, dom, content, ui, ""),
             Section::Advanced => advanced_view(app, dom, content, ui, ""),
@@ -2749,4 +2777,66 @@ mod tests {
         assert_eq!(e.selection(), None);
         assert_eq!(e.caret, 1);
     }
+}
+
+/// Whether the settings search text names something of Ajustes → Lápiz.
+fn pen_matches(needle: &str) -> bool {
+    let words = ["lapiz", "lápiz", "tableta", "tablet", "presion", "presión", "evdev", "xp-pen"];
+    words.iter().any(|w| needle.contains(w))
+        || matches(needle, "Lápiz", "Tableta de dibujo: presión del lápiz, goma y diagnóstico.")
+}
+
+/// Ajustes → Lápiz: what the machine has, what it reports right now, and the way out when the
+/// device cannot be read.
+fn pen_view(app: &App, dom: &mut Dom, parent: NodeId) {
+    let pen = &app.pen;
+    let ctl = row(
+        dom,
+        parent,
+        "Tableta",
+        "Un lápiz que reporta presión dibuja trazos de ancho variable en los tableros.",
+    );
+    let state = match (&pen.device, pen.connected()) {
+        (Some(dev), true) => format!("Conectada: {}", dev.name),
+        (Some(dev), false) => format!("{} (sin permiso de lectura)", dev.name),
+        (None, _) => "No se detectó ninguna tableta".to_string(),
+    };
+    dom.add(ctl, El::div().class("setting-status").text(state));
+    button(dom, ctl, "Buscar de nuevo", "pen:refresh".into(), false);
+
+    let ctl = row(
+        dom,
+        parent,
+        "Usar la presión",
+        "Apagado, el trazo mantiene el grosor elegido aunque aprietes más.",
+    );
+    let on = app.config.app.bool("pen.pressure", true);
+    toggle(dom, ctl, on, "pen:toggle".to_string());
+
+    let ctl = row(dom, parent, "Presión ahora mismo", "Pasá el lápiz por la tableta: la barra se mueve.");
+    let level = if pen.connected() { pen.pressure } else { 0.0 };
+    let bar = dom.add(ctl, El::div().class("pen-meter"));
+    dom.add(bar, El::div().class("pen-meter-fill").style(&format!("width: {:.0}%", level * 100.0)));
+    dom.add(
+        ctl,
+        El::div()
+            .class("setting-status")
+            .text(if pen.enabled { format!("{:.0} %", level * 100.0) } else { "apagada".to_string() }),
+    );
+
+    if let Some(error) = &pen.error {
+        dom.add(parent, El::div().class("settings-note mod-warning").text(error.clone()));
+    }
+    let found = pen.devices();
+    if !found.is_empty() {
+        let mut lines = String::new();
+        for device in &found {
+            lines.push_str(&format!("{}  ·  {}\n", device.path.display(), device.name));
+        }
+        dom.add(parent, El::div().class("settings-note").text(lines.trim_end().to_string()));
+    }
+    dom.add(
+        parent,
+        El::div().class("settings-note").text("Para probar la tableta sin abrir la app: scripts/pen-probe.sh"),
+    );
 }

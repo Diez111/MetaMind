@@ -843,7 +843,7 @@ impl crate::shell::App {
             if let Some(form) = &mut self.calendar.form {
                 let step = |value: u16, delta: i32| -> u16 {
                     let v = i32::from(value) + delta;
-                    v.clamp(0, i32::from(24 * 60 - 1)) as u16
+                    v.clamp(0, 24 * 60 - 1) as u16
                 };
                 match which {
                     "start" => {

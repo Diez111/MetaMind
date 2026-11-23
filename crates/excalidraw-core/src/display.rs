@@ -36,6 +36,9 @@ pub struct Style {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Polyline {
     pub points: Vec<(f64, f64)>,
+    /// One 0..=1 pressure per point, for a stroke drawn with a pen. Empty when the file has none:
+    /// the renderer then draws a constant width.
+    pub pressures: Vec<f64>,
     /// The arrowhead mark at the first and last point. The geometry of the mark is the renderer's
     /// job; this crate only says which mark the file asked for.
     pub start_head: Option<Arrowhead>,
@@ -188,15 +191,22 @@ fn op(scene: &Scene, e: &Element) -> Result<DrawOp, Skip> {
                 ElementType::Arrow => (e.start_arrowhead.clone(), e.end_arrowhead.clone()),
                 _ => (None, None),
             };
-            Ok(DrawOp::Polyline(Polyline { points, start_head, end_head, style }))
+            Ok(DrawOp::Polyline(Polyline { points, pressures: Vec::new(), start_head, end_head, style }))
         }
         ElementType::Freedraw => {
             let points = absolute_points(e);
             if points.len() < 2 {
                 return Err(Skip::NoGeometry);
             }
-            // `pressures` stays in the model: the stroke is drawn at a constant width.
-            Ok(DrawOp::Polyline(Polyline { points, start_head: None, end_head: None, style }))
+            // A pen stroke carries how hard the tip was pressed at every point: the renderer
+            // uses it for the width, and a file drawn with a mouse simply has none.
+            let pressures = e
+                .pressures
+                .clone()
+                .filter(|p| p.len() == points.len())
+                .map(|p| p.into_iter().map(|v| v.clamp(0.0, 1.0)).collect())
+                .unwrap_or_default();
+            Ok(DrawOp::Polyline(Polyline { points, pressures, start_head: None, end_head: None, style }))
         }
         ElementType::Image => {
             let file_id = e.file_id.clone().unwrap_or_default();
