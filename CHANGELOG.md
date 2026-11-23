@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.9
+
+- **Las celdas del calendario, todas iguales.** `flex-grow` con bordes dejaba la última columna
+  7 px más angosta que las otras seis (86,86 contra 79,86): el mes se veía torcido. Ahora cada
+  columna es el 14,2857 % de la grilla, con el borde adentro de su caja, y un test mide las 42
+  celdas y las 6 filas a tres anchos de barra lateral (220, 300 y 480 px).
+- Lo mismo en la pestaña del calendario (mes de 7 columnas) y en las etiquetas de días.
+
+
 ## 0.7.7
 
 - **Un enlace de YouTube se ve acá, no en el navegador.** La app tenía el reproductor nativo y el

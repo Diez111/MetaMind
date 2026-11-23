@@ -864,12 +864,12 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .calendar-today:hover { background-color: var(--background-modifier-hover); color: var(--text-normal) }
 .calendar-error { margin: 0 8px 4px 8px; padding: 4px 6px; border-radius: var(--radius-s); background-color: var(--rs-band); color: var(--rs-warning); font-size: var(--font-ui-smaller) }
 .calendar-weekdays { display: flex; gap: 1px; padding: 0 8px 2px 8px }
-.calendar-weekday { flex-grow: 1; flex-basis: 0; color: var(--text-faint); font-size: 10px; text-align: center }
+.calendar-weekday { width: 14.2857%; flex-grow: 0; flex-shrink: 0; color: var(--text-faint); font-size: 10px; text-align: center }
 /* The month is one frame with a line between cells, not twenty-eight separate chips: a calendar
    reads as a grid of days, and the borders are what make the days look like one block. */
 .calendar-grid { margin: 0 8px 6px 8px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow: hidden }
 .calendar-row { display: flex; flex-grow: 0; height: 32px }
-.calendar-cell { flex-grow: 1; flex-basis: 0; min-width: 0; height: 32px; padding: 1px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); background-color: var(--background-primary); color: var(--text-muted) }
+.calendar-cell { width: 14.2857%; flex-grow: 0; flex-shrink: 0; min-width: 0; height: 32px; padding: 1px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); background-color: var(--background-primary); color: var(--text-muted) }
 .calendar-row:last-child .calendar-cell { border-bottom: none }
 .calendar-cell:last-child { border-right: none }
 .calendar-cell:hover { background-color: var(--background-modifier-hover) }
@@ -1157,10 +1157,10 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .calview-mode.is-active { background-color: var(--interactive-accent); color: var(--text-on-accent) }
 .calview-body { display: flex; flex-direction: column; padding: 10px 12px; overflow-y: auto }
 .calview-weekdays { display: flex; padding-bottom: 4px }
-.calview-weekday { flex-grow: 1; flex-basis: 0; color: var(--text-faint); font-size: var(--font-ui-smaller); text-align: center }
+.calview-weekday { width: 14.2857%; flex-grow: 0; flex-shrink: 0; color: var(--text-faint); font-size: var(--font-ui-smaller); text-align: center }
 .calview-month { display: flex; flex-direction: column; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow: hidden; flex-grow: 1; min-height: 0 }
 .calview-week { display: flex; flex-grow: 1; min-height: 0 }
-.calview-day { flex-grow: 1; flex-basis: 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 3px 4px; border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); color: var(--text-muted) }
+.calview-day { width: 14.2857%; flex-grow: 0; flex-shrink: 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 3px 4px; border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); color: var(--text-muted) }
 .calview-week:last-child .calview-day { border-bottom: none }
 .calview-day:last-child { border-right: none }
 .calview-day:hover { background-color: var(--background-modifier-hover) }

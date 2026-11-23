@@ -161,3 +161,55 @@ fn a_weekly_rule_marks_more_than_one_week_in_the_month() {
         .count();
     assert!(marks >= 2, "la serie semanal marca varios días del mes, no uno: {marks}");
 }
+
+/// The month is a grid: every row the same height and every cell the same width, with or without
+/// dots. A row that grows because one of its days has events is what makes a month look broken.
+#[test]
+fn the_month_cells_are_evenly_spaced_at_every_width() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(
+        d.path().join("Tareas.md"),
+        "- [ ] Uno @{2026-11-24}\n- [ ] Dos @{2026-11-27}\n- [ ] Tres @{2026-11-24}\n",
+    )
+    .unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.calendar.select_in_month(calendar_core::Day::from_ymd(2026, 11, 23).unwrap());
+    app.run("calendar:open");
+    let mut fonts = Fonts::new();
+    for width in [220.0f32, 300.0, 480.0] {
+        app.left_open = true;
+        app.left_w = width;
+        let mut pm = Pixmap::new(width as u32 + 400, 700).unwrap();
+        render(&mut app, &mut fonts, &mut pm, 1.0);
+        let f = render(&mut app, &mut fonts, &mut pm, 1.0);
+        let classed = |class: &str| -> Vec<metamind_ui::Rect> {
+            f.dom.nodes.iter().filter(|n| n.el.classes.iter().any(|c| c == class)).map(|n| n.rect).collect()
+        };
+        let rows = classed("calendar-row");
+        assert_eq!(rows.len(), 6, "seis semanas");
+        let first = rows[0].h;
+        for (i, r) in rows.iter().enumerate() {
+            assert!((r.h - first).abs() < 0.5, "la fila {i} mide {} y la primera {first}", r.h);
+            assert!((r.y - (rows[0].y + i as f32 * first)).abs() < 0.5, "la fila {i} no está en su lugar");
+        }
+        let cells = classed("calendar-cell");
+        assert_eq!(cells.len(), 42);
+        for week in 0..6 {
+            let row = &cells[week * 7..week * 7 + 7];
+            let w = row[0].w;
+            for (i, c) in row.iter().enumerate() {
+                assert!(
+                    (c.w - w).abs() < 0.5,
+                    "a {width}px la celda {week}.{i} mide {} y la primera {w}",
+                    c.w
+                );
+                assert!(
+                    (c.x - (row[0].x + i as f32 * w)).abs() < 0.5,
+                    "a {width}px la celda {week}.{i} no está en su lugar: x {} vs {}",
+                    c.x,
+                    row[0].x + i as f32 * w
+                );
+            }
+        }
+    }
+}
