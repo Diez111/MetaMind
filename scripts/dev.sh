@@ -19,6 +19,7 @@
 #   scripts/dev.sh fmt [args...]      cargo fmt
 #   scripts/dev.sh run [args...]      cargo run
 #   scripts/dev.sh bench [args...]    cargo bench
+#   scripts/dev.sh clean              remove the build artifacts (the target on disk)
 #
 # Environment:
 #   CARGO_TARGET_DIR   honoured when already set (use it to share a target between runs)
@@ -62,6 +63,12 @@ case "$cmd" in
     build)  capped cargo build "$@" ;;
     run)    capped cargo run "$@" ;;
     bench)  capped cargo bench "$@" ;;
+    clean)
+        # `cargo clean` follows CARGO_TARGET_DIR: without this the slice's tmpfs target would be
+        # the one cleaned and the 180 GB of stale fingerprints in `target/` would stay.
+        capped cargo clean "$@"
+        du -sh "$CARGO_TARGET_DIR" 2>/dev/null || true
+        ;;
     *)
         echo "dev.sh: unknown command '$cmd'" >&2
         usage >&2

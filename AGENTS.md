@@ -17,3 +17,9 @@
   Si aparece un rojo nuevo, es del cambio que acabás de hacer.
 - Reboot ⇒ `/dev/shm` se vacía ⇒ el primer build de la sesión es frío (minutos de CPU,
   cero martilleo de disco).
+
+- **El target se limpia con `scripts/dev.sh clean`**, no con `cargo clean` a secas: sin
+  `CARGO_TARGET_DIR` el slice limpia el tmpfs y deja el target de disco intacto. Cada rebuild con
+  otra versión deja los binarios viejos con otro hash: el 22-11-2026 el target llegó a **180 GB**
+  y los links empezaron a tardar minutos (btrfs escribiendo sin parar). `scripts/dev.sh clean`
+  borra el target correcto y muestra cuánto quedó.
