@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.7
+
+- **Un enlace de YouTube se ve acá, no en el navegador.** La app tenía el reproductor nativo y el
+  resolvedor (`yt-dlp`), pero un enlace `[texto](https://youtube.com/watch?v=…)` mandaba al
+  navegador: la ruta del player existía solo para las tarjetas de video. Ahora el enlace resuelve
+  con `yt-dlp` y se reproduce en el mismo player que un archivo local; si `yt-dlp` no está, avisa y
+  abre el navegador. En esta máquina están `yt-dlp` y `ffmpeg`, así que es el camino que se toma.
+
+
 ## 0.7.6
 
 - **Abrir un video lo reproduce.** Un clic en un `.mp4` (desde el árbol, un enlace o la paleta)

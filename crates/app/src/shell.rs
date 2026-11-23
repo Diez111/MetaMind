@@ -1853,6 +1853,24 @@ impl App {
         }
         // A plain link the app cannot show: the browser opens it.
         if let Some(url) = command.strip_prefix("open-url:") {
+            // A YouTube link plays here, in the same player as a local file, when `yt-dlp` can
+            // resolve it; the browser is the fallback, not the only way in.
+            if crate::youtube::is_youtube_url(url) && self.youtube.available() {
+                let note = self.tab().map(|t| t.path.clone()).unwrap_or_default();
+                match self.youtube.start(url, &note) {
+                    Ok(()) => {
+                        self.notice = Some("Preparando el video de YouTube…".to_string());
+                        if let Some(waker) = &self.video_waker {
+                            waker();
+                        }
+                    }
+                    Err(e) => {
+                        self.notice = Some(e);
+                        self.open_in_browser(url);
+                    }
+                }
+                return;
+            }
             self.open_in_browser(url);
             return;
         }
