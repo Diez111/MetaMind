@@ -2087,7 +2087,14 @@ pub(crate) fn note_blocks(
             {
                 "cm-line cm-hr"
             }
-            NodeKind::CommentBlock if mode == ViewMode::Reading => continue,
+            // A `%%…%%` block is Obsidian's comment: hidden while reading *and* in the live
+            // preview, unless the caret is inside it. The Excalidraw plugin keeps a whole scene
+            // there, and showing it is a wall of JSON in the middle of the note.
+            NodeKind::CommentBlock
+                if mode != ViewMode::Source && !sels.iter().any(|x| x.head >= s && x.head <= e) =>
+            {
+                continue
+            }
             _ => "cm-line",
         };
         // Folded text: blocks inside a fold are skipped; a fold inside a block hides part of it.

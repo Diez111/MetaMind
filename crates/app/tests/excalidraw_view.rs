@@ -6,7 +6,7 @@
 
 use excalidraw_core::{ElementType, Scene};
 use metamind_app::shell::ViewMode;
-use metamind_app::excalidrawview::Tool;
+use metamind_app::excalidrawview::{Tool, WIDTHS};
 use metamind_app::{render, App, Frame, Key};
 use metamind_ui::{Fonts, Pixmap};
 use std::fs;
@@ -426,4 +426,49 @@ fn the_eraser_end_removes_what_it_passes_over() {
     let after = app.exc_view.as_ref().unwrap().scene.elements.len();
     assert!(after < before, "la goma borró: {before} -> {after}");
     app.pen.erasing = false;
+}
+
+/// The style button was wired but the panel was painted under the board: the card was added
+/// before the node the painter fills, so it existed in the tree and nobody could see it. The
+/// order of the children is what makes it visible.
+#[test]
+fn the_style_button_opens_a_panel_that_is_painted_over_the_board() {
+    let (_d, mut app, mut fonts) = open();
+    app.run("exc:style");
+    let f = frame(&mut app, &mut fonts);
+    let index = |class: &str| {
+        f.dom.nodes.iter().position(|n| n.el.classes.iter().any(|c| c == class)).expect(class)
+    };
+    let panel = index("exc-style-panel");
+    let canvas = index("exc-canvas");
+    assert!(panel > canvas, "el panel se pinta después del lienzo: panel {panel}, lienzo {canvas}");
+    let p = f.dom.nodes[panel].rect;
+    let c = f.dom.nodes[canvas].rect;
+    assert!(p.y >= c.y, "el panel cae dentro del área del lienzo: {p:?} en {c:?}");
+    // Every row of the panel has its control: colours, fill and the three widths.
+    let inner = |class: &str| {
+        (0..f.dom.nodes.len()).filter(|&i| f.dom.nodes[i].el.classes.iter().any(|c| c == class)).count()
+    };
+    assert!(inner("exc-swatch") >= 16, "trazo y fondo: {}", inner("exc-swatch"));
+    assert_eq!(inner("exc-width"), WIDTHS.len(), "los tres grosores");
+    // And pressing one changes the width the next stroke gets.
+    app.run("exc:width:2");
+    assert!((app.exc_view.as_ref().unwrap().width - 4.0).abs() < 0.01);
+}
+
+/// A `%%…%%` block is a comment: the Excalidraw plugin keeps the whole scene there, and the live
+/// preview used to paint it as a code fence with the JSON in it.
+#[test]
+fn a_comment_block_is_hidden_in_the_live_preview() {
+    let d = vault();
+    let note = "# Nota\n\nArriba.\n\n%%\n```json\n{\"type\":\"excalidraw\",\"elements\":[]}\n```\n%%\n\nAbajo.\n";
+    fs::write(d.path().join("Con datos.md"), note).unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("Con datos.md");
+    let mut fonts = Fonts::new();
+    let f = frame(&mut app, &mut fonts);
+    let text: String = f.dom.nodes.iter().filter_map(|n| n.el.text.clone()).collect::<Vec<_>>().join("\n");
+    assert!(!text.contains("\"excalidraw\""), "el JSON del comentario no se pinta: {text}");
+    assert!(!text.contains("%%"), "ni los marcadores: {text}");
+    assert!(text.contains("Arriba.") && text.contains("Abajo."), "el resto de la nota sí: {text}");
 }

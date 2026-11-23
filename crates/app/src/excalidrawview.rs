@@ -907,6 +907,12 @@ impl ExcView {
     /// The dashed frame and the corner dots around the selected elements, and the rubber band
     /// while it is being dragged.
     fn selection(&self, cmds: &mut Vec<Cmd>, pen: &Pen, rect: Rect, c: &[Color; 12]) {
+        // While a shape is being drawn its own dashed frame follows the pointer: it is not a
+        // selection yet, and it is painted as a stray dotted line over the stroke. The rubber
+        // band, the move and the pan keep their chrome: those are gestures, not a new element.
+        if self.press.as_ref().is_some_and(|p| matches!(p.drag, Drag::Draw { .. } | Drag::Free { .. })) {
+            return;
+        }
         for id in self.ids() {
             let Some(e) = self.scene.element(&id) else { continue };
             let (x, y) = pen.p(e.x, e.y);
@@ -1080,9 +1086,6 @@ fn controls(v: &ExcView, dom: &mut Dom, parent: NodeId) {
     dom.add(style, crate::icons::el("settings"));
     dom.add(style, El::div().class("exc-style-button-label").text("Estilo"));
     label(dom, style, "Color, fondo y grosor del trazo");
-    if v.style_open {
-        style_panel(v, dom, parent);
-    }
 }
 
 /// The style panel: one labelled row per property, inside a box that wraps its colours instead of
@@ -1171,6 +1174,11 @@ fn board_node(v: &ExcView, dom: &mut Dom, parent: NodeId, info: &mut crate::view
     let canvas = dom.add(board, El::div().class("exc-canvas"));
     info.excview.push(canvas);
     zoom_bar(v, dom, canvas);
+    // The style panel goes after the canvas: the painter fills its node, and a card added before
+    // it is painted over. That is why the button looked dead.
+    if v.style_open && !v.tools_hidden {
+        style_panel(v, dom, board);
+    }
     if v.tools_hidden {
         // Folded away: the bar takes no room, and this handle floats over the board to bring it
         // back. It goes after the canvas so the painter cannot draw over it.
