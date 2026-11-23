@@ -1,0 +1,16 @@
+[package]
+name = "mcp-client"
+description = "A Model Context Protocol client: the tools of a local MCP server, for the copilot"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[[bin]]
+name = "mock-mcp"
+path = "src/bin/mock_mcp.rs"

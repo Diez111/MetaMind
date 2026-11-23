@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.5
+
+- **Servidores MCP como herramientas del copiloto.** `crates/mcp-client` habla el protocolo
+  (JSON-RPC por stdin/stdout, `initialize`, `tools/list`, `tools/call`) sin `unsafe` ni runtime
+  asíncrono, y la app los declara en `.obsidian/app.json`:
+
+  ```json
+  {"mcp": {"servers": [{"name": "filesystem", "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/me"]}]}}
+  ```
+
+  El primer turno que necesita herramientas arranca cada servidor, lee su lista y ofrece cada una
+  como `mcp__<servidor>__<herramienta>`; una llamada va al servidor y su texto vuelve al modelo.
+  Un servidor que no arranca se informa y se saltea, y el resto del turno sigue. El cliente se
+  prueba contra un servidor real (`mock-mcp`, incluido en el crate) que habla el protocolo.
+
+
 ## 0.7.4
 
 Tres superficies nuevas y el pulido que salió de mirar capturas renderizadas a tamaño real.

@@ -596,6 +596,8 @@ pub struct App {
     pub pen: crate::pen::Pen,
     /// The new-board dialog, while it is open.
     pub kanban_new: Option<crate::kanbanview::NewBoard>,
+    /// The MCP servers of this session and their tools.
+    pub mcp: crate::mcp::Mcp,
     /// The calendar tab in the main pane, and whether it is the one showing.
     pub calendar_view: Option<crate::calendarview::CalendarView>,
     pub show_calendar_view: bool,
@@ -1007,6 +1009,7 @@ impl App {
             anims: Default::default(),
             pen: Default::default(),
             kanban_new: None,
+            mcp: crate::mcp::Mcp::default(),
             calendar_view: None,
             show_calendar_view: false,
             tab_from: None,

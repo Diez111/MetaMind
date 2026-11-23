@@ -946,6 +946,17 @@ impl AiPanel {
     /// Ask the model, streaming the answer into an empty assistant message. `note_context` is
     /// what [`context_from_note`] returned, or empty when no note is open.
     pub fn send(&mut self, cfg: &AiProfile, note_context: &str, user_input: &str) {
+        self.send_with(cfg, note_context, user_input, Vec::new());
+    }
+
+    /// The same, with the tools a remote server offers on top of the built-in ones.
+    pub fn send_with(
+        &mut self,
+        cfg: &AiProfile,
+        note_context: &str,
+        user_input: &str,
+        extra: Vec<serde_json::Value>,
+    ) {
         let question = user_input.trim();
         if self.streaming || question.is_empty() {
             return;
@@ -958,7 +969,8 @@ impl AiPanel {
         // The newest turns are the ones the model needs; the oldest fall off.
         let start = self.messages.len().saturating_sub(MAX_HISTORY);
         let mut history: Vec<Message> = self.messages[start..].to_vec();
-        let tools = crate::ai_tools::specs();
+        let mut tools = crate::ai_tools::specs();
+        tools.extend(extra);
         let payload =
             build_payload_with_tools(cfg, &system_content(cfg, note_context), &history, question, &tools)
                 .to_string();
@@ -980,12 +992,18 @@ impl AiPanel {
     /// Ask again with the tool results in the conversation, and no new question: what a turn
     /// does after the model asked for functions.
     pub fn resume(&mut self, cfg: &AiProfile, note_context: &str) {
+        self.resume_with(cfg, note_context, Vec::new());
+    }
+
+    /// Continue the turn with the tools a remote server offers.
+    pub fn resume_with(&mut self, cfg: &AiProfile, note_context: &str, extra: Vec<serde_json::Value>) {
         if self.streaming || (cfg.needs_key() && cfg.api_key.trim().is_empty()) {
             return;
         }
         let start = self.messages.len().saturating_sub(MAX_HISTORY);
         let history: Vec<Message> = self.messages[start..].to_vec();
-        let tools = crate::ai_tools::specs();
+        let mut tools = crate::ai_tools::specs();
+        tools.extend(extra);
         let payload = build_payload_with_tools(cfg, &system_content(cfg, note_context), &history, "", &tools)
             .to_string();
         self.messages.push(Message::assistant(String::new()));
@@ -1220,7 +1238,9 @@ impl App {
         let profile = self.ai_config().active_profile().clone();
         let context = self.tab().map(context_from_note).unwrap_or_default();
         let input = self.ai.input.clone();
-        self.ai.send(&profile, &context, &input);
+        self.mcp.ensure(&self.config.app);
+        let remote = self.mcp.specs();
+        self.ai.send_with(&profile, &context, &input, remote);
         if let Some(e) = &self.ai.error {
             self.notice = Some(e.clone());
         }
@@ -1316,7 +1336,9 @@ impl crate::App {
             self.ai.tool_rounds = 0;
             return;
         }
-        self.ai.resume(&cfg, &context);
+        self.mcp.ensure(&self.config.app);
+        let remote = self.mcp.specs();
+        self.ai.resume_with(&cfg, &context, remote);
     }
 }
 

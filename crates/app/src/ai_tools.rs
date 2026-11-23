@@ -140,6 +140,14 @@ pub fn safe_path(raw: &str) -> Result<String, String> {
 
 /// Run one call. The message is JSON: `{"ok":true,…}` or `{"ok":false,"error":"…"}`.
 pub fn run(app: &mut App, name: &str, arguments: &str) -> String {
+    // A tool of an MCP server goes to that server; ours are the ones below.
+    if app.mcp.owns(name) {
+        return match app.mcp.call(name, arguments) {
+            Some(Ok(value)) => json!({ "ok": true, "result": value }).to_string(),
+            Some(Err(e)) => error(&e),
+            None => error(&format!("No existe la herramienta {name}.")),
+        };
+    }
     let args: Value = match serde_json::from_str(arguments) {
         Ok(v) => v,
         Err(e) => return error(&format!("Los argumentos no son JSON: {e}")),

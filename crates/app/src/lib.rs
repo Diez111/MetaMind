@@ -24,6 +24,7 @@ pub mod icon;
 pub mod icons;
 pub mod instance;
 pub mod kanbanview;
+pub mod mcp;
 pub mod media;
 pub mod mentions;
 pub mod menu;

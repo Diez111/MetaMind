@@ -1884,6 +1884,13 @@ name = "math-core"
 version = "0.7.4"
 
 [[package]]
+name = "mcp-client"
+version = "0.7.4"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "md-engine"
 version = "0.7.4"
 dependencies = [
@@ -1936,6 +1943,7 @@ dependencies = [
  "krilla",
  "libc",
  "math-core",
+ "mcp-client",
  "md-engine",
  "mermaid-core",
  "metamind-ui",
