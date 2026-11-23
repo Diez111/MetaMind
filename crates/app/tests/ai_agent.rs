@@ -178,10 +178,12 @@ fn a_local_model_sends_without_a_key() {
         server(vec!["data: {\"choices\":[{\"delta\":{\"content\":\"Hola\"}}]}\n\ndata: [DONE]\n\n"]);
     let mut app = App::open(dir.path()).unwrap();
     app.run("ai:open");
-    let mut profile = metamind_app::ai::AiProfile::default();
-    profile.base_url = base;
-    profile.api_key = String::new();
-    profile.model = "llama3.2".into();
+    let profile = metamind_app::ai::AiProfile {
+        base_url: base,
+        api_key: String::new(),
+        model: "llama3.2".into(),
+        ..Default::default()
+    };
     app.ai.send(&profile, "", "hola");
     assert!(app.ai.error.is_none(), "sin clave, pero local: {:?}", app.ai.error);
     assert!(app.ai.streaming, "el pedido salió");
