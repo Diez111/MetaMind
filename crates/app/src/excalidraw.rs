@@ -39,8 +39,8 @@
 //!   file) are reported in one line under the board by [`skipped_note`].
 
 use excalidraw_core::{
-    Arrowhead, DisplayList, DrawOp, FontFamily, ImageRef, Polyline, Rgba, Scene, Shape, Style, TextAlign,
-    TextRun, VerticalAlign,
+    Arrowhead, DisplayList, DrawOp, FillStyle, FontFamily, ImageRef, Polyline, Rgba, Scene, Shape, Style,
+    TextAlign, TextRun, VerticalAlign,
 };
 use metamind_ui::{Cap, Cmd, Color, Dom, El, Fonts, NodeId, Rect, TextStyle};
 use std::sync::Arc;
@@ -487,19 +487,33 @@ fn paint_shape(out: &mut Vec<Cmd>, pen: &Pen, shape: &Shape, style: &Style, kind
     let pts = pen.pts(&corners);
     if let Some(fill) = style.fill {
         let color = pen.colour(fill, style.opacity);
-        match kind {
-            // A box that is not rotated is one rectangle: no polygon scanlines needed.
-            ShapeKind::Rect if shape.angle == 0.0 => out.push(Cmd::Fill {
-                rect: Rect::new(
-                    pen.ox + shape.x as f32 * pen.s,
-                    pen.oy + shape.y as f32 * pen.s,
-                    (shape.width as f32 * pen.s).max(0.0),
-                    (shape.height as f32 * pen.s).max(0.0),
-                ),
-                color,
-                radius: 0.0,
-            }),
-            _ => fill_polygon(out, &pts, color),
+        match style.fill_style {
+            // A hand-drawn page fills with lines, not with a colour: the file says hachure or
+            // cross-hatch and the reader expects to see the strokes.
+            FillStyle::Hachure | FillStyle::CrossHatch => {
+                let spacing = (7.0 * pen.s).clamp(3.0, 24.0);
+                let mut segs = hatch_segments(&pts, spacing, HatchAngle::Up);
+                if style.fill_style == FillStyle::CrossHatch {
+                    segs.extend(hatch_segments(&pts, spacing, HatchAngle::Down));
+                }
+                if !segs.is_empty() {
+                    out.push(Cmd::Lines { segs, width: 1.0, color });
+                }
+            }
+            _ => match kind {
+                // A box that is not rotated is one rectangle: no polygon scanlines needed.
+                ShapeKind::Rect if shape.angle == 0.0 => out.push(Cmd::Fill {
+                    rect: Rect::new(
+                        pen.ox + shape.x as f32 * pen.s,
+                        pen.oy + shape.y as f32 * pen.s,
+                        (shape.width as f32 * pen.s).max(0.0),
+                        (shape.height as f32 * pen.s).max(0.0),
+                    ),
+                    color,
+                    radius: 0.0,
+                }),
+                _ => fill_polygon(out, &pts, color),
+            },
         }
     }
     if let Some(stroke) = style.stroke {
@@ -701,6 +715,74 @@ fn stroke_path(out: &mut Vec<Cmd>, pts: &[(f32, f32)], closed: bool, style: &Sty
     }
 }
 
+/// Which way the hachure lines lean.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HatchAngle {
+    /// `/` in screen coordinates.
+    Up,
+    /// `\`.
+    Down,
+}
+
+/// The segments of a hachure fill: parallel lines inside the polygon, clipped to it.
+///
+/// The polygon is rotated so the lines become horizontal, each scanline is cut against the edges
+/// (even-odd, the same rule a polygon fill uses) and the two points of every inside run go back.
+/// A shape too big for the spacing is coarsened instead of filling the display list with
+/// thousands of segments.
+fn hatch_segments(pts: &[(f32, f32)], spacing: f32, angle: HatchAngle) -> Vec<[f32; 4]> {
+    if pts.len() < 3 || spacing <= 0.5 {
+        return Vec::new();
+    }
+    let rot = |p: (f32, f32)| -> (f32, f32) {
+        match angle {
+            HatchAngle::Up => {
+                ((p.0 + p.1) * std::f32::consts::FRAC_1_SQRT_2, (p.1 - p.0) * std::f32::consts::FRAC_1_SQRT_2)
+            }
+            HatchAngle::Down => {
+                ((p.0 - p.1) * std::f32::consts::FRAC_1_SQRT_2, (p.1 + p.0) * std::f32::consts::FRAC_1_SQRT_2)
+            }
+        }
+    };
+    let unrot = |p: (f32, f32)| -> (f32, f32) {
+        match angle {
+            HatchAngle::Up => {
+                ((p.0 - p.1) * std::f32::consts::FRAC_1_SQRT_2, (p.0 + p.1) * std::f32::consts::FRAC_1_SQRT_2)
+            }
+            HatchAngle::Down => {
+                ((p.0 + p.1) * std::f32::consts::FRAC_1_SQRT_2, (p.1 - p.0) * std::f32::consts::FRAC_1_SQRT_2)
+            }
+        }
+    };
+    let r: Vec<(f32, f32)> = pts.iter().map(|p| rot(*p)).collect();
+    let (top, bottom) =
+        r.iter().fold((f32::INFINITY, f32::NEG_INFINITY), |(a, b), p| (a.min(p.1), b.max(p.1)));
+    let lines = ((bottom - top) / spacing).ceil();
+    let step = if lines > MAX_HATCH_LINES { (bottom - top) / MAX_HATCH_LINES } else { spacing };
+    let mut segs = Vec::new();
+    let mut v = (top / step).ceil() * step;
+    while v <= bottom {
+        let mut xs: Vec<f32> = Vec::new();
+        for i in 0..r.len() {
+            let (a, b) = (r[i], r[(i + 1) % r.len()]);
+            if (a.1 <= v && b.1 > v) || (b.1 <= v && a.1 > v) {
+                let t = (v - a.1) / (b.1 - a.1);
+                xs.push(a.0 + t * (b.0 - a.0));
+            }
+        }
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        for pair in xs.as_chunks::<2>().0 {
+            let (p0, p1) = (unrot((pair[0], v)), unrot((pair[1], v)));
+            segs.push([p0.0, p0.1, p1.0, p1.1]);
+        }
+        v += step;
+    }
+    segs
+}
+
+/// The most hachure lines one shape may draw: past this the spacing grows.
+const MAX_HATCH_LINES: f32 = 200.0;
+
 /// One-pixel rows: the display list has no path fill, so a polygon is filled a band at a time.
 fn fill_polygon(out: &mut Vec<Cmd>, pts: &[(f32, f32)], color: Color) {
     if pts.len() < 3 {
@@ -800,5 +882,40 @@ mod tests {
         assert!(note.contains("1 elemento(s) sin dibujar"), "{note}");
         assert!(note.contains("frame"), "{note}");
         assert!(skipped_note(&Board::parse(SCENE).unwrap().list).is_none());
+    }
+}
+
+#[cfg(test)]
+mod hatch_tests {
+    use super::*;
+
+    /// A square from (0,0) to (100,100): the hachure lines have to stay inside it.
+    fn square() -> Vec<(f32, f32)> {
+        vec![(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)]
+    }
+
+    #[test]
+    fn hachure_lines_stay_inside_the_shape_and_lean() {
+        let segs = hatch_segments(&square(), 10.0, HatchAngle::Up);
+        assert!(segs.len() >= 8, "un cuadrado de 100 con paso 10: {}", segs.len());
+        let inside = |x: f32, y: f32| (-0.5..=100.5).contains(&x) && (-0.5..=100.5).contains(&y);
+        for s in &segs {
+            assert!(inside(s[0], s[1]) && inside(s[2], s[3]), "{s:?} se sale del cuadrado");
+            // Each segment is a line of the family x - y = c or x + y = c.
+            let d = (s[2] - s[0]) - (s[3] - s[1]);
+            assert!(d.abs() < 0.5 || (s[2] - s[0] + s[3] - s[1]).abs() < 0.5, "{s:?} no está a 45°");
+        }
+        // The two directions are different lines.
+        let down = hatch_segments(&square(), 10.0, HatchAngle::Down);
+        assert!(!down.is_empty());
+        assert_ne!(segs[0], down[0]);
+    }
+
+    #[test]
+    fn a_small_shape_does_not_get_a_sea_of_lines() {
+        let segs = hatch_segments(&square(), 0.01, HatchAngle::Up);
+        assert!(segs.len() <= MAX_HATCH_LINES as usize + 4, "{} líneas", segs.len());
+        // And a shape with no area gives nothing at all.
+        assert!(hatch_segments(&[(0.0, 0.0), (0.0, 0.0), (0.0, 0.0)], 5.0, HatchAngle::Up).is_empty());
     }
 }

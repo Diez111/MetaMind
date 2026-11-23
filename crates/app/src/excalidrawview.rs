@@ -39,7 +39,7 @@
 
 use crate::excalidraw::{luma, paint_op, surface, surface_paper, Pen, Surface, SurfaceMode};
 use crate::shell::{App, Focus};
-use excalidraw_core::{new_element, ElementType, Rgba, Scene};
+use excalidraw_core::{new_element, ElementType, FillStyle, Rgba, Scene};
 use metamind_ui::{Cmd, Dom, El, Fonts, NodeId, Rect, TextStyle};
 use theme_engine::Color;
 use vault_core::fsio::{self, Stamp};
@@ -54,6 +54,9 @@ pub const STROKES: [&str; 8] =
 /// The eight background colours; the first is Excalidraw's "no fill".
 pub const FILLS: [&str; 8] =
     ["transparent", "#ffc9c9", "#b2f2bb", "#a5d8ff", "#ffec99", "#eebefa", "#c3fae8", "#e9ecef"];
+/// The fill styles the style panel offers, in the order of the buttons.
+pub const FILL_STYLES: [FillStyle; 3] = [FillStyle::Solid, FillStyle::Hachure, FillStyle::CrossHatch];
+
 /// The three stroke widths the toolbar offers.
 pub const WIDTHS: [f64; 3] = [1.0, 2.0, 4.0];
 
@@ -209,6 +212,8 @@ pub struct ExcView {
     /// `#rrggbb`, or `transparent` for no fill.
     pub fill: String,
     pub width: f64,
+    /// How a filled shape is painted: a colour, hachure lines or the two crossing.
+    pub fill_style: FillStyle,
     pub selected: Option<String>,
     /// More elements selected with the rubber band, besides `selected`.
     pub band: Vec<String>,
@@ -263,6 +268,7 @@ impl ExcView {
             stroke: STROKES[0].to_string(),
             fill: FILLS[0].to_string(),
             width: WIDTHS[1],
+            fill_style: FillStyle::Solid,
             selected: None,
             band: Vec::new(),
             band_to: None,
@@ -469,6 +475,7 @@ impl ExcView {
         let mut e = new_element(kind, at[0], at[1], 0.0, 0.0, seed, fsio::now_ms());
         e.stroke_color = self.stroke.clone();
         e.stroke_width = self.width;
+        e.fill_style = self.fill_style.clone();
         if !matches!(e.kind, ElementType::Arrow | ElementType::Line | ElementType::Freedraw) {
             e.background_color = self.fill.clone();
         }
@@ -1161,6 +1168,25 @@ fn style_panel(v: &ExcView, dom: &mut Dom, parent: NodeId) {
         );
         dom.add(b, El::div().class("exc-width-dot").style(&format!("height: {}px", (w * 1.6).round())));
     }
+    let fills = row(dom, "Relleno");
+    let segs = dom.add(fills, El::div().class("exc-widths"));
+    for (i, (label, style)) in [
+        ("Sólido", FILL_STYLES[0].clone()),
+        ("Rayado", FILL_STYLES[1].clone()),
+        ("Cruzado", FILL_STYLES[2].clone()),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        dom.add(
+            segs,
+            El::div()
+                .class("exc-seg exc-fill-style")
+                .class_if(v.fill_style == style, "is-active")
+                .action(format!("exc:fillstyle:{i}"))
+                .text(label),
+        );
+    }
     dom.add(
         panel,
         El::div()
@@ -1575,6 +1601,14 @@ impl App {
                 }
                 None => false,
             },
+            "fillstyle" => match arg.parse::<usize>().ok().and_then(|i| FILL_STYLES.get(i)) {
+                Some(style) => {
+                    v.fill_style = style.clone();
+                    apply_style(v);
+                    true
+                }
+                None => false,
+            },
             "surface" => match SurfaceMode::from_id(arg) {
                 Some(mode) => {
                     let next = Surface { mode, ..v.surface };
@@ -1727,7 +1761,7 @@ fn apply_style(v: &mut ExcView) {
     if ids.is_empty() {
         return;
     }
-    let (stroke, fill, width) = (v.stroke.clone(), v.fill.clone(), v.width);
+    let (stroke, fill, width, fill_style) = (v.stroke.clone(), v.fill.clone(), v.width, v.fill_style.clone());
     let changes = ids.iter().any(|id| {
         v.scene.element(id).is_some_and(|e| {
             let filled = !matches!(
@@ -1737,6 +1771,7 @@ fn apply_style(v: &mut ExcView) {
             e.stroke_color != stroke
                 || (filled && e.background_color != fill)
                 || (e.stroke_width - width).abs() > 0.001
+                || e.fill_style != fill_style
         })
     });
     if !changes {
@@ -1753,6 +1788,7 @@ fn apply_style(v: &mut ExcView) {
                 e.background_color = fill.clone();
             }
             e.stroke_width = width;
+            e.fill_style = fill_style.clone();
             e.bump(fsio::now_ms(), 0);
         }
     }

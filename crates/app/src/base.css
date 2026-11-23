@@ -1135,3 +1135,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .kanban-new-template.is-active { background-color: var(--interactive-accent); border-color: var(--interactive-accent); color: var(--text-on-accent) }
 .kanban-new-error { padding: 5px 8px; border-radius: var(--radius-s); background-color: var(--rs-band); color: var(--rs-warning); font-size: var(--font-ui-smaller) }
 .kanban-new-actions { display: flex; align-items: center; gap: 8px }
+
+/* A segmented control of labels (the fill styles): the shape of the width buttons, with words. */
+.exc-seg { flex-grow: 1; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background-color: var(--background-modifier-hover); color: var(--text-muted); font-size: var(--font-ui-smaller) }
+.exc-seg.is-active { background-color: var(--interactive-accent); color: var(--text-on-accent) }

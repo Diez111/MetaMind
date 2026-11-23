@@ -4,7 +4,7 @@
 //! The board of the vault starts away from the origin and is wider than the pane, which is the
 //! case the read-only embed got wrong: the first paint has to frame the elements, not the origin.
 
-use excalidraw_core::{ElementType, Scene};
+use excalidraw_core::{ElementType, FillStyle, Scene};
 use metamind_app::excalidrawview::{Tool, WIDTHS};
 use metamind_app::shell::ViewMode;
 use metamind_app::{render, App, Frame, Key};
@@ -504,4 +504,56 @@ fn a_note_with_an_excalidraw_block_opens_as_a_board_and_saves_back_into_the_bloc
     let scene = Scene::parse(&saved[range]).unwrap();
     assert_eq!(scene.elements.len(), 1);
     assert!(scene.elements[0].x > 40.0, "el movimiento quedó guardado: {}", scene.elements[0].x);
+}
+
+/// A hachure fill is lines, not a colour: the file says `hachure` and the board has to draw what
+/// the reader chose, with the style panel offering the three options.
+#[test]
+fn a_hachure_fill_paints_lines_and_the_panel_offers_the_three_styles() {
+    let (_d, mut app, mut fonts) = open();
+    let f = frame(&mut app, &mut fonts);
+    let r = pane(&f);
+    app.run("exc:style");
+    let f = frame(&mut app, &mut fonts);
+    let rows: Vec<String> = f
+        .dom
+        .nodes
+        .iter()
+        .filter(|n| n.el.classes.iter().any(|c| c == "exc-fill-style"))
+        .filter_map(|n| n.el.text.clone())
+        .collect();
+    assert_eq!(rows, ["Sólido", "Rayado", "Cruzado"], "las tres opciones de relleno");
+    app.run("exc:fillstyle:1");
+    assert_eq!(app.exc_view.as_ref().unwrap().fill_style, FillStyle::Hachure);
+    // Draw a rectangle with the hachure fill selected.
+    let f = frame(&mut app, &mut fonts);
+    app.run("exc:tool:rect");
+    app.run("exc:fill:2");
+    let (x, y) = (r.x + 80.0, r.y + 90.0);
+    app.click(&f, &mut fonts, x, y, false);
+    app.drag(&f, &mut fonts, x + 120.0, y + 90.0);
+    app.release();
+    let v = app.exc_view.as_mut().unwrap();
+    assert_eq!(v.scene.elements.last().unwrap().fill_style, FillStyle::Hachure, "queda en el archivo");
+    let text = metamind_ui::TextStyle {
+        size: 14.0,
+        line_height: 20.0,
+        color: metamind_ui::Color::rgb(220, 220, 220),
+        bold: false,
+        italic: false,
+        mono: false,
+        wrap: true,
+        family: None,
+    };
+    let look = metamind_app::excalidrawview::Look { dark: true, primary: false, fade: 1.0 };
+    let cmds = v.paint(r, &[metamind_ui::Color::rgb(0, 0, 0); 12], &text, look, &mut fonts);
+    let lines = cmds
+        .iter()
+        .filter_map(|c| match c {
+            metamind_ui::Cmd::Lines { segs, .. } => Some(segs.len()),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0);
+    assert!(lines >= 5, "el relleno se pinta como líneas: {lines}");
 }

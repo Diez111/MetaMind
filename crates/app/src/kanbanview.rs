@@ -1943,8 +1943,6 @@ impl App {
         }
     }
 
-    /// A board created from the palette: the plugin's template in the folder new notes go to.
-
     /// Write the board, when there is something to write.
     pub(crate) fn kanban_save(&mut self) {
         let Some(v) = self.kanban_view.as_mut().filter(|v| v.dirty) else { return };
@@ -2597,7 +2595,8 @@ impl NewBoard {
     pub fn path(&self) -> String {
         let name = self.name.trim();
         let name = if name.is_empty() { "Tablero" } else { name };
-        let file = if name.to_ascii_lowercase().ends_with(".md") { name.to_string() } else { format!("{name}.md") };
+        let file =
+            if name.to_ascii_lowercase().ends_with(".md") { name.to_string() } else { format!("{name}.md") };
         vault_core::path::join(&self.folder, &file)
     }
 
@@ -2609,7 +2608,8 @@ impl NewBoard {
 /// The dialog over the window.
 pub fn new_board_dialog(app: &crate::shell::App, dom: &mut Dom) {
     let Some(nb) = &app.kanban_new else { return };
-    let backdrop = dom.add(0, El::div().class("modal-container mod-dim kanban-new-modal").action("kanban:cancel"));
+    let backdrop =
+        dom.add(0, El::div().class("modal-container mod-dim kanban-new-modal").action("kanban:cancel"));
     let card = dom.add(backdrop, El::div().class("kanban-new").action("kanban:none"));
     let head = dom.add(card, El::div().class("kanban-new-head"));
     dom.add(head, El::div().class("kanban-new-title").text("Nuevo tablero"));
@@ -2662,7 +2662,7 @@ impl crate::shell::App {
             };
             let stem = file.trim_end_matches(".md");
             rel = (2..)
-                .map(|n| vault_core::path::join(&dir.trim_end_matches('/'), &format!("{stem} {n}.md")))
+                .map(|n| vault_core::path::join(dir.trim_end_matches('/'), &format!("{stem} {n}.md")))
                 .find(|p| self.store.index.id(p).is_none() && !self.store.abs(p).exists())
                 .unwrap_or(rel);
         }
