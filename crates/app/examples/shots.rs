@@ -48,6 +48,10 @@ fn fixture(root: &Path) {
     w("Tablero.md", BOARD);
     w("Pizarra.excalidraw", DRAWING);
     w(
+        "Dinero.md",
+        "---\ntipo: finanzas\n---\n# Finanzas\n\n## Ingresos\n- 2026-11-01 · sueldo · 1.250.000\n- 2026-10-01 · sueldo · 1.180.000\n\n## Gastos\n- 2026-11-03 · supermercado · 45.200\n- 2026-11-05 · transporte · 12.000\n- 2026-11-10 · alquiler · 240.000\n- 2026-10-04 · supermercado · 38.000\n- 2026-10-10 · alquiler · 240.000\n",
+    );
+    w(
         "Finanzas.dashboard.md",
         "---\ntipo: dashboard\n---\n# Tablero\n\n## Hoy\n- [ ] Revisar gastos\n\n## Semana\n- [x] Pagar alquiler\n",
     );
@@ -110,5 +114,6 @@ fn views() -> Vec<(&'static str, Vec<&'static str>)> {
         ("ajustes", vec!["app:open-settings"]),
         ("ia", vec!["ai:open"]),
         ("dashboard", vec!["open:Finanzas.dashboard.md"]),
+        ("finanzas", vec!["open:Dinero.md"]),
     ]
 }

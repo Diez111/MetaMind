@@ -1740,6 +1740,9 @@ fn pane(
             crate::calendarview::pane(app, dom, leaf);
         }
         _ if crate::dashboard::is_dashboard(app) => crate::dashboard::pane(app, dom, leaf, width),
+        _ if crate::finance::is_finance(app) => {
+            crate::finance::pane(app, dom, leaf, width);
+        }
         _ => editor(app, dom, leaf, pal, info, app.tab().map(|t| (pane, app.active, t)), true),
     }
     info.panes.push((pane, leaf, None));
