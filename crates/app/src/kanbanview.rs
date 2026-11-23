@@ -1757,7 +1757,10 @@ fn fade_cmd(cmd: &mut Cmd, t: f32) {
     let t = t.clamp(0.0, 1.0);
     let fade = |c: &mut Color| c.a = (f32::from(c.a) * t).round().clamp(0.0, 255.0) as u8;
     match cmd {
-        Cmd::Fill { color, .. } | Cmd::Lines { color, .. } | Cmd::Circles { color, .. } => fade(color),
+        Cmd::Fill { color, .. }
+        | Cmd::Lines { color, .. }
+        | Cmd::Circles { color, .. }
+        | Cmd::Stroke { color, .. } => fade(color),
         Cmd::Text { style, spans, .. } => {
             fade(&mut style.color);
             for s in spans {

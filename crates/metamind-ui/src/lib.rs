@@ -10,7 +10,7 @@ pub mod text;
 
 pub use damage::{render_damaged, Damage, DamageTracker};
 pub use dom::{Dom, El, NodeId, Style};
-pub use scene::{render, Cmd, DevRect, Image, Rect, Scene};
+pub use scene::{render, Cap, Cmd, DevRect, Image, Rect, Scene};
 pub use text::{FontRef, Fonts, GlyphRun, PlacedGlyph, Span, TextBox, TextRect, TextStyle};
 pub use theme_engine::{Color, Env, Theme};
 pub use tiny_skia::{Color as SkColor, IntRect, Pixmap};

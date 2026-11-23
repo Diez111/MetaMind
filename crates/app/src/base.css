@@ -364,10 +364,10 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .canvas-view.color-5 { color: rgb(var(--canvas-color-5)) }
 .canvas-view.color-6 { color: rgb(var(--canvas-color-6)) }
 
-/* A `.excalidraw` board in its tab: the pane the paint pass draws into, the toolbar over it and
-   the zoom bar under it. The colours are read from `.exc-view` elements, the same twelve the
-   canvas view reads. */
-.exc-wrapper { position: relative; padding: 0; overflow: hidden; background-color: var(--background-primary) }
+/* A `.excalidraw` board in its tab: a bar across the top, the pane the paint pass draws into, and
+   the zoom bar over its bottom-left corner. The colours are read from `.exc-view` elements, the
+   same twelve the canvas view reads. */
+.exc-wrapper { position: relative; display: flex; flex-direction: column; padding: 0; overflow: hidden; background-color: var(--background-primary) }
 .exc-view-colors { display: none }
 .exc-view.color-node { color: var(--canvas-node-background, var(--background-primary-alt)) }
 .exc-view.color-border { color: var(--background-modifier-border-hover, var(--background-modifier-border)) }
@@ -416,32 +416,53 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .kanban-controls.is-compact .graph-count { display: none }
 .kanban-controls.is-compact .kanban-filter { flex-grow: 1; flex-shrink: 1; flex-basis: 0; min-width: 0 }
 .kanban-controls.is-compact .kanban-control-icon { display: flex; align-items: center; padding: 4px 6px }
-.exc-controls .exc-fullscreen-button { border-color: var(--interactive-accent); color: var(--text-normal) }.exc-toolbar { position: absolute; left: 12px; top: 12px; display: flex; flex-direction: column; gap: 2px; padding: 4px; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
+.exc-controls .exc-fullscreen-button { border-color: var(--interactive-accent); color: var(--text-normal) }
+/* The bar is a row of the pane's column, not a floating card: it can grow a tool without landing
+   on top of anything. It scrolls sideways when a narrow window cannot hold every tool, so a phone
+   keeps every control reachable instead of pushing the last ones out of the pane. */
+.exc-toolbar { display: flex; flex-direction: row; align-items: center; gap: 2px; flex-shrink: 0; height: 44px; padding: 0 8px; overflow-x: auto; overflow-y: hidden; background-color: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border) }
+.exc-sep { width: 1px; height: 20px; flex-shrink: 0; margin: 0 4px; background-color: var(--background-modifier-border) }
 .exc-tool.exc-fold { color: var(--text-faint) }
-.exc-tools-handle { position: absolute; left: 12px; top: 12px; display: flex; align-items: center; gap: 4px; padding: 5px 8px 5px 5px; font-size: var(--font-ui-smaller); color: var(--text-muted); background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
+.exc-surface-size-label { font-size: var(--font-ui-smaller); font-weight: 600 }
+.exc-style-button { display: flex; align-items: center; gap: 4px; flex-shrink: 0; height: 30px; padding: 0 10px 0 8px; border-radius: var(--radius-s); color: var(--text-muted) }
+.exc-style-button:hover { background-color: var(--background-modifier-hover); color: var(--text-normal) }
+.exc-style-button.is-active { background-color: var(--background-modifier-active-hover); color: var(--text-normal) }
+.exc-style-button-label { font-size: var(--font-ui-smaller); white-space: nowrap }
+.exc-tools-handle { position: absolute; left: 8px; top: 8px; display: flex; align-items: center; gap: 4px; padding: 4px 10px 4px 6px; font-size: var(--font-ui-smaller); color: var(--text-muted); background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
 .exc-tools-handle:hover { color: var(--text-normal); background-color: var(--background-modifier-hover) }
 .exc-tools-label { white-space: nowrap }
-.exc-tool { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-s); color: var(--text-muted) }
+.exc-tool { width: 30px; height: 30px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-s); color: var(--text-muted) }
 .exc-tool:hover { background-color: var(--background-modifier-hover); color: var(--text-normal) }
 .exc-tool.is-active { background-color: var(--interactive-accent); color: var(--text-on-accent) }
-.exc-palette { position: absolute; left: 12px; top: 292px; width: 76px; display: flex; flex-direction: row; flex-wrap: wrap; gap: 3px; padding: 6px; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
-.exc-swatch { width: 30px; height: 20px; border-radius: 4px; border: 1px solid var(--background-modifier-border) }
+/* The board itself: the node the painter draws into, taking the rest of the column. */
+.exc-canvas { position: relative; flex-grow: 1; flex-shrink: 1; min-height: 0; overflow: hidden }
+/* The style panel is anchored to the top-right corner of the wrapper — a place that does not
+   depend on how tall the bar is — and its colours wrap instead of spilling out. */
+.exc-style-panel { position: absolute; right: 8px; top: 52px; width: 248px; max-width: calc(100% - 16px); max-height: calc(100% - 60px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 10px; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28) }
+.exc-style-row { display: flex; flex-direction: column; gap: 4px }
+.exc-style-label { font-size: var(--font-ui-smaller); font-weight: 600; color: var(--text-faint) }
+.exc-style-hint { font-size: var(--font-ui-smaller); color: var(--text-faint); line-height: 1.35 }
+.exc-swatches { display: flex; flex-direction: row; flex-wrap: wrap; gap: 4px }
+.exc-swatch { width: 26px; height: 22px; border-radius: 4px; border: 1px solid var(--background-modifier-border) }
 .exc-swatch.is-active { border: 2px solid var(--interactive-accent) }
 .exc-swatch.is-empty { background-image: linear-gradient(45deg, rgba(128, 128, 128, 0.1) 40%, rgba(128, 128, 128, 0.6) 40%, rgba(128, 128, 128, 0.6) 60%, rgba(128, 128, 128, 0.1) 60%) }
-.exc-widths { width: 100%; display: flex; flex-direction: row; gap: 3px }
-.exc-width { flex-grow: 1; height: 20px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background-color: var(--background-modifier-hover) }
+.exc-widths { width: 100%; display: flex; flex-direction: row; gap: 4px }
+.exc-width { flex-grow: 1; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background-color: var(--background-modifier-hover) }
 .exc-width.is-active { background-color: var(--interactive-accent) }
-.exc-width-dot { width: 16px; border-radius: 2px; background-color: var(--text-normal) }
+.exc-width-dot { width: 18px; border-radius: 2px; background-color: var(--text-normal) }
 .exc-zoombar { position: absolute; left: 12px; bottom: 12px; display: flex; align-items: center; gap: 2px; padding: 3px; font-size: var(--font-ui-smaller); color: var(--text-muted); background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m) }
 .exc-zoom { min-width: 26px; height: 24px; padding: 0 6px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-s) }
 .exc-zoom:hover { background-color: var(--background-modifier-hover); color: var(--text-normal) }
 .exc-zoom.is-off { opacity: 0.4 }
-.exc-fullscreen-exit { position: absolute; right: 12px; top: 12px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
+.exc-fullscreen-exit { position: absolute; right: 12px; top: 52px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
 .exc-fullscreen-exit:hover { color: var(--text-normal); background-color: var(--background-modifier-hover) }
 .exc-zoom-label { white-space: nowrap }
 .exc-zoom-level { min-width: 44px; padding: 0 6px; text-align: right; color: var(--text-faint) }
 .modal.mod-exc { display: flex; padding: 0; overflow: hidden; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5) }
 .mod-exc .exc-wrapper { flex-grow: 1 }
+/* The way out of the full-screen board sits over the bar's right end: the bar is 44px tall, so a
+   button at its own height lands beside the fold control, not on it. */
+.mod-exc .exc-fullscreen-exit { top: 7px; right: 8px }
 .graph-view-container { padding: 0; overflow: hidden }
 .graph-view-colors { display: none }
 .graph-view.color-fill { color: var(--text-muted) }

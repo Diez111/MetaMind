@@ -203,12 +203,20 @@ pub struct Binding {
     pub extra: Map<String, Value>,
 }
 
-/// The canvas state saved with the scene. Only the two fields a renderer needs are typed; the rest
-/// (zoom, scroll, selection, current style) is kept in `extra`.
+/// The canvas state saved with the scene. The grid and the page colour are the two fields a
+/// renderer needs; the rest (zoom, scroll, selection, current style) is kept in `extra`.
+///
+/// `grid_size` is a `Value` on purpose: Excalidraw writes a number of pixels, older files write
+/// `"small"`/`"medium"`/`"large"`, and a typed `f64` would fail on the string and throw the whole
+/// app state into `extra`.
 #[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AppState {
-    pub grid_size: Option<f64>,
+    /// Pixels between grid lines, or one of `small`, `medium`, `large`.
+    pub grid_size: Option<Value>,
+    /// `dots`, `grid`, `ruled` or `none`. Absent in a file written by Excalidraw itself, which
+    /// only has the switch "grid on/off".
+    pub grid_mode: Option<String>,
     pub view_background_color: Option<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -344,6 +352,7 @@ impl Scene {
             // A stale field must not cost the whole app state: keep the object untouched instead.
             scene.app_state = serde_json::from_value(state.clone()).unwrap_or_else(|_| AppState {
                 grid_size: None,
+                grid_mode: None,
                 view_background_color: None,
                 extra: state.as_object().cloned().unwrap_or_default(),
             });

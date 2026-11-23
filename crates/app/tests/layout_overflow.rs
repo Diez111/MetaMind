@@ -40,6 +40,30 @@ fn vault() -> tempfile::TempDir {
         // A video embed: the card that names the file, with the button that opens the player.
         // The bytes are not a film: the gate never decodes one (see `METAMIND_NO_POSTERS` below).
         ("Video.md", "# Video\n\n![[clip.mp4]]\n\ntexto despues de la tarjeta\n"),
+        // The boards. Each one is a view of its own with chrome over it, and the chrome is what
+        // the sweep could not see before: a palette under a fixed `top` landed on the toolbar and
+        // spilled its colours out of the pane without a single test noticing.
+        (
+            "Tablero.excalidraw",
+            r##"{"type":"excalidraw","version":2,"elements":[
+{"id":"t","type":"text","x":20,"y":20,"width":240,"height":28,"strokeColor":"#1971c2","text":"Tablero","fontSize":20,"fontFamily":1},
+{"id":"b","type":"rectangle","x":40,"y":80,"width":200,"height":100,"strokeColor":"#1e1e1e","backgroundColor":"#a5d8ff","strokeWidth":2,"fillStyle":"solid","seed":7}
+],"appState":{"viewBackgroundColor":"#ffffff"},"files":{}}"##,
+        ),
+        (
+            "Tablero.md",
+            "%% kanban: settings\n{\"kanban-plugin\": \"basic\"} %%\n# Tablero\n\n## Pendiente\n\
+             - [ ] Primera tarea\n- [ ] Segunda @{2026-11-25} con fecha #area\n\n## Haciendo\n\
+             - [ ] En curso\n\n## Hecho\n- [x] Terminada\n",
+        ),
+        (
+            "Lienzo.canvas",
+            r##"{"nodes":[{"id":"a","type":"text","x":0,"y":0,"width":220,"height":90,"text":"# Idea"},{"id":"b","type":"file","file":"A.md","x":320,"y":20,"width":220,"height":90}],"edges":[{"id":"e","fromNode":"a","toNode":"b"}]}"##,
+        ),
+        (
+            "Tablero.base",
+            "filters:\n  and:\n    - file.hasTag(\"topic\")\nviews:\n  - type: table\n    name: Notas\n    order:\n      - file.name\n  - type: kanban\n    name: Tablero\n    groupBy: status\n",
+        ),
     ] {
         fs::write(d.path().join(p), t).unwrap();
     }
@@ -292,6 +316,13 @@ fn views() -> Vec<(&'static str, Vec<&'static str>)> {
         ("ajustes-avanzado", vec!["app:open-settings", "settings:section:advanced"]),
         ("paleta", vec!["command-palette:open"]),
         ("switcher", vec!["switcher:open"]),
+        // Boards. The style panel is opened as well: it is a layer of its own over the board.
+        ("excalidraw", vec!["open:Tablero.excalidraw"]),
+        ("excalidraw-estilo", vec!["open:Tablero.excalidraw", "exc:style"]),
+        ("excalidraw-sin-barra", vec!["open:Tablero.excalidraw", "exc:tools"]),
+        ("kanban", vec!["open:Tablero.md"]),
+        ("canvas", vec!["open:Lienzo.canvas"]),
+        ("base", vec!["open:Tablero.base"]),
     ]
 }
 

@@ -143,8 +143,23 @@ pub enum Cmd {
         items: Vec<[f32; 3]>,
         color: Color,
     },
+    /// A polyline whose width changes along it: `[x, y, width]` per point. A pen stroke: a mouse
+    /// gives every point the same width, a stylus gives each point its own pressure.
+    Stroke {
+        points: Vec<[f32; 3]>,
+        color: Color,
+        cap: Cap,
+    },
     PushClip(Rect),
     PopClip,
+}
+
+/// The end of a [`Cmd::Stroke`]. Round is what a pen draws; butt is a plain cut.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Cap {
+    Butt,
+    #[default]
+    Round,
 }
 
 impl Cmd {
@@ -171,6 +186,17 @@ impl Cmd {
                 let mut r = Rect::default();
                 for it in items {
                     let part = Rect::new(it[0] - it[2], it[1] - it[2], it[2] * 2.0, it[2] * 2.0);
+                    let (x0, y0) = (r.x.min(part.x), r.y.min(part.y));
+                    let (x1, y1) = ((r.x + r.w).max(part.x + part.w), (r.y + r.h).max(part.y + part.h));
+                    r = Rect::new(x0, y0, x1 - x0, y1 - y0);
+                }
+                r
+            }
+            Cmd::Stroke { points, .. } => {
+                let mut r = Rect::default();
+                for p in points {
+                    let half = p[2].max(1.0) * 0.5 + 1.0;
+                    let part = Rect::new(p[0] - half, p[1] - half, half * 2.0, half * 2.0);
                     let (x0, y0) = (r.x.min(part.x), r.y.min(part.y));
                     let (x1, y1) = ((r.x + r.w).max(part.x + part.w), (r.y + r.h).max(part.y + part.h));
                     r = Rect::new(x0, y0, x1 - x0, y1 - y0);
@@ -364,6 +390,62 @@ fn thin_line(rows: &mut [u8], stride: usize, band: &DevClip, s: [f32; 4], c: [u3
     }
 }
 
+/// A device-space mask for a logical rectangle: how a filled path is kept inside a clip.
+fn rect_mask(w: u32, h: u32, r: Rect, scale: f32) -> Option<tiny_skia::Mask> {
+    let path = tiny_skia::Rect::from_xywh(r.x * scale, r.y * scale, r.w * scale, r.h * scale)
+        .map(PathBuilder::from_rect)?;
+    let mut m = tiny_skia::Mask::new(w, h)?;
+    m.fill_path(&path, FillRule::Winding, false, Transform::identity());
+    Some(m)
+}
+
+/// The outline of a polyline whose width changes from point to point: one quad per segment and a
+/// disc on every joint, filled as a single path so a translucent stroke is composited once. The
+/// ends get a disc only when the cap is round.
+fn ribbon(points: &[[f32; 3]], cap: Cap) -> Option<tiny_skia::Path> {
+    let mut pb = PathBuilder::new();
+    for w in points.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+        let len = (dx * dx + dy * dy).sqrt();
+        if len < 0.01 {
+            continue;
+        }
+        let (nx, ny) = (-dy / len, dx / len);
+        let (ra, rb) = (a[2].max(0.3) * 0.5, b[2].max(0.3) * 0.5);
+        pb.move_to(a[0] + nx * ra, a[1] + ny * ra);
+        pb.line_to(b[0] + nx * rb, b[1] + ny * rb);
+        pb.line_to(b[0] - nx * rb, b[1] - ny * rb);
+        pb.line_to(a[0] - nx * ra, a[1] - ny * ra);
+        pb.close();
+    }
+    let n = points.len();
+    let range = if cap == Cap::Round { 0..n } else { 1..n.saturating_sub(1) };
+    for p in &points[range] {
+        if p[2] > 0.2 {
+            push_disc(&mut pb, p[0], p[1], p[2] * 0.5);
+        }
+    }
+    pb.finish()
+}
+
+/// A disc wound the same way as the quads of [`ribbon`]. `PathBuilder::push_circle` winds the
+/// other way, and filling the union with the winding rule would cancel the joint instead of
+/// filling it: that showed up as a stroke that vanished on its last centimetre.
+fn push_disc(pb: &mut PathBuilder, cx: f32, cy: f32, r: f32) {
+    let steps = (r * 2.0).clamp(10.0, 40.0) as usize;
+    for i in 0..=steps {
+        let t = i as f32 / steps as f32 * std::f32::consts::TAU;
+        let (x, y) = (cx + r * t.cos(), cy - r * t.sin());
+        if i == 0 {
+            pb.move_to(x, y);
+        } else {
+            pb.line_to(x, y);
+        }
+    }
+    pb.close();
+}
+
 /// Anti-aliased filled circle in device pixels, restricted to a band.
 fn disc(rows: &mut [u8], stride: usize, band: &DevClip, [cx, cy, r]: [f32; 3], c: [u32; 3], alpha: f32) {
     if r <= 0.0 {
@@ -545,6 +627,29 @@ pub(crate) fn paint(
                         }
                     }
                 });
+            }
+            Cmd::Stroke { points, color, cap } => {
+                if color.a == 0 || clip.w <= 0.0 || clip.h <= 0.0 || points.len() < 2 {
+                    continue;
+                }
+                let Some(path) = ribbon(points, *cap) else { continue };
+                let mut paint = Paint::default();
+                paint.set_color_rgba8(color.r, color.g, color.b, color.a);
+                paint.anti_alias = true;
+                // A stroke is a filled shape, so it is kept inside the pane through a mask: cutting
+                // it segment by segment would make it jump at the edge.
+                let mask = if clip == full {
+                    None
+                } else {
+                    rect_mask(pixmap.width(), pixmap.height(), clip, scale)
+                };
+                pixmap.fill_path(
+                    &path,
+                    &paint,
+                    FillRule::Winding,
+                    Transform::from_scale(scale, scale),
+                    mask.as_ref().or(stencil.as_ref()),
+                );
             }
             Cmd::Image { rect, image } => {
                 let vis = rect.intersect(&clip);

@@ -200,14 +200,142 @@ pub(crate) fn surface(saved: Option<Rgba>, c: &[Color; 12], dark: bool) -> Color
     }
 }
 
+/// What the empty part of a board is painted with. Excalidraw itself only has the grid on/off
+/// switch; a ruled page and dots are the two papers a hand-drawn board wants most, so they are
+/// modes of their own here and are saved in `appState.gridMode`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum SurfaceMode {
+    /// Nothing: the page is a flat colour.
+    None,
+    /// A dot every `size` scene pixels.
+    #[default]
+    Dots,
+    /// A line every `size` scene pixels, both ways.
+    Grid,
+    /// Horizontal rules every `size` scene pixels, with a faint margin line every eight.
+    Ruled,
+}
+
+impl SurfaceMode {
+    pub const ALL: [SurfaceMode; 4] =
+        [SurfaceMode::None, SurfaceMode::Dots, SurfaceMode::Grid, SurfaceMode::Ruled];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            SurfaceMode::None => "none",
+            SurfaceMode::Dots => "dots",
+            SurfaceMode::Grid => "grid",
+            SurfaceMode::Ruled => "ruled",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<SurfaceMode> {
+        SurfaceMode::ALL.into_iter().find(|m| m.id() == id)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SurfaceMode::None => "Sin fondo",
+            SurfaceMode::Dots => "Puntos",
+            SurfaceMode::Grid => "Cuadrícula",
+            SurfaceMode::Ruled => "Hoja rayada",
+        }
+    }
+
+    pub fn icon(self) -> &'static str {
+        match self {
+            SurfaceMode::None => "square",
+            SurfaceMode::Dots => "dot",
+            SurfaceMode::Grid => "table",
+            SurfaceMode::Ruled => "list",
+        }
+    }
+}
+
+/// The background of a board: which paper, and how far apart its lines are (scene pixels).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Surface {
+    pub mode: SurfaceMode,
+    pub size: f32,
+}
+
+impl Default for Surface {
+    fn default() -> Surface {
+        Surface { mode: SurfaceMode::Dots, size: GRID as f32 }
+    }
+}
+
+/// How far apart the three sizes the toolbar offers put the lines.
+pub const SURFACE_SIZES: [f32; 3] = [10.0, 20.0, 40.0];
+
+impl Surface {
+    /// The surface a file asks for. A file written by Excalidraw has no `gridMode`: its `gridSize`
+    /// (a number, or `"small"`/`"medium"`/`"large"` in older files) only says the grid was on.
+    pub fn from_app_state(s: &excalidraw_core::AppState) -> Surface {
+        let named = |name: &str| match name {
+            "small" => Some(SURFACE_SIZES[0]),
+            "medium" => Some(SURFACE_SIZES[1]),
+            "large" => Some(SURFACE_SIZES[2]),
+            _ => None,
+        };
+        let size = s
+            .grid_size
+            .as_ref()
+            .and_then(|v| v.as_f64().map(|n| n as f32).or_else(|| v.as_str().and_then(named)))
+            .filter(|n| *n >= 4.0 && *n <= 200.0)
+            .unwrap_or(GRID as f32);
+        let mode = s.grid_mode.as_deref().and_then(SurfaceMode::from_id).unwrap_or_default();
+        Surface { mode, size }
+    }
+
+    /// Write the surface back so the board reopens the way it was left.
+    pub fn write(&self, s: &mut excalidraw_core::AppState) {
+        s.grid_mode = Some(self.mode.id().to_string());
+        s.grid_size = Some(serde_json::json!(self.size));
+    }
+
+    /// Step to the next size, wrapping: the toolbar's small/medium/large switch.
+    pub fn next_size(self) -> Surface {
+        let next = SURFACE_SIZES
+            .iter()
+            .position(|n| (n - self.size).abs() < 0.5)
+            .map(|i| SURFACE_SIZES[(i + 1) % SURFACE_SIZES.len()])
+            .unwrap_or(SURFACE_SIZES[1]);
+        Surface { size: next, ..self }
+    }
+
+    /// `S`, `M` or `L` for the button that cycles the size.
+    pub fn size_label(self) -> &'static str {
+        match SURFACE_SIZES.iter().position(|n| (n - self.size).abs() < 0.5) {
+            Some(0) => "S",
+            Some(2) => "L",
+            _ => "M",
+        }
+    }
+}
+
 /// The faint dot grid of a board surface, in scene multiples of [`GRID`], clipped to `rect`.
 /// `s` is the scale, `(ox, oy)` where scene `(0, 0)` lands: the embed's fit and the editor's
 /// camera both paint through here, so a board's surface looks the same in both.
 pub(crate) fn grid(rect: Rect, s: f32, ox: f32, oy: f32, board: Color, dark: bool, cmds: &mut Vec<Cmd>) {
-    if s <= 0.0 || rect.w <= 0.0 || rect.h <= 0.0 {
+    surface_paper(rect, s, ox, oy, board, dark, Surface::default(), cmds);
+}
+
+/// Paints the paper a board sits on: dots, a grid, ruled lines, or nothing.
+pub(crate) fn surface_paper(
+    rect: Rect,
+    s: f32,
+    ox: f32,
+    oy: f32,
+    board: Color,
+    dark: bool,
+    paper: Surface,
+    cmds: &mut Vec<Cmd>,
+) {
+    if paper.mode == SurfaceMode::None || s <= 0.0 || rect.w <= 0.0 || rect.h <= 0.0 {
         return;
     }
-    let mut step = GRID as f32 * s;
+    let mut step = paper.size.max(4.0) * s;
     while (rect.w / step) * (rect.h / step) > MAX_DOTS {
         step *= 2.0;
     }
@@ -218,19 +346,65 @@ pub(crate) fn grid(rect: Rect, s: f32, ox: f32, oy: f32, board: Color, dark: boo
     let left = (rect.x - ox) / s;
     let top = (rect.y - oy) / s;
     let (right, bottom) = ((rect.x + rect.w - ox) / s, (rect.y + rect.h - oy) / s);
-    let radius = if step > 26.0 { 1.5 } else { 1.0 };
-    let mut items = Vec::new();
-    let mut y = (top / ws).ceil() * ws;
-    while y <= bottom {
-        let mut x = (left / ws).ceil() * ws;
-        while x <= right {
-            items.push([ox + x * s, oy + y * s, radius]);
-            x += ws;
-        }
-        y += ws;
-    }
     let faint = if dark { Color::rgb(255, 255, 255) } else { Color::rgb(0, 0, 0) };
-    cmds.push(Cmd::Circles { items, color: mix(board, faint, if dark { 0.2 } else { 0.12 }) });
+    match paper.mode {
+        SurfaceMode::None => {}
+        SurfaceMode::Dots => {
+            let radius = if step > 26.0 { 1.5 } else { 1.0 };
+            let mut items = Vec::new();
+            let mut y = (top / ws).ceil() * ws;
+            while y <= bottom {
+                let mut x = (left / ws).ceil() * ws;
+                while x <= right {
+                    items.push([ox + x * s, oy + y * s, radius]);
+                    x += ws;
+                }
+                y += ws;
+            }
+            cmds.push(Cmd::Circles { items, color: mix(board, faint, if dark { 0.2 } else { 0.12 }) });
+        }
+        SurfaceMode::Grid => {
+            let mut segs = Vec::new();
+            let mut x = (left / ws).ceil() * ws;
+            while x <= right {
+                let sx = ox + x * s;
+                segs.push([sx, rect.y, sx, rect.y + rect.h]);
+                x += ws;
+            }
+            let mut y = (top / ws).ceil() * ws;
+            while y <= bottom {
+                let sy = oy + y * s;
+                segs.push([rect.x, sy, rect.x + rect.w, sy]);
+                y += ws;
+            }
+            cmds.push(Cmd::Lines { segs, width: 1.0, color: mix(board, faint, if dark { 0.16 } else { 0.1 }) });
+        }
+        SurfaceMode::Ruled => {
+            let rule = mix(board, faint, if dark { 0.18 } else { 0.12 });
+            let margin = mix(board, faint, if dark { 0.3 } else { 0.2 });
+            let mut segs = Vec::new();
+            let mut y = (top / ws).ceil() * ws;
+            while y <= bottom {
+                let sy = oy + y * s;
+                segs.push([rect.x, sy, rect.x + rect.w, sy]);
+                y += ws;
+            }
+            // A margin line every eight rules, at the left edge: it reads as paper, not as a table.
+            let mut marks = Vec::new();
+            let mut y = (top / ws).ceil() * ws;
+            let mut n = 0;
+            while y <= bottom {
+                if n % 8 == 0 {
+                    let sy = oy + y * s;
+                    marks.push([rect.x + 18.0 * s.min(1.0), sy, rect.x + 18.0 * s.min(1.0), sy + ws * s]);
+                }
+                y += ws;
+                n += 1;
+            }
+            cmds.push(Cmd::Lines { segs, width: 1.0, color: rule });
+            cmds.push(Cmd::Lines { segs: marks, width: 1.0, color: margin });
+        }
+    }
 }
 
 /// `b` blended into `a` by `t`.

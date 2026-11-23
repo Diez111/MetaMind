@@ -153,7 +153,8 @@ fn extent(cmd: &Cmd, fonts: &mut Fonts) -> Option<(f32, f32)> {
         Cmd::Lines { segs, width, .. } => {
             span(&mut segs.iter().flat_map(|s| [s[1], s[3]])).map(|(a, b)| (a - width, b + width))
         }
-        Cmd::Circles { items, .. } => span(&mut items.iter().flat_map(|c| [c[1] - c[2], c[1] + c[2]])),
+            Cmd::Circles { items, .. } => span(&mut items.iter().flat_map(|c| [c[1] - c[2], c[1] + c[2]])),
+        Cmd::Stroke { points, .. } => span(&mut points.iter().flat_map(|p| [p[1] - p[2], p[1] + p[2]])),
         Cmd::PushClip(_) | Cmd::PopClip => None,
     }
 }
@@ -266,6 +267,30 @@ impl Out<'_> {
                     s.set_fill(Some(fill(*color)));
                     s.set_stroke(None);
                     s.draw_path(&path);
+                }
+            }
+            Cmd::Stroke { points, color, .. } => {
+                // A pen stroke goes out as a polyline at its widest point: the geometry is right
+                // even if the taper is not reproduced on paper.
+                let width = points.iter().map(|p| p[2]).fold(1.0f32, f32::max);
+                let mut pb = PathBuilder::new();
+                let mut it = points.iter();
+                if let Some(first) = it.next() {
+                    pb.move_to(first[0], first[1]);
+                    for p in it {
+                        pb.line_to(p[0], p[1]);
+                    }
+                }
+                if let Some(path) = pb.finish() {
+                    s.set_fill(None);
+                    s.set_stroke(Some(Stroke {
+                        paint: to_rgb(*color).into(),
+                        width,
+                        opacity: alpha(*color),
+                        ..Stroke::default()
+                    }));
+                    s.draw_path(&path);
+                    s.set_stroke(None);
                 }
             }
             Cmd::PushClip(r) => push_clip(s, *r),

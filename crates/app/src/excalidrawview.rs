@@ -37,7 +37,7 @@
 //! `excalidraw-core` and of the painter it feeds; the toolbar has no frame, embed or image tool,
 //! undo is the editor's (the board writes as it goes), and a selection is one element at a time.
 
-use crate::excalidraw::{grid, luma, paint_op, surface, Pen};
+use crate::excalidraw::{luma, paint_op, surface, surface_paper, Pen, Surface, SurfaceMode};
 use crate::shell::{App, Focus};
 use excalidraw_core::{new_element, ElementType, Rgba, Scene};
 use metamind_ui::{Cmd, Dom, El, Fonts, NodeId, Rect, TextStyle};
@@ -218,6 +218,10 @@ pub struct ExcView {
     space_held: bool,
     /// The toolbar and its palette are folded away: the board fills the pane.
     pub tools_hidden: bool,
+    /// The style panel (colours, width) is open. Closed by default: the board is the point.
+    pub style_open: bool,
+    /// The paper the board sits on and how far apart its lines are.
+    pub surface: Surface,
     /// Scenes before each edit, oldest first: `Ctrl+Z` walks back through them.
     history: Vec<Scene>,
     /// Scenes `Ctrl+Z` took away, for `Ctrl+Shift+Z`.
@@ -234,9 +238,11 @@ pub struct ExcView {
 impl ExcView {
     /// Read a board. The error is what the tab shows instead of the board.
     pub fn open(path: &str, text: &str, stamp: Stamp) -> Result<ExcView, String> {
+        let scene = Scene::parse(text).map_err(|e| e.to_string())?;
+        let surface = Surface::from_app_state(&scene.app_state);
         Ok(ExcView {
             path: path.to_string(),
-            scene: Scene::parse(text).map_err(|e| e.to_string())?,
+            scene,
             stamp,
             cam: [0.0; 2],
             zoom: 1.0,
@@ -253,6 +259,8 @@ impl ExcView {
             fresh: false,
             space_held: false,
             tools_hidden: false,
+            style_open: false,
+            surface,
             history: Vec::new(),
             redo: Vec::new(),
             fade: None,
@@ -799,11 +807,11 @@ impl ExcView {
         surface(self.scene.app_state.view_background_color.as_deref().and_then(Rgba::parse), c, dark)
     }
 
-    /// The faint dot grid, so the board reads as a surface and not as a blank pane.
-    fn grid(&self, cmds: &mut Vec<Cmd>, rect: Rect, board: Color, dark: bool) {
+    /// The paper of the board: dots, a grid, ruled lines or nothing.
+    fn paper(&self, cmds: &mut Vec<Cmd>, rect: Rect, board: Color, dark: bool) {
         let ox = rect.x + rect.w / 2.0 - self.cam[0] * self.zoom;
         let oy = rect.y + rect.h / 2.0 - self.cam[1] * self.zoom;
-        grid(rect, self.zoom, ox, oy, board, dark, cmds);
+        surface_paper(rect, self.zoom, ox, oy, board, dark, self.surface, cmds);
     }
 
     pub fn paint(
@@ -820,7 +828,7 @@ impl ExcView {
         let dark = look.dark;
         let board = self.surface(c, dark);
         let mut cmds = vec![Cmd::PushClip(rect), Cmd::Fill { rect, color: board, radius: 0.0 }];
-        self.grid(&mut cmds, rect, board, dark);
+        self.paper(&mut cmds, rect, board, dark);
         let ox = rect.x + rect.w / 2.0 - self.cam[0] * self.zoom;
         let oy = rect.y + rect.h / 2.0 - self.cam[1] * self.zoom;
         let pen = Pen::new(self.zoom, ox, oy, text, luma(board) < 0.5);
@@ -940,9 +948,19 @@ impl ExcView {
         }
     }
 
+    /// Change the paper the board sits on and keep the file's `appState` in step, so reopening
+    /// the board shows the same page.
+    pub fn set_surface(&mut self, surface: Surface) {
+        self.surface = surface;
+        self.surface.write(&mut self.scene.app_state);
+        self.dirty = true;
+    }
+
     /// The board as the file wants it.
     pub fn to_json(&self) -> String {
-        self.scene.to_json()
+        let mut scene = self.scene.clone();
+        self.surface.write(&mut scene.app_state);
+        scene.to_json()
     }
 }
 
@@ -951,7 +969,10 @@ fn fade_cmd(cmd: &mut Cmd, t: f32) {
     let t = t.clamp(0.0, 1.0);
     let fade = |c: &mut Color| c.a = (f32::from(c.a) * t).round().clamp(0.0, 255.0) as u8;
     match cmd {
-        Cmd::Fill { color, .. } | Cmd::Lines { color, .. } | Cmd::Circles { color, .. } => fade(color),
+        Cmd::Fill { color, .. }
+        | Cmd::Lines { color, .. }
+        | Cmd::Circles { color, .. }
+        | Cmd::Stroke { color, .. } => fade(color),
         Cmd::Text { style, spans, .. } => {
             fade(&mut style.color);
             for s in spans {
@@ -969,67 +990,120 @@ fn fade_cmd(cmd: &mut Cmd, t: f32) {
 
 // ---- the pane ----
 
-/// The toolbar and the zoom bar of a board, inside `parent` (the painted pane, or the full-screen
-/// box). The containers hold an action of their own, so a click on their background is not read as
-/// a click on the board underneath.
+/// The bar across the top of a board: the tools, the paper it sits on, and the style panel. The
+/// bar is a row in the pane's column, not a floating card: it can grow a button without landing on
+/// top of the palette (which is what a fixed `top` used to do).
 fn controls(v: &ExcView, dom: &mut Dom, parent: NodeId) {
     if v.tools_hidden {
-        // Folded away: one small handle is all that is left, so the board is a clean surface.
-        let flap = dom.add(parent, El::div().class("exc-tools-handle").action("exc:tools"));
-        dom.add(flap, crate::icons::el("chevron-right"));
-        dom.add(flap, El::div().class("exc-tools-label").text("Herramientas"));
-    } else {
-        let tools = dom.add(parent, El::div().class("exc-toolbar").action("exc:none"));
-        // The fold control lives in the toolbar it folds.
-        let fold = dom.add(tools, El::div().class("exc-tool exc-fold").action("exc:tools"));
-        dom.add(fold, crate::icons::el("collapse"));
-        for tool in Tool::ALL {
-            let b = dom.add(
-                tools,
-                El::div()
-                    .class("exc-tool")
-                    .class_if(v.tool == tool, "is-active")
-                    .action(format!("exc:tool:{}", tool.id())),
-            );
-            dom.add(b, crate::icons::el(tool.icon()));
-        }
-        let palette = dom.add(parent, El::div().class("exc-palette").action("exc:none"));
-        for (i, hex) in STROKES.iter().enumerate() {
-            dom.add(
-                palette,
-                El::div()
-                    .class("exc-swatch")
-                    .class_if(v.stroke.eq_ignore_ascii_case(hex), "is-active")
-                    .style(&format!("background-color: {hex}"))
-                    .action(format!("exc:stroke:{i}")),
-            );
-        }
-        for (i, hex) in FILLS.iter().enumerate() {
-            let empty = *hex == "transparent";
-            let on = if empty { v.fill == "transparent" } else { v.fill.eq_ignore_ascii_case(hex) };
-            let bg = if empty { "transparent".to_string() } else { (*hex).to_string() };
-            dom.add(
-                palette,
-                El::div()
-                    .class("exc-swatch")
-                    .class_if(on, "is-active")
-                    .class_if(empty, "is-empty")
-                    .style(&format!("background-color: {bg}"))
-                    .action(format!("exc:fill:{i}")),
-            );
-        }
-        let widths = dom.add(palette, El::div().class("exc-widths"));
-        for (i, w) in WIDTHS.iter().enumerate() {
-            let b = dom.add(
-                widths,
-                El::div()
-                    .class("exc-width")
-                    .class_if((v.width - w).abs() < 0.01, "is-active")
-                    .action(format!("exc:width:{i}")),
-            );
-            dom.add(b, El::div().class("exc-width-dot").style(&format!("height: {}px", (w * 1.6).round())));
-        }
+        return;
     }
+    let bar = dom.add(parent, El::div().class("exc-toolbar").action("exc:none"));
+    let label = |dom: &mut Dom, node: NodeId, text: &str| {
+        dom.nodes[node].el.attrs.push(("aria-label".into(), text.to_string()));
+    };
+    // The fold control lives in the toolbar it folds.
+    let fold = dom.add(bar, El::div().class("exc-tool exc-fold").action("exc:tools"));
+    dom.add(fold, crate::icons::el("collapse"));
+    label(dom, fold, "Guardar la barra de herramientas");
+    for tool in Tool::ALL {
+        let b = dom.add(
+            bar,
+            El::div()
+                .class("exc-tool")
+                .class_if(v.tool == tool, "is-active")
+                .action(format!("exc:tool:{}", tool.id())),
+        );
+        dom.add(b, crate::icons::el(tool.icon()));
+        label(dom, b, tool.label());
+    }
+    dom.add(bar, El::div().class("exc-sep"));
+    // The paper: dots, a grid, ruled lines, or nothing at all.
+    for mode in SurfaceMode::ALL {
+        let b = dom.add(
+            bar,
+            El::div()
+                .class("exc-tool exc-paper")
+                .class_if(v.surface.mode == mode, "is-active")
+                .action(format!("exc:surface:{}", mode.id())),
+        );
+        dom.add(b, crate::icons::el(mode.icon()));
+        label(dom, b, mode.label());
+    }
+    let size = dom.add(bar, El::div().class("exc-tool exc-surface-size").action("exc:surface-size"));
+    dom.add(size, El::div().class("exc-surface-size-label").text(v.surface.size_label()));
+    label(dom, size, "Tamaño de la grilla");
+    dom.add(bar, El::div().class("exc-sep"));
+    let style = dom.add(
+        bar,
+        El::div().class("exc-style-button").class_if(v.style_open, "is-active").action("exc:style"),
+    );
+    dom.add(style, crate::icons::el("settings"));
+    dom.add(style, El::div().class("exc-style-button-label").text("Estilo"));
+    label(dom, style, "Color, fondo y grosor del trazo");
+    if v.style_open {
+        style_panel(v, dom, parent);
+    }
+}
+
+/// The style panel: one labelled row per property, inside a box that wraps its colours instead of
+/// spilling them out of the pane.
+fn style_panel(v: &ExcView, dom: &mut Dom, parent: NodeId) {
+    let panel = dom.add(parent, El::div().class("exc-style-panel").action("exc:none"));
+    let row = |dom: &mut Dom, label: &str| {
+        let row = dom.add(panel, El::div().class("exc-style-row"));
+        dom.add(row, El::div().class("exc-style-label").text(label));
+        row
+    };
+    let strokes = row(dom, "Trazo");
+    let swatches = dom.add(strokes, El::div().class("exc-swatches"));
+    for (i, hex) in STROKES.iter().enumerate() {
+        dom.add(
+            swatches,
+            El::div()
+                .class("exc-swatch")
+                .class_if(v.stroke.eq_ignore_ascii_case(hex), "is-active")
+                .style(&format!("background-color: {hex}"))
+                .action(format!("exc:stroke:{i}")),
+        );
+    }
+    let fills = row(dom, "Fondo");
+    let swatches = dom.add(fills, El::div().class("exc-swatches"));
+    for (i, hex) in FILLS.iter().enumerate() {
+        let empty = *hex == "transparent";
+        let on = if empty { v.fill == "transparent" } else { v.fill.eq_ignore_ascii_case(hex) };
+        let bg = if empty { "transparent".to_string() } else { (*hex).to_string() };
+        dom.add(
+            swatches,
+            El::div()
+                .class("exc-swatch")
+                .class_if(on, "is-active")
+                .class_if(empty, "is-empty")
+                .style(&format!("background-color: {bg}"))
+                .action(format!("exc:fill:{i}")),
+        );
+    }
+    let widths = row(dom, "Grosor");
+    let segs = dom.add(widths, El::div().class("exc-widths"));
+    for (i, w) in WIDTHS.iter().enumerate() {
+        let b = dom.add(
+            segs,
+            El::div()
+                .class("exc-width")
+                .class_if((v.width - w).abs() < 0.01, "is-active")
+                .action(format!("exc:width:{i}")),
+        );
+        dom.add(b, El::div().class("exc-width-dot").style(&format!("height: {}px", (w * 1.6).round())));
+    }
+    dom.add(
+        panel,
+        El::div()
+            .class("exc-style-hint")
+            .text("Se aplica a lo próximo que dibujes y a lo que tengas seleccionado."),
+    );
+}
+
+/// The zoom bar, floating over the bottom-left corner of the board.
+fn zoom_bar(v: &ExcView, dom: &mut Dom, parent: NodeId) {
     let zoom = dom.add(parent, El::div().class("exc-zoombar").action("exc:none"));
     for (icon, cmd, on) in [("undo", "exc:undo", v.can_undo()), ("redo", "exc:redo", v.can_redo())] {
         let b = dom.add(zoom, El::div().class("exc-zoom").class_if(!on, "is-off").action(cmd));
@@ -1046,15 +1120,25 @@ fn controls(v: &ExcView, dom: &mut Dom, parent: NodeId) {
     dom.add(zoom, El::div().class("exc-zoom-level").text(format!("{} %", (v.zoom * 100.0).round() as i32)));
 }
 
-/// A node that paints a board: the pane's, or the full-screen one.
+/// A node that paints a board: the pane's, or the full-screen one. The bar takes its own height at
+/// the top of the column and the canvas gets the rest, so the painter never draws under it.
 fn board_node(v: &ExcView, dom: &mut Dom, parent: NodeId, info: &mut crate::view::ViewInfo) -> NodeId {
     let board = dom.add(parent, El::div().class("view-content exc-wrapper"));
     let colors = dom.add(board, El::div().class("exc-view-colors"));
     info.exc_colors =
         COLOR_CLASSES.iter().map(|k| dom.add(colors, El::div().class("exc-view").class(k))).collect();
-    info.excview.push(board);
     controls(v, dom, board);
-    board
+    let canvas = dom.add(board, El::div().class("exc-canvas"));
+    info.excview.push(canvas);
+    zoom_bar(v, dom, canvas);
+    if v.tools_hidden {
+        // Folded away: the bar takes no room, and this handle floats over the board to bring it
+        // back. It goes after the canvas so the painter cannot draw over it.
+        let flap = dom.add(board, El::div().class("exc-tools-handle").action("exc:tools"));
+        dom.add(flap, crate::icons::el("chevron-right"));
+        dom.add(flap, El::div().class("exc-tools-label").text("Herramientas"));
+    }
+    canvas
 }
 
 /// The board of the pane: its header, the controls and the node the paint pass draws into.
@@ -1315,7 +1399,22 @@ impl App {
             "tools" => {
                 if let Some(v) = &mut self.exc_view {
                     v.tools_hidden = !v.tools_hidden;
+                    if v.tools_hidden {
+                        v.style_open = false;
+                    }
                 }
+            }
+            "style" => {
+                if let Some(v) = &mut self.exc_view {
+                    v.style_open = !v.style_open;
+                }
+            }
+            "surface-size" => {
+                if let Some(v) = &mut self.exc_view {
+                    let next = v.surface.next_size();
+                    v.set_surface(next);
+                }
+                self.exc_save();
             }
             "delete-selected" => {
                 if let Some(v) = &mut self.exc_view {
@@ -1344,7 +1443,12 @@ impl App {
             "fullscreen-close" => self.exc_fullscreen = false,
             _ => {
                 let Some((name, arg)) = rest.split_once(':') else { return false };
-                return self.run_exc_part(name, arg);
+                let handled = self.run_exc_part(name, arg);
+                // The paper of a board is saved with the file; a colour or a width is not.
+                if handled && name == "surface" {
+                    self.exc_save();
+                }
+                return handled;
             }
         }
         true
@@ -1382,6 +1486,14 @@ impl App {
                 Some(w) => {
                     v.width = *w;
                     apply_style(v);
+                    true
+                }
+                None => false,
+            },
+            "surface" => match SurfaceMode::from_id(arg) {
+                Some(mode) => {
+                    let next = Surface { mode, ..v.surface };
+                    v.set_surface(next);
                     true
                 }
                 None => false,

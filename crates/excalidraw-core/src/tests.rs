@@ -67,7 +67,7 @@ fn parse_keeps_every_field_it_models() {
     assert_eq!(a.end_arrowhead, Some(Arrowhead::Other("crowfoot".into())));
 
     assert_eq!(scene.app_state.view_background_color.as_deref(), Some("#fafafa"));
-    assert_eq!(scene.app_state.grid_size, Some(10.0));
+    assert_eq!(scene.app_state.grid_size.as_ref().and_then(Value::as_f64), Some(10.0));
     assert_eq!(scene.files["f1"].mime_type, "image/png");
     assert_eq!(scene.files["f1"].created, 5);
 }
@@ -145,11 +145,23 @@ fn a_bad_known_field_names_the_element() {
 
 #[test]
 fn a_stale_app_state_field_costs_nothing() {
+    // Excalidraw itself writes `gridSize: "small"` in older files: a string must not cost the
+    // rest of the app state, so the field is carried as a `Value` and resolved by the viewer.
     let scene = Scene::parse(r##"{"appState":{"gridSize":"big","viewBackgroundColor":"#ffffff"}}"##).unwrap();
-    assert_eq!(scene.app_state.view_background_color, None);
-    assert_eq!(scene.app_state.extra["viewBackgroundColor"], "#ffffff");
-    assert_eq!(scene.app_state.extra["gridSize"], "big");
+    assert_eq!(scene.app_state.view_background_color.as_deref(), Some("#ffffff"));
+    assert_eq!(scene.app_state.grid_size.as_ref().and_then(Value::as_str), Some("big"));
+    assert!(!scene.app_state.extra.contains_key("gridSize"), "a known key is typed, not extra");
     assert_eq!(Scene::parse(&scene.to_json()).unwrap(), scene);
+}
+
+#[test]
+fn a_broken_app_state_keeps_every_field() {
+    // A field of the wrong shape falls back to `extra` instead of losing the object.
+    let scene =
+        Scene::parse(r##"{"appState":{"viewBackgroundColor":42,"zoom":{"value":2}}}"##).unwrap();
+    assert_eq!(scene.app_state.view_background_color, None);
+    assert_eq!(scene.app_state.extra["viewBackgroundColor"], 42);
+    assert_eq!(scene.app_state.extra["zoom"]["value"], 2);
 }
 
 #[test]
