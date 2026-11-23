@@ -1275,3 +1275,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .gantt-empty { display: flex; flex-direction: column; gap: 6px; padding: 24px 0 }
 .gantt-empty-title { color: var(--text-normal); font-size: var(--font-ui-small) }
 .gantt-empty-hint { color: var(--text-faint); font-size: var(--font-ui-smaller); line-height: 1.5; max-width: 560px }
+
+/* A table cell that holds a link answers a click like the link it shows. */
+.table-cell.is-link { color: var(--link-color); cursor: pointer }
+.table-cell.is-link:hover { background-color: var(--background-modifier-hover); text-decoration: underline }

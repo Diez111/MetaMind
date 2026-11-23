@@ -314,3 +314,36 @@ fn a_row_of_a_callout_is_as_tall_as_the_text_it_holds() {
         }
     }
 }
+
+/// A table of recordings is a table of links: a cell `[grabación](Videos/U1.mp4)` has to answer a
+/// click with the file, not paint a blue word and do nothing.
+#[test]
+fn a_link_inside_a_table_cell_is_clickable() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(
+        d.path().join("Clase.md"),
+        "# Clase\n\n| Link | Nota |\n| --- | --- |\n| [grabación](Videos/U1.mp4) | texto |\n",
+    )
+    .unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("Clase.md");
+    let mut fonts = Fonts::new();
+    let mut pm = Pixmap::new(900, 700).unwrap();
+    render(&mut app, &mut fonts, &mut pm, 1.0);
+    let f = render(&mut app, &mut fonts, &mut pm, 1.0);
+    let cell = f
+        .dom
+        .nodes
+        .iter()
+        .find(|n| n.el.classes.iter().any(|c| c == "table-cell") && n.el.action.is_some())
+        .expect("la celda del enlace tiene acción");
+    assert_eq!(cell.el.action.as_deref(), Some("open-url:Videos/U1.mp4"));
+    // And the plain cell next to it stays plain: only the link answers.
+    let plain = f
+        .dom
+        .nodes
+        .iter()
+        .filter(|n| n.el.classes.iter().any(|c| c == "table-cell") && n.el.action.is_none())
+        .count();
+    assert!(plain >= 2, "el encabezado y la celda de texto no son enlaces: {plain}");
+}

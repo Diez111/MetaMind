@@ -2488,15 +2488,31 @@ fn table(
             El::div().class("table-row").class_if(header, "is-header").class_if(!header && band, "is-band"),
         );
         for (c, cell) in cells.into_iter().enumerate() {
-            let node = dom.add(
-                row,
-                El::div()
-                    .class("table-cell")
-                    .class_if(cell.center, "is-center")
-                    .style(&format!("width: {:.3}%", widths[c] / total * 100.0))
-                    .text(cell.display.clone())
-                    .spans(cell.spans),
-            );
+            // The cell's source, to find a `[texto](destino)` in it: a table of recordings is a
+            // table of links, and a painted link with no action is a dead link.
+            let target = tree
+                .iter()
+                .filter(|(_, n)| matches!(n.kind, NodeKind::Link { .. }))
+                .find(|(_, n)| {
+                    let at = block_start + n.span.start as usize;
+                    at >= cell.start && at < cell.end
+                })
+                .and_then(|(_, n)| match &n.kind {
+                    NodeKind::Link { dest, .. } => {
+                        src.get(dest.start as usize..dest.end as usize).map(|d| d.trim().to_string())
+                    }
+                    _ => None,
+                })
+                .filter(|d| !d.is_empty());
+            let mut el = El::div()
+                .class("table-cell")
+                .class_if(cell.center, "is-center")
+                .style(&format!("width: {:.3}%", widths[c] / total * 100.0));
+            if let Some(url) = &target {
+                el = el.class("is-link").action(format!("open-url:{url}"));
+            }
+            let node = dom.add(row, el.text(cell.display.clone()).spans(cell.spans));
+            let _ = &target;
             info.blocks.push(BlockView {
                 block,
                 node,

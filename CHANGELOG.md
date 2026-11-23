@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.10
+
+- **Los enlaces dentro de las tablas funcionan.** Una celda `[grabación](Videos/U1.mp4)` pintaba la
+  palabra en azul y no tenía acción: el clic no hacía nada. Ahora el destino sale del árbol de
+  Markdown y la celda abre el archivo (nota en su pestaña, video en el reproductor). Test con una
+  tabla de dos columnas: la del enlace responde, la de texto sigue sin acción.
+
+
 ## 0.7.9
 
 - **Las celdas del calendario, todas iguales.** `flex-grow` con bordes dejaba la última columna
