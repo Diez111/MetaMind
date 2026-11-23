@@ -87,11 +87,13 @@ pub enum Tool {
     Line,
     Freedraw,
     Text,
+    /// The eraser: what it passes over goes away.
+    Eraser,
 }
 
 impl Tool {
     /// The toolbar, top to bottom.
-    pub const ALL: [Tool; 8] = [
+    pub const ALL: [Tool; 9] = [
         Tool::Select,
         Tool::Rect,
         Tool::Ellipse,
@@ -100,6 +102,7 @@ impl Tool {
         Tool::Line,
         Tool::Freedraw,
         Tool::Text,
+        Tool::Eraser,
     ];
 
     /// The name in the `exc:tool:<id>` action.
@@ -113,6 +116,7 @@ impl Tool {
             Tool::Line => "line",
             Tool::Freedraw => "freedraw",
             Tool::Text => "text",
+            Tool::Eraser => "eraser",
         }
     }
 
@@ -130,6 +134,7 @@ impl Tool {
             Tool::Line => "minus",
             Tool::Freedraw => "edit",
             Tool::Text => "type",
+            Tool::Eraser => "eraser",
         }
     }
 
@@ -143,13 +148,14 @@ impl Tool {
             Tool::Line => "Línea",
             Tool::Freedraw => "Trazo libre",
             Tool::Text => "Texto",
+            Tool::Eraser => "Goma",
         }
     }
 
     /// The element this tool draws, if it draws one.
     fn kind(self) -> Option<ElementType> {
         Some(match self {
-            Tool::Select | Tool::Text => return None,
+            Tool::Select | Tool::Text | Tool::Eraser => return None,
             Tool::Rect => ElementType::Rectangle,
             Tool::Ellipse => ElementType::Ellipse,
             Tool::Diamond => ElementType::Diamond,
@@ -623,7 +629,7 @@ impl ExcView {
             self.start_pan(x, y);
             return;
         }
-        if self.pen_erasing {
+        if self.pen_erasing || self.tool == Tool::Eraser {
             self.checkpoint();
             self.press = Some(Press { drag: Drag::Erase, at: (x, y), moved: false });
             return;
@@ -787,6 +793,12 @@ impl ExcView {
                 self.drop_checkpoint();
                 return false;
             }
+        }
+        if drawn.is_some() {
+            // What was just drawn is done, not selected: a dashed frame over a fresh stroke reads
+            // as a stray line and gets in the way of the next one. Pick the select tool to frame
+            // an element on purpose.
+            self.clear_selection();
         }
         if p.moved {
             let nonce = self.next_seed();
@@ -1187,12 +1199,6 @@ fn style_panel(v: &ExcView, dom: &mut Dom, parent: NodeId) {
                 .text(label),
         );
     }
-    dom.add(
-        panel,
-        El::div()
-            .class("exc-style-hint")
-            .text("Se aplica a lo próximo que dibujes y a lo que tengas seleccionado."),
-    );
 }
 
 /// The zoom bar, floating over the bottom-left corner of the board.

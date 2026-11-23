@@ -3250,6 +3250,9 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
         ("canvas", "canvas:new", false),
         ("table", "kanban:new", app.kanban_active()),
         ("calendar", "calendar:open", app.left_open && app.panel == Panel::Calendar),
+        // The dashboard was only in the command palette: a board nobody can find is a board that
+        // does not exist.
+        ("layout-dashboard", "dashboard:open", crate::dashboard::is_dashboard(app)),
         ("template", "templates:insert-template", false),
         ("command", "command-palette:open", false),
     ] {

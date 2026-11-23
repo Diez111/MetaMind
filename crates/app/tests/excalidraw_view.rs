@@ -557,3 +557,50 @@ fn a_hachure_fill_paints_lines_and_the_panel_offers_the_three_styles() {
         .unwrap_or(0);
     assert!(lines >= 5, "el relleno se pinta como líneas: {lines}");
 }
+
+/// The eraser is a tool of the toolbar, and finishing a stroke leaves nothing framed: the dashed
+/// frame over a fresh line was the thing that "aparece al terminar de escribir".
+#[test]
+fn the_toolbar_has_an_eraser_and_a_finished_stroke_is_not_selected() {
+    let (_d, mut app, mut fonts) = open();
+    let f = frame(&mut app, &mut fonts);
+    let r = pane(&f);
+    let tools: Vec<String> = f
+        .dom
+        .nodes
+        .iter()
+        .filter(|n| n.el.classes.iter().any(|c| c == "exc-tool"))
+        .filter_map(|n| n.el.attrs.iter().find(|(k, _)| k == "aria-label").map(|(_, v)| v.clone()))
+        .collect();
+    assert!(tools.iter().any(|t| t == "Goma"), "la goma está en la barra: {tools:?}");
+    app.run("exc:tool:eraser");
+    assert_eq!(app.exc_view.as_ref().unwrap().tool, metamind_app::excalidrawview::Tool::Eraser);
+    // Draw a stroke with the pen: after the release nothing is selected, so nothing is framed.
+    app.run("exc:tool:freedraw");
+    let (x, y) = (r.x + 90.0, r.y + 120.0);
+    app.click(&f, &mut fonts, x, y, false);
+    for step in 1..12 {
+        app.drag(&f, &mut fonts, x + step as f32 * 8.0, y + (step as f32).sin() * 10.0);
+    }
+    app.release();
+    let v = app.exc_view.as_ref().unwrap();
+    assert!(v.selected.is_none() && v.band.is_empty(), "el trazo no queda seleccionado");
+    assert_eq!(v.scene.elements.last().unwrap().kind, ElementType::Freedraw);
+    // The eraser removes it.
+    app.run("exc:tool:eraser");
+    let v = app.exc_view.as_ref().unwrap();
+    let (sx, sy) = v.to_screen(&r, 40.0, 0.0);
+    app.click(&f, &mut fonts, sx, sy, false);
+    app.drag(&f, &mut fonts, sx + 20.0, sy + 20.0);
+    app.release();
+    assert!(
+        app.exc_view
+            .as_ref()
+            .unwrap()
+            .scene
+            .elements
+            .iter()
+            .all(|e| e.kind != ElementType::Freedraw || e.is_deleted == Some(true)),
+        "la goma borra el trazo"
+    );
+}

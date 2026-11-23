@@ -15,6 +15,31 @@ unsafe_code = "deny"
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 
+[profile.dev]
+# Backtraces utiles SIN pagar DWARF completo: `file:line` en cada frame, pero
+# sin variables locales ni layouts de struct. debug=2 (el default) era el
+# 60-70% de los 79 GB de target/debug/deps y el mayor consumidor de RSS por
+# rustc (menos margen para el escritorio).
+# Si necesitas inspeccionar variables de UN crate: [profile.dev.package.<crate>]
+# debug = 2 — no subas el perfil global.
+debug = 1
+# NUNCA apagar en desarrollo activo: sin incremental, cada edicion recompila
+# toda la cadena downstream (19 crates + deps). Costo: ~7 GB de incremental.
+incremental = true
+# Default (256) a proposito: la granularidad del incremental ES la cantidad de
+# CGU. Bajarlo ahorra archivos .o pero recompila mas por edicion.
+codegen-units = 256
+opt-level = 0
+debug-assertions = true
+overflow-checks = true
+
+# Proc-macros y build scripts (serde_derive, regex, wasm bindings) corren en
+# cada compilacion: optimizarlos acelera todos los builds. Sin backtraces
+# dentro de un derive, para no pagar lo que nadie lee.
+[profile.dev.build-override]
+opt-level = 2
+debug = 0
+
 [profile.release]
 opt-level = 3
 lto = "fat"

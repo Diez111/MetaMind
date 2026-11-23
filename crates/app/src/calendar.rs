@@ -989,9 +989,6 @@ pub const PANE_MIN_GRID: f32 = 210.0;
 
 /// Events drawn in one cell before the rest is counted as "+N".
 const DOTS_PER_CELL: usize = 4;
-/// Chips (`09:30 Título`) drawn in one cell before the rest is counted: a chip is three lines
-/// tall, and a cell that showed ten would leave no room for its own number.
-const CHIPS_PER_CELL: usize = 3;
 
 /// The calendar pane of the left sidebar: the month (or, in a narrow sidebar, the selected day),
 /// and under it the events of the selected day.
@@ -1048,9 +1045,7 @@ fn grid(cal: &Calendar, dom: &mut Dom, parent: NodeId, today: Day, width: f32) {
     }
     let body = dom.add(parent, El::div().class("calendar-grid"));
     let start = grid_start(cal.month);
-    // A cell narrower than this cannot hold `09:30 Título`: there the day shows dots instead.
-    let cell_w = (width - 16.0 - 2.0) / 7.0;
-    let chips = cell_w >= 46.0;
+    let _ = width;
     for week in 0..6 {
         let row = dom.add(body, El::div().class("calendar-row"));
         for weekday in 0..7 {
@@ -1065,46 +1060,23 @@ fn grid(cal: &Calendar, dom: &mut Dom, parent: NodeId, today: Day, width: f32) {
                     .action(format!("cal:day:{}", day.index())),
             );
             let (_, _, number) = day.ymd();
-            let head = dom.add(cell, El::div().class("calendar-day-head"));
-            dom.add(head, El::div().class("calendar-day-num").text(number.to_string()));
-            let rows: Vec<&Row> = cal.rows_on(day).collect();
-            if chips && !rows.is_empty() {
-                let list = dom.add(cell, El::div().class("calendar-chips"));
-                for row in rows.iter().take(CHIPS_PER_CELL) {
-                    let color = row.color.as_deref().map(color_hex);
-                    let chip = dom.add(list, El::div().class("calendar-chip").class(row.source.css()));
-                    if let Some(hex) = &color {
-                        dom.nodes[chip].el.inline_style =
-                            Some(format!("background-color: {}1f; border-left-color: {hex}", hex));
-                    }
-                    let clock = match row.minute {
-                        Some(m) => format!("{:02}:{:02} ", m / 60, m % 60),
-                        None => String::new(),
-                    };
-                    dom.add(
-                        chip,
-                        El::div().class("calendar-chip-text").text(format!("{clock}{}", row.title)),
-                    );
-                }
-                if rows.len() > CHIPS_PER_CELL {
-                    dom.add(
-                        list,
-                        El::div().class("calendar-more").text(format!("+{}", rows.len() - CHIPS_PER_CELL)),
-                    );
-                }
-            } else if !rows.is_empty() {
+            dom.add(cell, El::div().class("calendar-day-num").text(number.to_string()));
+            // Dots, not chips: the cell is as wide as a day of a mini month. The chips live in
+            // the calendar tab, where the cell has room for a title.
+            let count = cal.count_on(day);
+            if count > 0 {
                 let marks = dom.add(cell, El::div().class("calendar-marks"));
-                for row in rows.iter().take(DOTS_PER_CELL) {
+                for row in cal.rows_on(day).take(DOTS_PER_CELL) {
                     let dot = dom.add(marks, El::div().class("calendar-dot").class(row.source.css()));
                     dom.nodes[dot].el.attrs.push(("aria-label".into(), row.title.clone()));
                     if let Some(hex) = row.color.as_deref().map(color_hex) {
                         dom.nodes[dot].el.inline_style = Some(format!("background-color: {hex}"));
                     }
                 }
-                if rows.len() > DOTS_PER_CELL {
+                if count > DOTS_PER_CELL {
                     dom.add(
                         marks,
-                        El::div().class("calendar-more").text(format!("+{}", rows.len() - DOTS_PER_CELL)),
+                        El::div().class("calendar-more").text(format!("+{}", count - DOTS_PER_CELL)),
                     );
                 }
             }
@@ -1564,29 +1536,36 @@ pub fn editor(app: &crate::shell::App, dom: &mut Dom) {
     };
     field(dom, 0, "Título", &form.title, "Qué pasa ese día", false);
 
+    // The day, with an arrow on each side: an icon, not a `‹` the font draws however it wants.
     let when = dom.add(card, El::div().class("cal-field"));
     dom.add(when, El::div().class("cal-field-label").text("Cuándo"));
     let line = dom.add(when, El::div().class("cal-when"));
-    let step = |dom: &mut Dom, text: &str, action: &str| {
-        dom.add(line, El::div().class("cal-step").text(text.to_string()).action(action.to_string()));
+    let step = |dom: &mut Dom, icon: &str, action: &str, label: &str| {
+        let b = dom.add(line, El::div().class("cal-step").action(action.to_string()));
+        dom.add(b, icons::el(icon));
+        dom.nodes[b].el.attrs.push(("aria-label".into(), label.to_string()));
     };
-    step(dom, "‹", "cal:stepday:-1");
+    step(dom, "chevron-left", "cal:stepday:-1", "Día anterior");
     let (year, month, number) = form.day.ymd();
     let name = DAYS[form.day.weekday() as usize];
     let month = MONTHS.get(month as usize - 1).copied().unwrap_or_default();
-    dom.add(line, El::div().class("cal-when-text").text(format!("{name} {number} de {month} de {year}")));
-    step(dom, "›", "cal:stepday:1");
+    let today = Calendar::today();
+    dom.add(
+        line,
+        El::div()
+            .class("cal-when-text")
+            .class_if(form.day == today, "is-today")
+            .text(format!("{name} {number} de {month} de {year}")),
+    );
+    step(dom, "chevron-right", "cal:stepday:1", "Día siguiente");
 
+    // All day as a switch with a thumb: a bare pill read as an empty button.
     let all_day = dom.add(card, El::div().class("cal-field cal-field-row"));
     dom.add(all_day, El::div().class("cal-field-label").text("Todo el día"));
-    dom.add(
-        all_day,
-        El::div()
-            .class("cal-toggle")
-            .class_if(form.all_day, "is-on")
-            .action("cal:allday")
-            .attr("aria-label", "Todo el día"),
-    );
+    let toggle =
+        dom.add(all_day, El::div().class("cal-toggle").class_if(form.all_day, "is-on").action("cal:allday"));
+    dom.add(toggle, El::div().class("cal-toggle-thumb"));
+    dom.nodes[toggle].el.attrs.push(("aria-label".into(), "Todo el día".into()));
 
     if !form.all_day {
         let times = dom.add(card, El::div().class("cal-field"));
@@ -1594,12 +1573,14 @@ pub fn editor(app: &crate::shell::App, dom: &mut Dom) {
         let line = dom.add(times, El::div().class("cal-when"));
         let clock = |dom: &mut Dom, minute: u16, up: &str, down: &str| {
             let group = dom.add(line, El::div().class("cal-clock"));
-            dom.add(group, El::div().class("cal-step").text("–").action(down.to_string()));
+            let minus = dom.add(group, El::div().class("cal-step").action(down.to_string()));
+            dom.add(minus, icons::el("minus"));
             dom.add(
                 group,
                 El::div().class("cal-clock-text").text(format!("{:02}:{:02}", minute / 60, minute % 60)),
             );
-            dom.add(group, El::div().class("cal-step").text("+").action(up.to_string()));
+            let plus = dom.add(group, El::div().class("cal-step").action(up.to_string()));
+            dom.add(plus, icons::el("plus"));
         };
         clock(dom, form.start, "cal:step:start:15", "cal:step:start:-15");
         dom.add(line, El::div().class("cal-when-text").text("a"));

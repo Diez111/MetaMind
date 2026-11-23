@@ -532,6 +532,19 @@ fn shape(name: &str) -> Shape {
             .dot(7.5, 7.5, 0.75),
         // lucide `chevron-right`
         "chevron-right" => s.m(9.0, 18.0).l(15.0, 12.0).l(9.0, 6.0),
+        // lucide `chevron-left`
+        "chevron-left" => s.m(15.0, 18.0).l(9.0, 12.0).l(15.0, 6.0),
+        // lucide `eraser`
+        "eraser" => s
+            .m(7.0, 21.0)
+            .l(3.0, 17.0)
+            .l(11.0, 9.0)
+            .l(19.0, 17.0)
+            .l(15.0, 21.0)
+            .l(7.0, 21.0)
+            .z()
+            .m(6.0, 12.0)
+            .l(11.0, 17.0),
         // lucide `chevron-down`
         "chevron-down" => s.m(6.0, 9.0).l(12.0, 15.0).l(18.0, 9.0),
         // lucide `arrow-left`

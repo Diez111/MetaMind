@@ -31,6 +31,16 @@ cd "$root"
 
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$root/target}"
 
+# Un solo lane de build por workspace. Medido el 23-11-2026: dos cargo en
+# paralelo (test --workspace + build -p metamind) duplicaron los jobs y dejaron
+# la maquina en load 129 sobre 16 hilos con PSI de I/O full al 26%.
+# El lock se toma DESPUES de calcular CARGO_TARGET_DIR (vive en el target).
+exec 9>"$CARGO_TARGET_DIR/.build.lock"
+if ! flock -n 9; then
+    echo "dev.sh: ya hay un build corriendo en este workspace (lock: $CARGO_TARGET_DIR/.build.lock)" >&2
+    exit 75
+fi
+
 capped() {
     if [ "${MM_NO_CAP:-0}" = "1" ] || ! command -v systemd-run >/dev/null 2>&1; then
         "$@"

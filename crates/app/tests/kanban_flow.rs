@@ -636,3 +636,23 @@ fn the_new_board_dialog_asks_for_the_name_the_folder_and_a_template() {
     assert_eq!(app.tab().unwrap().editor.buf.text(), before);
     assert!(app.kanban_new.as_ref().unwrap().name.ends_with('x'));
 }
+
+/// The template choice is a picture of the board it makes: three or four columns drawn as bars,
+/// with the column names under them. A list of names nobody can picture was the first version.
+#[test]
+fn the_template_cards_show_the_columns_they_make() {
+    let d = tempfile::tempdir().unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.run("kanban:new");
+    let mut fonts = Fonts::new();
+    let f = frame(&mut app, &mut fonts);
+    let bars =
+        |f: &Frame| f.dom.nodes.iter().filter(|n| n.el.classes.iter().any(|c| c == "kanban-new-col")).count();
+    assert_eq!(bars(&f), 3 + 4 + 4, "las barras de las tres plantillas");
+    let texts: String = f.dom.nodes.iter().filter_map(|n| n.el.text.clone()).collect::<Vec<_>>().join("|");
+    assert!(texts.contains("Pendiente · Haciendo · Bloqueado · Hecho"), "{texts}");
+    assert!(texts.contains("En la raíz de la bóveda"), "la carpeta se lee: {texts}");
+    // The card is the size of a dialog, not of a tooltip.
+    let card = f.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == "kanban-new")).unwrap();
+    assert!(card.rect.w >= 500.0, "el diálogo usa el ancho: {:?}", card.rect);
+}

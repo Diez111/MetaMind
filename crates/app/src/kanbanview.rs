@@ -2605,7 +2605,8 @@ impl NewBoard {
     }
 }
 
-/// The dialog over the window.
+/// The dialog over the window: a name, the folder it lands in, and a template with a picture of
+/// what it makes.
 pub fn new_board_dialog(app: &crate::shell::App, dom: &mut Dom) {
     let Some(nb) = &app.kanban_new else { return };
     let backdrop =
@@ -2616,29 +2617,37 @@ pub fn new_board_dialog(app: &crate::shell::App, dom: &mut Dom) {
     let close = dom.add(head, El::div().class("clickable-icon").action("kanban:cancel"));
     dom.add(close, crate::icons::el("x"));
 
-    let field = dom.add(card, El::div().class("kanban-new-field"));
-    dom.add(field, El::div().class("kanban-new-label").text("Nombre"));
-    let input = dom.add(card, El::div().class("kanban-new-input").class("is-focus").action("kanban:name"));
+    dom.add(card, El::div().class("kanban-new-label").text("Nombre"));
+    let input = dom.add(card, El::div().class("kanban-new-input").action("kanban:name"));
     dom.add(input, El::div().class("kanban-new-input-text").text(crate::view::with_caret(&nb.name, 48)));
 
-    let folder = dom.add(card, El::div().class("kanban-new-field"));
-    dom.add(folder, El::div().class("kanban-new-label").text("Carpeta"));
+    // Where it goes, in words: "raíz" alone reads like a value nobody chose.
     let path = nb.path();
-    let shown = path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("raíz");
-    dom.add(card, El::div().class("kanban-new-path").text(shown.to_string()));
+    let shown = match path.rsplit_once('/') {
+        Some((dir, _)) => format!("En la carpeta {dir}"),
+        None => "En la raíz de la bóveda".to_string(),
+    };
+    let row = dom.add(card, El::div().class("kanban-new-folder"));
+    dom.add(row, crate::icons::el("folder"));
+    dom.add(row, El::div().class("kanban-new-path").text(shown));
 
-    let tpl = dom.add(card, El::div().class("kanban-new-field"));
-    dom.add(tpl, El::div().class("kanban-new-label").text("Plantilla"));
-    let row = dom.add(tpl, El::div().class("kanban-new-templates"));
-    for (i, (name, _)) in NEW_TEMPLATES.iter().enumerate() {
-        dom.add(
+    dom.add(card, El::div().class("kanban-new-label").text("Plantilla"));
+    let row = dom.add(card, El::div().class("kanban-new-templates"));
+    for (i, (name, columns)) in NEW_TEMPLATE_INFO.iter().enumerate() {
+        let card_ = dom.add(
             row,
             El::div()
                 .class("kanban-new-template")
                 .class_if(nb.template == i, "is-active")
-                .text(*name)
                 .action(format!("kanban:template:{i}")),
         );
+        // A picture of the board: one bar per column, so the choice is seen and not guessed.
+        let preview = dom.add(card_, El::div().class("kanban-new-cols"));
+        for _ in 0..*columns {
+            dom.add(preview, El::div().class("kanban-new-col"));
+        }
+        dom.add(card_, El::div().class("kanban-new-template-name").text(*name));
+        dom.add(card_, El::div().class("kanban-new-template-desc").text(COLUMN_NAMES[i]));
     }
     if let Some(error) = &nb.error {
         dom.add(card, El::div().class("kanban-new-error").text(error.clone()));
@@ -2647,6 +2656,17 @@ pub fn new_board_dialog(app: &crate::shell::App, dom: &mut Dom) {
     dom.add(actions, El::div().class("cal-button mod-cta").action("kanban:create").text("Crear"));
     dom.add(actions, El::div().class("cal-button").action("kanban:cancel").text("Cancelar"));
 }
+
+/// What each template makes, as the dialog shows it: the name, the number of columns and the
+/// column names under the picture.
+pub const NEW_TEMPLATE_INFO: [(&str, usize); 3] = [("Básico", 3), ("Proyecto", 4), ("Estudio", 4)];
+
+/// The columns of each template, in the order the dialog shows them.
+const COLUMN_NAMES: [&str; 3] = [
+    "Pendiente · Haciendo · Hecho",
+    "Pendiente · Haciendo · Bloqueado · Hecho",
+    "Por leer · Leyendo · Resumido · Repasado",
+];
 
 /// Create the board the dialog describes, with the folder it names and the template it shows. A
 /// name already taken gets a suffix instead of overwriting the file, and the dialog says so.

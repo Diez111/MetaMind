@@ -443,7 +443,8 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .exc-style-label { font-size: var(--font-ui-smaller); font-weight: 600; color: var(--text-faint) }
 .exc-style-hint { font-size: var(--font-ui-smaller); color: var(--text-faint); line-height: 1.35 }
 .exc-swatches { display: flex; flex-direction: row; flex-wrap: wrap; gap: 4px }
-.exc-swatch { width: 26px; height: 22px; border-radius: 4px; border: 1px solid var(--background-modifier-border) }
+.exc-style-panel .exc-swatch { flex-shrink: 0 }
+.exc-swatch { width: 24px; height: 20px; border-radius: 4px; border: 1px solid var(--background-modifier-border) }
 .exc-swatch.is-active { border: 2px solid var(--interactive-accent) }
 .exc-swatch.is-empty { background-image: linear-gradient(45deg, rgba(128, 128, 128, 0.1) 40%, rgba(128, 128, 128, 0.6) 40%, rgba(128, 128, 128, 0.6) 60%, rgba(128, 128, 128, 0.1) 60%) }
 .exc-widths { width: 100%; display: flex; flex-direction: row; gap: 4px }
@@ -867,8 +868,8 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 /* The month is one frame with a line between cells, not twenty-eight separate chips: a calendar
    reads as a grid of days, and the borders are what make the days look like one block. */
 .calendar-grid { margin: 0 8px 6px 8px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow: hidden }
-.calendar-row { display: flex; flex-grow: 0 }
-.calendar-cell { flex-grow: 1; flex-basis: 0; min-width: 0; min-height: 26px; padding: 2px 2px 3px 2px; display: flex; flex-direction: column; align-items: stretch; gap: 1px; border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); background-color: var(--background-primary); color: var(--text-muted) }
+.calendar-row { display: flex; flex-grow: 0; height: 32px }
+.calendar-cell { flex-grow: 1; flex-basis: 0; min-width: 0; height: 32px; padding: 1px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); background-color: var(--background-primary); color: var(--text-muted) }
 .calendar-row:last-child .calendar-cell { border-bottom: none }
 .calendar-cell:last-child { border-right: none }
 .calendar-cell:hover { background-color: var(--background-modifier-hover) }
@@ -879,15 +880,8 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .calendar-cell.is-today .calendar-day-num { color: var(--text-accent); font-weight: 700 }
 .calendar-cell.is-selected { background-color: var(--background-modifier-active-hover); box-shadow: inset 0 0 0 1.5px var(--interactive-accent) }
 .calendar-cell.is-selected .calendar-day-num { color: var(--text-normal); font-weight: 700 }
-.calendar-day-head { display: flex; align-items: center; justify-content: space-between; gap: 2px }
-.calendar-day-num { width: 15px; font-size: 11px; line-height: 15px; text-align: center }
-.calendar-chips { display: flex; flex-direction: column; gap: 1px; min-width: 0 }
-.calendar-chip { display: flex; align-items: center; min-width: 0; padding: 0 3px; border-left: 2px solid var(--calendar-owned); border-radius: 2px; background-color: var(--rs-band); color: var(--text-muted) }
-.calendar-chip-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10px; line-height: 14px }
-.calendar-chip.calendar-source-google { border-left-color: var(--calendar-google) }
-.calendar-chip.calendar-source-vault { border-left-color: var(--calendar-vault) }
-.calendar-chip.calendar-source-tasks { border-left-color: var(--calendar-tasks) }
-.calendar-marks { display: flex; align-items: center; justify-content: flex-start; flex-wrap: wrap; gap: 2px; min-height: 6px; padding-left: 1px }
+.calendar-day-num { width: 100%; font-size: 11px; line-height: 15px; text-align: center }
+.calendar-marks { display: flex; align-items: center; justify-content: center; gap: 2px; min-height: 5px }
 .calendar-dot { width: 5px; height: 5px; border-radius: 3px; flex-shrink: 0; background-color: var(--calendar-owned) }
 .calendar-dot.calendar-source-google { background-color: var(--calendar-google) }
 .calendar-dot.calendar-source-vault { background-color: var(--calendar-vault) }
@@ -1072,7 +1066,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 /* The event editor. A card over the window with its fields labelled: the reader writes a title,
    picks a day, a clock and a colour, and nothing needs a second screen. */
 .cal-modal { align-items: flex-start; justify-content: center; padding-top: 64px }
-.cal-form { width: 92%; max-width: 440px; display: flex; flex-direction: column; gap: 10px; padding: 14px; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45) }
+.cal-form { width: 92%; max-width: 560px; display: flex; flex-direction: column; gap: 10px; padding: 14px; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45) }
 .cal-form-head { display: flex; align-items: center; gap: 8px }
 .cal-form-title { flex-grow: 1; min-width: 0; color: var(--text-normal); font-size: var(--font-ui-small); font-weight: 600 }
 .cal-field { display: flex; flex-direction: column; gap: 3px }
@@ -1084,13 +1078,16 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .cal-input-text { white-space: pre-wrap }
 .cal-placeholder { color: var(--text-faint) }
 .cal-when { display: flex; align-items: center; gap: 4px; flex-wrap: wrap }
-.cal-when-text { color: var(--text-normal); font-size: var(--font-ui-smaller) }
-.cal-step { display: flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; border-radius: var(--radius-s); background-color: var(--background-modifier-hover); color: var(--text-muted); font-size: var(--font-ui-smaller) }
+.cal-when-text { flex-grow: 1; min-width: 0; color: var(--text-normal); font-size: var(--font-ui-small) }
+.cal-step { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: var(--radius-s); background-color: var(--background-modifier-hover); color: var(--text-muted) }
+.cal-step .svg-icon { width: 14px; height: 14px }
+.cal-when-text.is-today { color: var(--text-accent) }
 .cal-step:hover { background-color: var(--interactive-accent); color: var(--text-on-accent) }
 .cal-clock { display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s) }
 .cal-clock-text { min-width: 44px; text-align: center; color: var(--text-normal); font-size: var(--font-ui-smaller) }
-.cal-toggle { width: 34px; height: 20px; border-radius: 10px; background-color: var(--background-modifier-border) }
-.cal-toggle.is-on { background-color: var(--interactive-accent) }
+.cal-toggle { width: 38px; height: 22px; display: flex; align-items: center; justify-content: flex-start; padding: 2px; border-radius: 11px; background-color: var(--background-modifier-border) }
+.cal-toggle.is-on { justify-content: flex-end; background-color: var(--interactive-accent) }
+.cal-toggle-thumb { width: 18px; height: 18px; border-radius: 9px; background-color: var(--background-primary); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4) }
 .cal-colors { display: flex; flex-wrap: wrap; gap: 6px }
 .cal-color { width: 26px; height: 22px; border-radius: 5px; border: 1px solid var(--background-modifier-border) }
 .cal-color.is-active { box-shadow: inset 0 0 0 2px var(--background-primary), inset 0 0 0 4px var(--text-normal) }
@@ -1121,20 +1118,28 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .ai-tool-name { flex-shrink: 0; color: var(--text-normal) }
 .ai-tool-summary { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-faint) }
 
-/* The new-board dialog: a name, the folder it lands in, and one of three templates. */
-.kanban-new-modal { align-items: flex-start; justify-content: center; padding-top: 80px }
-.kanban-new { width: 92%; max-width: 420px; display: flex; flex-direction: column; gap: 10px; padding: 14px; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45) }
+/* The new-board dialog: a name, where it lands, and three templates shown as a picture of their
+   columns — a list of names nobody can picture is what the first version had. */
+.kanban-new-modal { align-items: center; justify-content: center }
+.kanban-new { width: 92%; max-width: 540px; display: flex; flex-direction: column; gap: 12px; padding: 18px 20px; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5) }
 .kanban-new-head { display: flex; align-items: center; gap: 8px }
 .kanban-new-title { flex-grow: 1; color: var(--text-normal); font-size: var(--font-ui-small); font-weight: 600 }
-.kanban-new-field { display: flex; flex-direction: column; gap: 3px }
-.kanban-new-label { color: var(--text-faint); font-size: var(--font-ui-smaller) }
-.kanban-new-input { min-height: 28px; padding: 4px 8px; border: 1px solid var(--interactive-accent); border-radius: var(--radius-s); background-color: var(--background-primary); color: var(--text-normal); font-size: var(--font-ui-small) }
-.kanban-new-path { color: var(--text-muted); font-family: var(--font-monospace); font-size: var(--font-ui-smaller) }
-.kanban-new-templates { display: flex; flex-wrap: wrap; gap: 6px }
-.kanban-new-template { padding: 4px 10px; border: 1px solid var(--background-modifier-border); border-radius: 999px; color: var(--text-muted); font-size: var(--font-ui-smaller) }
-.kanban-new-template.is-active { background-color: var(--interactive-accent); border-color: var(--interactive-accent); color: var(--text-on-accent) }
+.kanban-new-label { color: var(--text-faint); font-size: var(--font-ui-smaller); margin-bottom: -6px }
+.kanban-new-input { min-height: 34px; display: flex; align-items: center; padding: 6px 10px; border: 1px solid var(--interactive-accent); border-radius: var(--radius-s); background-color: var(--background-primary); color: var(--text-normal); font-size: var(--font-ui-small); box-shadow: inset 0 0 0 1px var(--interactive-accent) }
+.kanban-new-folder { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: var(--font-ui-smaller) }
+.kanban-new-folder .svg-icon { width: 14px; height: 14px; color: var(--text-faint) }
+.kanban-new-path { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.kanban-new-templates { display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px }
+.kanban-new-template { flex-grow: 1; flex-basis: 150px; min-width: 140px; display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background-color: var(--background-primary) }
+.kanban-new-template:hover { border-color: var(--background-modifier-border-hover, var(--interactive-accent)) }
+.kanban-new-template.is-active { border-color: var(--interactive-accent); box-shadow: inset 0 0 0 1px var(--interactive-accent) }
+.kanban-new-cols { display: flex; flex-direction: row; gap: 3px; height: 34px; align-items: stretch }
+.kanban-new-col { flex-grow: 1; flex-basis: 0; border-radius: 3px; background-color: var(--background-modifier-border) }
+.kanban-new-template.is-active .kanban-new-col { background-color: var(--interactive-accent) }
+.kanban-new-template-name { color: var(--text-normal); font-size: var(--font-ui-smaller); font-weight: 600 }
+.kanban-new-template-desc { color: var(--text-faint); font-size: 10px; line-height: 1.35; white-space: normal }
 .kanban-new-error { padding: 5px 8px; border-radius: var(--radius-s); background-color: var(--rs-band); color: var(--rs-warning); font-size: var(--font-ui-smaller) }
-.kanban-new-actions { display: flex; align-items: center; gap: 8px }
+.kanban-new-actions { display: flex; align-items: center; gap: 8px; padding-top: 2px }
 
 /* A segmented control of labels (the fill styles): the shape of the width buttons, with words. */
 .exc-seg { flex-grow: 1; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background-color: var(--background-modifier-hover); color: var(--text-muted); font-size: var(--font-ui-smaller) }
