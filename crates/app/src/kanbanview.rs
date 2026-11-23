@@ -1264,7 +1264,12 @@ impl KanbanView {
     ) {
         self.clamp_scroll();
         let top = rect.y + EDGE - self.scroll.1;
-        let start_x = rect.x + EDGE - self.scroll.0;
+        // A board narrower than the pane is centred: three columns pinned to the left edge of a
+        // wide screen is what read as "todo chico y re vacío".
+        let columns = self.board.columns.len() as f32;
+        let total = columns * COL_W + (columns - 1.0).max(0.0) * GAP + 2.0 * EDGE;
+        let slack = (rect.w - total).max(0.0);
+        let start_x = rect.x + EDGE + slack / 2.0 - self.scroll.0;
         let col_bg = mix(c[0], c[1], 0.55);
         let card_bg = mix(c[0], c[1], 0.14);
         let head_style = TextStyle {

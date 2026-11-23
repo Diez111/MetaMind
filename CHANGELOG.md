@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.7.3
+
+Lo que se vio usando la 0.7.2, arreglado en la interfaz.
+
+- **Calendario de la barra.** El mes es compacto (32 px por fila), el número queda centrado en su
+  celda y los puntos van abajo; antes el número se iba a la izquierda y la grilla se comía el alto
+  que necesita la lista del día.
+- **Editor de evento.** Flechas de verdad en vez de los glifos `‹ ›`, un interruptor con perilla
+  para «Todo el día» (era una píldora vacía), los relojes con iconos de menos y más, y la tarjeta
+  pasa de 440 a 560 px en escritorio (92 % en móvil).
+- **Tableros.** La barra tiene **Goma** como herramienta, y al terminar un trazo ya no queda
+  seleccionado: ese era el marco punteado que aparecía al escribir. La paleta entra en filas de
+  ocho colores y se fue el texto de ayuda que sobraba.
+- **Diálogo de tablero nuevo.** 540 px, centrado, la carpeta en palabras («En la carpeta X») y cada
+  plantilla con una vista previa de sus columnas y los nombres debajo.
+- **Tablero Kanban.** Las columnas se centran cuando no llenan el ancho: tres columnas pegadas al
+  borde izquierdo de una pantalla grande era lo que se veía como «todo chico y re vacío».
+- **Dashboard.** Botón en la ribbon (estaba solo en la paleta de comandos).
+
+
 ## 0.7.2
 
 - **Nuevo tablero, con diálogo.** `kanban:new` (el botón de la ribbon) ya no crea `Tablero.md` a
