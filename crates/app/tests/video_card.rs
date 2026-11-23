@@ -144,3 +144,32 @@ fn opening_a_video_file_plays_it_instead_of_refusing() {
     // The player is the one that has the file, and it says why when the decoder is missing.
     assert!(app.video.is_open() || app.notice.is_some(), "o abre, o dice por qué no");
 }
+
+/// A video opened from the tree or a link has no card to draw over: it has to be visible anyway.
+/// The player goes full screen over the workspace, which is the picture the reader asked for.
+#[test]
+fn a_video_opened_from_the_tree_is_drawn_over_the_workspace() {
+    let d = tempfile::tempdir().unwrap();
+    fs::write(d.path().join("Home.md"), "# Home\n").unwrap();
+    fs::write(d.path().join("clip.mp4"), b"no es un video de verdad").unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("Home");
+    app.open_note("clip.mp4");
+    // With no decoder the player fails and says so; with one, the overlay is what must be on.
+    if app.video.is_open() {
+        assert!(app.video_fullscreen, "sin tarjeta, el player va sobre el workspace");
+        let mut fonts = Fonts::new();
+        let mut pm = Pixmap::new(1000, 700).unwrap();
+        render(&mut app, &mut fonts, &mut pm, 1.0);
+        let f = render(&mut app, &mut fonts, &mut pm, 1.0);
+        let overlay = f
+            .dom
+            .nodes
+            .iter()
+            .find(|n| n.el.classes.iter().any(|c| c == "video-fullscreen"))
+            .expect("la capa del player está en el árbol");
+        assert!(overlay.rect.w > 100.0 && overlay.rect.h > 100.0, "{:?}", overlay.rect);
+    } else {
+        assert!(app.notice.is_some(), "o reproduce, o dice por qué no");
+    }
+}

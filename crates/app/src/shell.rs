@@ -1286,6 +1286,10 @@ impl App {
             let path = self.store.abs(&rel);
             match self.video.open(&rel, &path, &note, self.card_cap()) {
                 Ok(()) => {
+                    // Opened from the tree, a link or a table: there is no card to draw over, and
+                    // the player is an overlay on that card. Full screen over the workspace is the
+                    // closest thing to "a tab with only the video", and it is where the picture is.
+                    self.video_fullscreen = true;
                     if let Some(waker) = &self.video_waker {
                         waker();
                     }
