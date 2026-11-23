@@ -11,6 +11,10 @@
   `hachure` y `cross-hatch` se dibujan como líneas a 45° recortadas a la figura (una figura grande
   engrosa el paso en vez de llenar la lista de comandos), y el panel de estilo tiene su fila
   Sólido/Rayado/Cruzado. La elección queda en el archivo.
+- **Vista grande del calendario.** `calview:open` abre una pestaña con Mes, Semana, Día y Agenda
+  sobre los mismos eventos: el mes con chips, la semana con una columna por día y cada evento
+  puesto por su hora, el día hora por hora y la agenda de los próximos 60 días. Las flechas mueven
+  el mes, la semana o el día según la vista.
 - **El gate del CI, limpio.** `clippy -D warnings` y `rustfmt --check` en todo el workspace; quedó
   también `scripts/dev.sh clean` para el target que llegó a 180 GB.
 
