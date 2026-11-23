@@ -79,6 +79,29 @@ profile can point at any OpenAI-compatible endpoint, including Ollama on this ma
 5. Tests: a mock MCP server (a small Rust binary in `tests/fixtures`) that lists one tool and calls
    it; the loop, the namespacing, a server that dies mid-call, and a tool that returns a huge body.
 
+## Video: why the first frame takes long, and what to do
+
+Measured by reading the code, not guessed: `video::open_source` (`crates/app/src/video.rs:688`) runs
+`FfmpegPipe::new()` **and `probe()` on the caller's thread**, and the caller is the click handler on
+the frame. `probe()` spawns `ffprobe` and waits for it, so the window is blocked until ffprobe
+exits — on a 2 GB vault with 82 files that is the delay, and it happens *before* any ffmpeg work.
+
+Order of fixes, cheapest first:
+
+1. **Probe on the worker.** `open` returns with a default box (1280×720, fallback fps) and
+   `State::Loading`; the pipe's thread probes and reports the real size with the first frame, which
+   corrects `size`/`info`. The click returns in microseconds and the "Abriendo…" face is what the
+   reader sees.
+2. **Poster first.** The vault has 2.712 `.webp`: if a poster named like the video sits next to it,
+   paint it while the decoder starts. That is a still image, not a frame, and it is free.
+3. **Fast seek already there, size does not need the real one.** `-ss` goes before `-i` (fast) and
+   `-an` drops audio; the scale filter only needs a box, not the source size.
+4. **Keep the pipe warm for the session**: closing a tab kills ffmpeg today; keeping the last one
+   alive for a few seconds makes re-opening the same video instant.
+
+A test for (1): `open` on a 200 MB fixture returns in < 5 ms and `state()` is `Loading`; the first
+frame reports the real size.
+
 ## Not planned
 
 - Matching the plugin count of large ecosystems; the most-used features ship built in instead
