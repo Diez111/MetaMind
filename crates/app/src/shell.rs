@@ -1364,7 +1364,7 @@ impl App {
             }
             Err(WriteError::Conflict { .. }) => {
                 self.notice = Some(format!(
-                    "{} se cambió fuera de MetMind. No se guardó; tu texto se conserva en esta pestaña.",
+                    "{} se cambió fuera de MetaMind. No se guardó; tu texto se conserva en esta pestaña.",
                     tab.path
                 ));
                 false

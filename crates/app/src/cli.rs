@@ -7,7 +7,7 @@ use std::time::Instant;
 use vault_core::config::VaultConfig;
 use vault_core::{path, VaultStore};
 
-pub const USAGE: &str = "MetMind
+pub const USAGE: &str = "MetaMind
 
 USO:
   metamind                                    Muestra la pantalla de bienvenida para elegir o crear una bóveda

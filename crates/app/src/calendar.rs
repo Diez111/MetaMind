@@ -758,7 +758,7 @@ fn fetch(url: &str, meta: &Meta) -> Result<Fetched, String> {
             .build(),
     );
     let mut request =
-        agent.get(url).header("User-Agent", concat!("MetMind/", env!("CARGO_PKG_VERSION"), " (calendario)"));
+        agent.get(url).header("User-Agent", concat!("MetaMind/", env!("CARGO_PKG_VERSION"), " (calendario)"));
     if !meta.etag.is_empty() {
         request = request.header("If-None-Match", &meta.etag);
     }

@@ -1,4 +1,4 @@
-//! The welcome screen shown when MetMind starts without a vault: recent vaults, a folder
+//! The welcome screen shown when MetaMind starts without a vault: recent vaults, a folder
 //! browser to open or create a vault, and a sample vault for a first look.
 
 use crate::anim::{Anims, FAST_MS, SLOW_MS};
@@ -50,7 +50,7 @@ pub struct Welcome {
     theme: Theme,
 }
 
-const SAMPLE_NAME: &str = "MetMind Vault";
+const SAMPLE_NAME: &str = "MetaMind Vault";
 const SAMPLE: &[(&str, &str)] = &[
     ("Welcome.md", include_str!("sample/Welcome.md")),
     ("Getting started/Keyboard shortcuts.md", include_str!("sample/Keyboard shortcuts.md")),
@@ -448,7 +448,7 @@ impl Welcome {
             // The application icon itself, not a glyph: the first thing the app ever shows should
             // be the mark the dock and the installer carry.
             dom.add(brand, El::div().class("welcome-logo").image(crate::view::logo()));
-            dom.add(brand, El::div().class("welcome-name").text("MetMind"));
+            dom.add(brand, El::div().class("welcome-name").text("MetaMind"));
             dom.add(brand, El::div().class("welcome-data").text("50 000 notas · abre en 0,2 s"));
             dom.add(
                 brand,

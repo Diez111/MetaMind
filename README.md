@@ -6,19 +6,39 @@
 
 **A fast, native Markdown knowledge base. Plain files, linked thinking, no Electron.**
 
-[![CI](https://github.com/siddarth1872004/MetaMind/actions/workflows/ci.yml/badge.svg)](https://github.com/siddarth1872004/MetaMind/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/siddarth1872004/MetaMind?color=f47a30)](https://github.com/siddarth1872004/MetaMind/releases/latest)
+[![CI](https://github.com/Diez111/MetaMind/actions/workflows/ci.yml/badge.svg)](https://github.com/Diez111/MetaMind/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Diez111/MetaMind?color=f47a30)](https://github.com/Diez111/MetaMind/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-34264e)](#license)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-555)
 
-[Download](https://github.com/siddarth1872004/MetaMind/releases/latest) ·
-[Website](https://siddarth1872004.github.io/MetaMind/) ·
+[Download](https://github.com/Diez111/MetaMind/releases/latest) ·
 [Features](FEATURES.md) ·
 [Roadmap](ROADMAP.md)
 
 <img src="docs/img/editor.png" alt="MetaMind editing a note with highlighted code and typeset math" width="880">
 
 </div>
+
+## Fork
+
+This repository is a **fork** of
+[siddarth1872004/RustSidian](https://github.com/siddarth1872004/RustSidian), the original Rust
+Markdown knowledge base that also goes by the name *MetaMind*. The upstream history is kept as it
+is, under the same MIT OR Apache-2.0 licence; `git remote add upstream
+https://github.com/siddarth1872004/RustSidian` is all a checkout needs to follow it.
+
+What this fork adds on top of the original, and where to look for it:
+
+- **Events you can write.** A calendar of your own next to the read-only Google/`.ics` ones: a
+  month grid with chips, a day list, an editor with colours, all-day events and times, stored in
+  `.metamind/calendar/events.json`. See `crates/calendar-core/src/local.rs`.
+- **A tablet that draws.** Real pen pressure and the eraser end, read from `evdev`
+  (`crates/pen-input`), painted as a stroke whose width follows the pressure.
+- **Boards you can find.** A Kanban button in the ribbon and the board's format shown inside the
+  board, next to the template it parses.
+- **An Excalidraw board that holds.** The tools and the style panel are laid out, not pinned to a
+  fixed offset; the paper is dots, a grid, ruled lines or nothing, and the choice is saved in the
+  file's `appState`.
 
 ## Why MetaMind
 

@@ -2638,7 +2638,7 @@ fn embeds(
                     body,
                     El::div()
                         .class("media-card-action")
-                        .text("Reproducir en MetMind")
+                        .text("Reproducir en MetaMind")
                         .action(format!("video:open:{source}|{rel}")),
                 );
                 continue;
@@ -2653,7 +2653,7 @@ fn embeds(
                 El::div()
                     .class("media-card-action")
                     .text(if crate::video::is_video(rel) {
-                        "Reproducir en MetMind"
+                        "Reproducir en MetaMind"
                     } else {
                         "Abrir con el reproductor del sistema"
                     })
@@ -2705,7 +2705,7 @@ fn youtube_card(app: &App, dom: &mut Dom, view: NodeId, link: &crate::youtube::L
             El::div()
                 .class("media-card-action")
                 .class_if(waiting, "is-busy")
-                .text(if waiting { "Preparando el video…" } else { "Reproducir en MetMind" })
+                .text(if waiting { "Preparando el video…" } else { "Reproducir en MetaMind" })
                 .action(format!("youtube:open:{}", link.url)),
         );
         dom.add(

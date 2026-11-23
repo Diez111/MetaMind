@@ -1,4 +1,4 @@
-//! YouTube links in notes, played inside MetMind.
+//! YouTube links in notes, played inside MetaMind.
 //!
 //! A note that carries a YouTube link (`youtube.com/watch?v=…`, `youtu.be/…`, `…/shorts/…`,
 //! `…/embed/…`) shows a card under the line, the same shape the local media cards use. Pressing it

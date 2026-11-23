@@ -1975,7 +1975,7 @@ impl App {
                 v.dirty = false;
             }
             Err(WriteError::Conflict { .. }) => {
-                self.notice = Some(format!("{} se cambió fuera de MetMind. No se guardó.", v.path))
+                self.notice = Some(format!("{} se cambió fuera de MetaMind. No se guardó.", v.path))
             }
             Err(WriteError::Io(e)) => self.notice = Some(format!("No se pudo guardar: {e}")),
         }
@@ -2001,7 +2001,7 @@ impl App {
         if v.dirty {
             if text != v.to_markdown() {
                 self.notice =
-                    Some(format!("{} cambió fuera de MetMind; tus cambios siguen en la pestaña", v.path));
+                    Some(format!("{} cambió fuera de MetaMind; tus cambios siguen en la pestaña", v.path));
             }
             return;
         }

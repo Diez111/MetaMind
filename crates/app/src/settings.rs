@@ -2196,7 +2196,7 @@ fn search_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi, needle
 }
 
 fn general_view(app: &App, dom: &mut Dom, parent: NodeId) {
-    let ctl = row(dom, parent, "MetMind", "Base de conocimiento Markdown nativa y rápida.");
+    let ctl = row(dom, parent, "MetaMind", "Base de conocimiento Markdown nativa y rápida.");
     dom.add(ctl, El::div().class("setting-value").text(format!("v{}", env!("CARGO_PKG_VERSION"))));
     // The path is data, not a tooltip, so it wraps under its row instead of being shortened.
     let ctl = row(dom, parent, "Bóveda", "");
@@ -2219,7 +2219,7 @@ fn general_view(app: &App, dom: &mut Dom, parent: NodeId) {
         _ => {}
     }
     let ctl =
-        row(dom, parent, "Buscar actualizaciones automáticamente", "Una vez al día, al iniciar MetMind.");
+        row(dom, parent, "Buscar actualizaciones automáticamente", "Una vez al día, al iniciar MetaMind.");
     toggle(dom, ctl, crate::update::auto_check(), "settings:auto-update".into());
 }
 
@@ -2488,7 +2488,7 @@ fn calendar_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     dom.add(
         parent,
         El::div().class("settings-note").text(
-            "Se pega una vez: MetMind la consulta sola, sin OAuth y sin credenciales. \
+            "Se pega una vez: MetaMind la consulta sola, sin OAuth y sin credenciales. \
              También se leen los archivos .ics que estén en la bóveda.",
         ),
     );
@@ -2518,7 +2518,7 @@ fn calendar_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
         parent,
         El::div()
             .class("settings-note")
-            .text("MetMind nunca escribe en Google: con la dirección iCal el calendario es de solo lectura."),
+            .text("MetaMind nunca escribe en Google: con la dirección iCal el calendario es de solo lectura."),
     );
 }
 
