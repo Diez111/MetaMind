@@ -593,6 +593,8 @@ pub struct App {
     pub anims: crate::anim::Anims,
     /// The drawing tablet, when the machine has one: pressure for the pen strokes.
     pub pen: crate::pen::Pen,
+    /// The new-board dialog, while it is open.
+    pub kanban_new: Option<crate::kanbanview::NewBoard>,
     /// Where the tab indicator comes from while it slides to the tab that just took the focus.
     pub tab_from: Option<(usize, usize)>,
     /// The in-app video player, while a note's video card is playing.
@@ -1000,6 +1002,7 @@ impl App {
             suggest_dismissed: None,
             anims: Default::default(),
             pen: Default::default(),
+            kanban_new: None,
             tab_from: None,
             seen: None,
             notice_since: None,
@@ -2426,6 +2429,9 @@ impl App {
         if self.calendar_key(&key) {
             return true;
         }
+        if self.kanban_new_key(&key) {
+            return true;
+        }
         // A diagram shown full screen is a modal of its own: Escape, or a click on the backdrop,
         // closes it.
         if self.diagram_zoom.is_some() && key.key == "Escape" {
@@ -2651,6 +2657,9 @@ impl App {
         // The event editor is a modal: a letter belongs to the field it is editing, never to the
         // note behind it.
         if self.calendar_text(text) {
+            return;
+        }
+        if self.kanban_new_text(text) {
             return;
         }
         if self.modal_text(text) {

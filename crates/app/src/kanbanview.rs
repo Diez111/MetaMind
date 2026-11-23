@@ -1944,25 +1944,6 @@ impl App {
     }
 
     /// A board created from the palette: the plugin's template in the folder new notes go to.
-    fn new_board(&mut self) {
-        let dir = self.new_note_dir();
-        let rel = (1..)
-            .map(|n| {
-                let name = if n == 1 { "Tablero.md".to_string() } else { format!("Tablero {n}.md") };
-                path::join(&dir, &name)
-            })
-            .find(|p| self.store.index.id(p).is_none() && !self.store.abs(p).exists())
-            .unwrap_or_else(|| path::join(&dir, "Tablero.md"));
-        match self.store.create(&rel, TEMPLATE) {
-            Ok(_) => {
-                self.plugins.push(ext_api::Event::Create { path: rel.clone() });
-                self.files_changed(&[]);
-                self.open_kanban(&rel);
-                self.notice = Some(format!("Tablero creado: {rel}"));
-            }
-            Err(e) => self.notice = Some(format!("No se pudo crear el tablero: {e}")),
-        }
-    }
 
     /// Write the board, when there is something to write.
     pub(crate) fn kanban_save(&mut self) {
@@ -2186,10 +2167,31 @@ impl App {
     pub(crate) fn run_kanban(&mut self, command: &str) -> bool {
         let Some(rest) = command.strip_prefix("kanban:") else { return false };
         if rest == "new" {
-            self.new_board();
+            // The dialog, not a file called Tablero.md: the name, the folder and the template.
+            // The folder of the note in the pane, or of the board already open: a new board goes
+            // next to the one you are looking at.
+            let folder = self
+                .tab()
+                .map(|t| t.path.as_str())
+                .or_else(|| self.kanban_view.as_ref().map(|v| v.path.as_str()))
+                .and_then(|path| path.rsplit_once('/').map(|(dir, _)| dir.to_string()))
+                .unwrap_or_default();
+            self.kanban_new = Some(NewBoard { folder, ..Default::default() });
             return true;
         }
-        if rest == "none" {
+        // The dialog's own commands, which need no board open.
+        if rest == "none" || rest == "cancel" || rest == "create" || rest == "name" {
+            match rest {
+                "cancel" => self.kanban_new = None,
+                "create" => self.kanban_create(),
+                _ => {}
+            }
+            return true;
+        }
+        if let Some(n) = rest.strip_prefix("template:") {
+            if let (Ok(n), Some(nb)) = (n.parse::<usize>(), &mut self.kanban_new) {
+                nb.template = n.min(NEW_TEMPLATES.len().saturating_sub(1));
+            }
             return true;
         }
         if self.kanban_view.is_none() {
@@ -2561,6 +2563,167 @@ pub fn add_card_text(board: &str, column: &str, card: &str) -> Option<String> {
         out.push('\n');
     }
     Some(out)
+}
+
+/// A project board: the four columns a plan needs, with one card each so the shape is obvious.
+pub const PROJECT_TEMPLATE: &str = "%% kanban: settings\n{\"kanban-plugin\": \"basic\"} %%\n# Proyecto\n\n## Pendiente\n- [ ] Definir el alcance\n- [ ] Listar lo que hay que averiguar\n\n## Haciendo\n- [ ] Primera tarea\n\n## Bloqueado\n\n## Hecho\n";
+
+/// A study board: one column per stage of reading a text.
+pub const STUDY_TEMPLATE: &str = "%% kanban: settings\n{\"kanban-plugin\": \"basic\"} %%\n# Estudio\n\n## Por leer\n- [ ] Primera lectura\n\n## Leyendo\n\n## Resumido\n\n## Repasado\n";
+
+/// The three templates the new-board dialog offers, with the name the reader sees.
+pub const NEW_TEMPLATES: [(&str, &str); 3] =
+    [("Básico", TEMPLATE), ("Proyecto", PROJECT_TEMPLATE), ("Estudio", STUDY_TEMPLATE)];
+
+/// The new-board dialog: a name, a folder and a template, so three boards in a row do not come
+/// out as `Tablero`, `Tablero 2`, `Tablero 3`.
+#[derive(Clone, Debug)]
+pub struct NewBoard {
+    pub name: String,
+    /// The folder the board goes in, relative to the vault. Empty is the root.
+    pub folder: String,
+    pub template: usize,
+    pub error: Option<String>,
+}
+
+impl Default for NewBoard {
+    fn default() -> NewBoard {
+        NewBoard { name: "Tablero".to_string(), folder: String::new(), template: 0, error: None }
+    }
+}
+
+impl NewBoard {
+    /// The path the board will have, without the suffix a name collision adds.
+    pub fn path(&self) -> String {
+        let name = self.name.trim();
+        let name = if name.is_empty() { "Tablero" } else { name };
+        let file = if name.to_ascii_lowercase().ends_with(".md") { name.to_string() } else { format!("{name}.md") };
+        vault_core::path::join(&self.folder, &file)
+    }
+
+    pub fn text(&self) -> &'static str {
+        NEW_TEMPLATES.get(self.template).map_or(TEMPLATE, |(_, text)| *text)
+    }
+}
+
+/// The dialog over the window.
+pub fn new_board_dialog(app: &crate::shell::App, dom: &mut Dom) {
+    let Some(nb) = &app.kanban_new else { return };
+    let backdrop = dom.add(0, El::div().class("modal-container mod-dim kanban-new-modal").action("kanban:cancel"));
+    let card = dom.add(backdrop, El::div().class("kanban-new").action("kanban:none"));
+    let head = dom.add(card, El::div().class("kanban-new-head"));
+    dom.add(head, El::div().class("kanban-new-title").text("Nuevo tablero"));
+    let close = dom.add(head, El::div().class("clickable-icon").action("kanban:cancel"));
+    dom.add(close, crate::icons::el("x"));
+
+    let field = dom.add(card, El::div().class("kanban-new-field"));
+    dom.add(field, El::div().class("kanban-new-label").text("Nombre"));
+    let input = dom.add(card, El::div().class("kanban-new-input").class("is-focus").action("kanban:name"));
+    dom.add(input, El::div().class("kanban-new-input-text").text(crate::view::with_caret(&nb.name, 48)));
+
+    let folder = dom.add(card, El::div().class("kanban-new-field"));
+    dom.add(folder, El::div().class("kanban-new-label").text("Carpeta"));
+    let path = nb.path();
+    let shown = path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("raíz");
+    dom.add(card, El::div().class("kanban-new-path").text(shown.to_string()));
+
+    let tpl = dom.add(card, El::div().class("kanban-new-field"));
+    dom.add(tpl, El::div().class("kanban-new-label").text("Plantilla"));
+    let row = dom.add(tpl, El::div().class("kanban-new-templates"));
+    for (i, (name, _)) in NEW_TEMPLATES.iter().enumerate() {
+        dom.add(
+            row,
+            El::div()
+                .class("kanban-new-template")
+                .class_if(nb.template == i, "is-active")
+                .text(*name)
+                .action(format!("kanban:template:{i}")),
+        );
+    }
+    if let Some(error) = &nb.error {
+        dom.add(card, El::div().class("kanban-new-error").text(error.clone()));
+    }
+    let actions = dom.add(card, El::div().class("kanban-new-actions"));
+    dom.add(actions, El::div().class("cal-button mod-cta").action("kanban:create").text("Crear"));
+    dom.add(actions, El::div().class("cal-button").action("kanban:cancel").text("Cancelar"));
+}
+
+/// Create the board the dialog describes, with the folder it names and the template it shows. A
+/// name already taken gets a suffix instead of overwriting the file, and the dialog says so.
+impl crate::shell::App {
+    pub(crate) fn kanban_create(&mut self) {
+        let Some(nb) = self.kanban_new.clone() else { return };
+        let wanted = nb.path();
+        let mut rel = wanted.clone();
+        if self.store.index.id(&rel).is_some() || self.store.abs(&rel).exists() {
+            let (dir, file) = match rel.rsplit_once('/') {
+                Some((d, f)) => (format!("{d}/"), f.to_string()),
+                None => (String::new(), rel.clone()),
+            };
+            let stem = file.trim_end_matches(".md");
+            rel = (2..)
+                .map(|n| vault_core::path::join(&dir.trim_end_matches('/'), &format!("{stem} {n}.md")))
+                .find(|p| self.store.index.id(p).is_none() && !self.store.abs(p).exists())
+                .unwrap_or(rel);
+        }
+        match self.store.create(&rel, nb.text()) {
+            Ok(_) => {
+                self.kanban_new = None;
+                self.plugins.push(ext_api::Event::Create { path: rel.clone() });
+                self.files_changed(&[]);
+                self.open_kanban(&rel);
+                self.notice = Some(format!("Tablero creado: {rel}"));
+            }
+            Err(e) => {
+                if let Some(nb) = &mut self.kanban_new {
+                    nb.error = Some(format!("No se pudo crear: {e}"));
+                }
+            }
+        }
+    }
+
+    /// A letter while the new-board dialog is open: it goes into the name.
+    pub(crate) fn kanban_new_text(&mut self, text: &str) -> bool {
+        let Some(nb) = &mut self.kanban_new else { return false };
+        if text.chars().any(|c| c == '/' || c == '\\') {
+            nb.error = Some("El nombre no puede tener barras: la carpeta se elige aparte.".to_string());
+            return true;
+        }
+        nb.name.push_str(text);
+        nb.error = None;
+        true
+    }
+
+    /// The keys of the dialog. True when the key was one of them.
+    pub(crate) fn kanban_new_key(&mut self, key: &crate::Key) -> bool {
+        if self.kanban_new.is_none() {
+            return false;
+        }
+        match key.key.as_str() {
+            "Escape" => {
+                self.kanban_new = None;
+                true
+            }
+            "Enter" => {
+                self.kanban_create();
+                true
+            }
+            "Backspace" => {
+                if let Some(nb) = &mut self.kanban_new {
+                    nb.name.pop();
+                    nb.error = None;
+                }
+                true
+            }
+            "Tab" => {
+                if let Some(nb) = &mut self.kanban_new {
+                    nb.template = (nb.template + 1) % NEW_TEMPLATES.len();
+                }
+                true
+            }
+            _ => false,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -316,6 +316,7 @@ fn a_new_board_is_the_template_of_three_columns_and_opens_ready_to_fill() {
     let mut app = App::open(d.path()).unwrap();
     let mut fonts = Fonts::new();
     app.run("kanban:new");
+    app.run("kanban:create");
     assert!(app.kanban_active(), "the new board opens as a board");
     let board = app_kanban(&app);
     assert_eq!(board.board.columns.len(), 3);
@@ -536,6 +537,7 @@ fn the_ribbon_offers_a_board_and_the_command_makes_one() {
     let found = f.dom.nodes.iter().any(|n| n.el.action.as_deref() == Some("kanban:new"));
     assert!(found, "la ribbon tiene el botón de tablero");
     app.run("kanban:new");
+    app.run("kanban:create");
     let made = d.path().join("Tablero.md");
     assert!(made.exists(), "el comando crea el archivo");
     assert!(app.kanban_active(), "y abre el tablero");
@@ -576,4 +578,61 @@ fn the_help_card_shows_the_format_the_parser_reads() {
     app.run("kanban:help");
     let f = frame(&mut app, &mut fonts);
     assert!(!f.dom.nodes.iter().any(|n| n.el.classes.iter().any(|c| c == "kanban-help")));
+}
+
+/// "No veo el botón donde desplegarlo" tenía dos partes: el botón (ya está en la ribbon) y que
+/// crear tres tableros seguidos no te diera `Tablero 3`. El diálogo pregunta nombre, carpeta y
+/// plantilla, y no pisa un archivo que ya existe.
+#[test]
+fn the_new_board_dialog_asks_for_the_name_the_folder_and_a_template() {
+    let d = tempfile::tempdir().unwrap();
+    fs::create_dir(d.path().join("Proyectos")).unwrap();
+    fs::write(d.path().join("Proyectos/Plan.md"), "# Plan\n").unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("Proyectos/Plan");
+    app.run("kanban:new");
+    let nb = app.kanban_new.as_ref().expect("el diálogo se abre en vez de crear el archivo");
+    assert_eq!(nb.name, "Tablero");
+    assert_eq!(nb.folder, "Proyectos", "la carpeta de la nota abierta");
+    assert_eq!(nb.path(), "Proyectos/Tablero.md");
+    // A name, and the project template (four columns).
+    for _ in 0.."Tablero".len() {
+        app.key(key("Backspace"));
+    }
+    for c in "Tesis".chars() {
+        app.text_input(&c.to_string());
+    }
+    app.run("kanban:template:1");
+    assert_eq!(app.kanban_new.as_ref().unwrap().text(), metamind_app::kanbanview::PROJECT_TEMPLATE);
+    app.run("kanban:create");
+    assert!(app.kanban_new.is_none(), "crear cierra el diálogo");
+    let made = d.path().join("Proyectos/Tesis.md");
+    assert!(made.exists(), "el tablero va a la carpeta de la nota abierta");
+    let text = fs::read_to_string(&made).unwrap();
+    assert!(text.contains("## Bloqueado"), "la plantilla Proyecto: {text}");
+    assert!(app.kanban_active(), "y se abre");
+
+    // The same name again does not overwrite the file.
+    app.run("kanban:new");
+    for _ in 0.."Tablero".len() {
+        app.key(key("Backspace"));
+    }
+    for c in "Tesis".chars() {
+        app.text_input(&c.to_string());
+    }
+    app.run("kanban:create");
+    assert!(d.path().join("Proyectos/Tesis 2.md").exists(), "el segundo tablero no pisa al primero");
+    assert_eq!(fs::read_to_string(made).unwrap(), text, "y el primero quedó igual");
+
+    // Escape closes without creating anything.
+    app.run("kanban:new");
+    app.key(key("Escape"));
+    assert!(app.kanban_new.is_none());
+    // A letter goes to the name and never to the note behind the dialog.
+    app.open_note("Proyectos/Plan");
+    let before = app.tab().unwrap().editor.buf.text();
+    app.run("kanban:new");
+    app.text_input("x");
+    assert_eq!(app.tab().unwrap().editor.buf.text(), before);
+    assert!(app.kanban_new.as_ref().unwrap().name.ends_with('x'));
 }

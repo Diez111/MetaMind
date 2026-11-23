@@ -1120,3 +1120,18 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .ai-tool-icon { width: 12px; height: 12px; flex-shrink: 0 }
 .ai-tool-name { flex-shrink: 0; color: var(--text-normal) }
 .ai-tool-summary { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-faint) }
+
+/* The new-board dialog: a name, the folder it lands in, and one of three templates. */
+.kanban-new-modal { align-items: flex-start; justify-content: center; padding-top: 80px }
+.kanban-new { width: 92%; max-width: 420px; display: flex; flex-direction: column; gap: 10px; padding: 14px; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45) }
+.kanban-new-head { display: flex; align-items: center; gap: 8px }
+.kanban-new-title { flex-grow: 1; color: var(--text-normal); font-size: var(--font-ui-small); font-weight: 600 }
+.kanban-new-field { display: flex; flex-direction: column; gap: 3px }
+.kanban-new-label { color: var(--text-faint); font-size: var(--font-ui-smaller) }
+.kanban-new-input { min-height: 28px; padding: 4px 8px; border: 1px solid var(--interactive-accent); border-radius: var(--radius-s); background-color: var(--background-primary); color: var(--text-normal); font-size: var(--font-ui-small) }
+.kanban-new-path { color: var(--text-muted); font-family: var(--font-monospace); font-size: var(--font-ui-smaller) }
+.kanban-new-templates { display: flex; flex-wrap: wrap; gap: 6px }
+.kanban-new-template { padding: 4px 10px; border: 1px solid var(--background-modifier-border); border-radius: 999px; color: var(--text-muted); font-size: var(--font-ui-smaller) }
+.kanban-new-template.is-active { background-color: var(--interactive-accent); border-color: var(--interactive-accent); color: var(--text-on-accent) }
+.kanban-new-error { padding: 5px 8px; border-radius: var(--radius-s); background-color: var(--rs-band); color: var(--rs-warning); font-size: var(--font-ui-smaller) }
+.kanban-new-actions { display: flex; align-items: center; gap: 8px }

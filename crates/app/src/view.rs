@@ -3550,10 +3550,10 @@ fn overlays(app: &App, dom: &mut Dom, workspace: Option<NodeId>, viewport_h: f32
             crate::excalidrawview::fullscreen(v, dom, app.window_w, viewport_h, info);
         }
     }
-    // The event editor is a modal of the window, over everything the panes built.
+    // The event editor and the new-board dialog are modals of the window, over everything the
+    // panes built.
     crate::calendar::editor(app, dom);
-    // The event editor is a modal of the window, over everything the panes built.
-    crate::calendar::editor(app, dom);
+    crate::kanbanview::new_board_dialog(app, dom);
     if let Some(p) = &app.prompt {
         let t = app.anims.t("prompt");
         let mut el = El::div().class("prompt");
