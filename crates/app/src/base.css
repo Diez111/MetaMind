@@ -197,13 +197,13 @@ body {
 .rich-notice { font-size: 12px; color: var(--text-faint); padding: 0 40px; margin: -2px 0 10px 0 }
 .cm-fold-indicator { position: absolute; left: 4px; top: 6px; width: 18px; color: var(--text-faint); font-size: 12px; font-weight: 400 }
 .cm-fold-indicator:hover, .cm-fold-indicator.is-collapsed { color: var(--text-muted) }
-.markdown-table, .dataview-table { display: flex; flex-direction: column; margin: 4px 0 18px 0; padding: 0 28px; font-size: 0.88em; color: var(--text-normal) }
+.markdown-table, .dataview-table { display: flex; flex-direction: column; margin: 4px 0 18px 0; padding: 0 28px; font-size: 0.95em; color: var(--text-normal) }
 .markdown-table > .table-row:last-child { border-bottom: 1px solid var(--rs-rule) }
 .table-row { display: flex; border-bottom: 1px solid var(--rs-rule) }
 .table-row.is-header { font-weight: 600; color: var(--text-muted); border-bottom: 1px solid var(--rs-rule-strong) }
 .table-row.is-band { background-color: var(--rs-band) }
-.table-cell { padding: 7px 10px; line-height: 1.55 }
-.table-row.is-header .table-cell { font-size: 0.85em }
+.table-cell { padding: 8px 12px; line-height: 1.55 }
+.table-row.is-header .table-cell { font-size: 1em; letter-spacing: 0.01em }
 .table-cell.is-center { text-align: center }
 .image-embed { margin: 4px 0 14px 0 }
 /* A board drawn in place of its `![[…]]` embed: the picture is painted by the app, this is the
@@ -873,7 +873,8 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .calendar-row:last-child .calendar-cell { border-bottom: none }
 .calendar-cell:last-child { border-right: none }
 .calendar-cell:hover { background-color: var(--background-modifier-hover) }
-.calendar-cell.is-other-month { color: var(--text-faint) }
+.calendar-cell.is-other-month { color: var(--text-faint); background-color: transparent }
+.calendar-cell.is-other-month .calendar-dot { opacity: 0.45 }
 .calendar-cell.is-other-month .calendar-day-num { opacity: 0.65 }
 /* Today is a colour on its number, never a fill: the fill belongs to the day the panel below is
    listing, and having two days look chosen was the bug the panel showed. */
@@ -893,7 +894,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .calendar-day-open { display: flex; align-items: center; gap: 4px; flex-shrink: 0; color: var(--text-accent); font-size: var(--font-ui-smaller); white-space: nowrap }
 .calendar-day-open:hover { text-decoration: underline }
 .calendar-day-open .svg-icon { width: 12px; height: 12px }
-.calendar-day-add { display: flex; align-items: center; gap: 3px; flex-shrink: 0; padding: 1px 6px; border-radius: var(--radius-s); background-color: var(--background-modifier-hover); color: var(--text-normal); font-size: var(--font-ui-smaller); white-space: nowrap }
+.calendar-day-add { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 24px; height: 24px; border-radius: var(--radius-s); color: var(--text-muted) }
 .calendar-day-add:hover { background-color: var(--interactive-accent); color: var(--text-on-accent) }
 .calendar-day-add .svg-icon { width: 12px; height: 12px }
 .calendar-day-list { padding: 0 8px 8px 8px; flex-grow: 1 }
@@ -1205,8 +1206,8 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 
 /* The calendar's day panel: the empty state is a block with its own action, not a sentence with
    a button printed over it. */
-.calendar-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px 4px }
-.calendar-empty-text { color: var(--text-faint); font-size: var(--font-ui-smaller) }
+.calendar-empty { padding: 8px 4px }
+.calendar-empty-text { padding: 8px 4px; color: var(--text-faint); font-size: var(--font-ui-smaller) }
 .calendar-empty-action { padding: 3px 10px; border: 1px solid var(--rs-rule-strong); border-radius: var(--radius-s); color: var(--text-normal); font-size: var(--font-ui-smaller) }
 .calendar-empty-action:hover { background-color: var(--interactive-accent); border-color: var(--interactive-accent); color: var(--text-on-accent) }
 /* The month reads as a grid: the lines between cells carry the structure. */

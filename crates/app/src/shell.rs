@@ -1278,6 +1278,22 @@ impl App {
                 rel = f.path.to_string();
             }
         }
+        // A video or a song is played, not opened as a note: the tree, a link and the command
+        // palette all land here, and "solo se pueden abrir notas Markdown" was the answer to a
+        // click on an `.mp4` that the app has a player for.
+        if crate::video::is_video(&rel) {
+            let note = self.tab().map(|t| t.path.clone()).unwrap_or_default();
+            let path = self.store.abs(&rel);
+            match self.video.open(&rel, &path, &note, self.card_cap()) {
+                Ok(()) => {
+                    if let Some(waker) = &self.video_waker {
+                        waker();
+                    }
+                }
+                Err(e) => self.notice = Some(e),
+            }
+            return;
+        }
         if path::kind_of(&rel) == FileKind::Canvas {
             return self.open_canvas(&rel);
         }

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.6
+
+- **Abrir un video lo reproduce.** Un clic en un `.mp4` (desde el árbol, un enlace o la paleta)
+  contestaba «solo se pueden abrir notas Markdown en esta compilación», con un reproductor nativo
+  al lado. Ahora el archivo va al reproductor; si falta el decodificador, el aviso dice eso.
+- **Las tablas se leen.** El encabezado salía a 0,75 em del cuerpo (unos 11 px contra 15) y las
+  celdas iban apretadas: ahora la tabla es 0,95 em con 8×12 de relleno, como el texto alrededor.
+- **Calendario de la barra.** Se fue el botón «Crear evento» del estado vacío (el «+» del día ya
+  hace eso), los dos iconos del día no tienen fondo hasta el hover y los días de otro mes quedan
+  más apagados, con sus puntos atenuados.
+
+
 ## 0.7.5
 
 - **Servidores MCP como herramientas del copiloto.** `crates/mcp-client` habla el protocolo

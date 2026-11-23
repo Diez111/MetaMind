@@ -4,6 +4,8 @@
 //! the suite.
 
 use metamind_app::posters::Posters;
+use std::fs;
+
 use metamind_app::{render, App, Frame};
 use metamind_ui::{Fonts, Image, Pixmap};
 use std::sync::Arc;
@@ -125,4 +127,20 @@ fn a_file_that_does_not_decode_keeps_the_card_as_it_was() {
     let action = node(&f, "media-card-action").expect("the card still opens the player");
     let a = &f.dom.nodes[action];
     assert!(f.dom.action_at(a.rect.x + a.rect.w / 2.0, a.rect.y + a.rect.h / 2.0).is_some());
+}
+
+/// A click on an `.mp4` plays it: it used to be answered with "solo se pueden abrir notas
+/// Markdown", which is the wrong sentence for a file the app has a player for.
+#[test]
+fn opening_a_video_file_plays_it_instead_of_refusing() {
+    let d = tempfile::tempdir().unwrap();
+    fs::write(d.path().join("Home.md"), "# Home\n").unwrap();
+    fs::write(d.path().join("clip.mp4"), b"no es un video de verdad").unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("Home");
+    app.open_note("clip.mp4");
+    let refused = app.notice.as_deref().is_some_and(|n| n.contains("solo se pueden abrir notas"));
+    assert!(!refused, "el archivo se manda al reproductor: {:?}", app.notice);
+    // The player is the one that has the file, and it says why when the decoder is missing.
+    assert!(app.video.is_open() || app.notice.is_some(), "o abre, o dice por qué no");
 }

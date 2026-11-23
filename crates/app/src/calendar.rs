@@ -1120,9 +1120,7 @@ fn day_panel(app: &crate::shell::App, dom: &mut Dom, parent: NodeId, today: Day,
     let rows: Vec<&Row> = cal.rows_on(day).collect();
     let _ = viewport_h;
     if rows.is_empty() {
-        let empty = dom.add(list, El::div().class("calendar-empty"));
-        dom.add(empty, El::div().class("calendar-empty-text").text("Sin eventos este día."));
-        dom.add(empty, El::div().class("calendar-empty-action").text("Crear evento").action("cal:new"));
+        dom.add(list, El::div().class("calendar-empty-text").text("Sin eventos este día."));
     }
     for (at, row) in rows.iter().enumerate() {
         let open_detail = cal.detail == Some((day, at));
