@@ -176,10 +176,12 @@ fn the_month_cells_are_evenly_spaced_at_every_width() {
     app.calendar.select_in_month(calendar_core::Day::from_ymd(2026, 11, 23).unwrap());
     app.run("calendar:open");
     let mut fonts = Fonts::new();
-    for width in [220.0f32, 300.0, 480.0] {
+    // The last two are a compact window: the sidebar takes the whole width, which is the shape of
+    // the phone and of the narrow window the reader reported.
+    for (width, window) in [(220.0f32, 620.0f32), (300.0, 700.0), (480.0, 480.0), (460.0, 460.0)] {
         app.left_open = true;
         app.left_w = width;
-        let mut pm = Pixmap::new(width as u32 + 400, 700).unwrap();
+        let mut pm = Pixmap::new(window as u32, 700).unwrap();
         render(&mut app, &mut fonts, &mut pm, 1.0);
         let f = render(&mut app, &mut fonts, &mut pm, 1.0);
         let classed = |class: &str| -> Vec<metamind_ui::Rect> {
