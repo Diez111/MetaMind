@@ -34,19 +34,19 @@ fn main() {
     let note = std::env::args()
         .nth(2)
         .unwrap_or_else(|| "Facultad/Materias/1° Año/Análisis Matemático I/Unidades/U4c-Taylor.md".into());
-    let (W, H) = (1920u32, 1080u32);
+    let (w, h) = (1920u32, 1080u32);
     let mut app = App::open(std::path::Path::new(&vault)).unwrap();
-    app.window_w = W as f32;
-    app.window_h = H as f32;
+    app.window_w = w as f32;
+    app.window_h = h as f32;
     if app.store.index.id(&note).is_some() {
         app.open_note(&note);
     }
     app.right_open = true;
     let mut fonts = Fonts::new();
-    let mut pm = Pixmap::new(W, H).unwrap();
+    let mut pm = Pixmap::new(w, h).unwrap();
     app.refresh_derived();
     let _ = render(&mut app, &mut fonts, &mut pm, 1.0);
-    println!("ventana {W}x{H} · escala 1.0 · nota abierta + panel derecho");
+    println!("ventana {w}x{h} · escala 1.0 · nota abierta + panel derecho");
 
     // Baseline frame at 1x, both paths of the renderer: a full repaint per frame (what the app
     // did before the damage tracker) and dirty-rect painting of the same still window.
@@ -58,7 +58,7 @@ fn main() {
     );
 
     // The HiDPI bill: the same frame at 2x (a 200 % display rasters 4x the pixels).
-    let mut pm2 = Pixmap::new(W * 2, H * 2).unwrap();
+    let mut pm2 = Pixmap::new(w * 2, h * 2).unwrap();
     let full2 = bench_frames(&mut app, &mut fonts, &mut pm2, 2.0, 20, true);
     let dmg2 = bench_frames(&mut app, &mut fonts, &mut pm2, 2.0, 20, false);
     println!("frame 2x    {:>7.2} ms completo · {:>7.2} ms con daño (pantalla escala 200%)", full2, dmg2);
@@ -79,7 +79,7 @@ fn main() {
             let other = if i % 2 == 0 { y + r.rect.h } else { y };
             app.hover(&frame, x, other);
             let f = render(&mut app, &mut fonts, &mut pm, 1.0);
-            area += f.damage.area(W, H);
+            area += f.damage.area(w, h);
             fulls += usize::from(f.damage.full);
             rects += f.damage.rects.len();
             if std::env::var_os("BENCH_DEBUG").is_some() && i < 3 {
@@ -89,7 +89,7 @@ fn main() {
         println!(
             "hover/hint  {:>7.2} ms promedio (daño {:>5.1}% de la ventana · {} rects · {} de {n} completos)",
             ms(t.elapsed()) / n as f64,
-            area as f64 / (n as f64) * 100.0 / (f64::from(W) * f64::from(H)),
+            area as f64 / (n as f64) * 100.0 / (f64::from(w) * f64::from(h)),
             rects / n,
             fulls
         );

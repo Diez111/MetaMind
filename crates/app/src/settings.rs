@@ -2694,6 +2694,72 @@ fn field_caret(e: &mut FieldEdit, key: &Key) {
     }
 }
 
+/// Whether the settings search text names something of Ajustes → Lápiz.
+fn pen_matches(needle: &str) -> bool {
+    let words = ["lapiz", "lápiz", "tableta", "tablet", "presion", "presión", "evdev", "xp-pen"];
+    words.iter().any(|w| needle.contains(w))
+        || matches(needle, "Lápiz", "Tableta de dibujo: presión del lápiz, goma y diagnóstico.")
+}
+
+/// Ajustes → Lápiz: what the machine has, what it reports right now, and the way out when the
+/// device cannot be read.
+fn pen_view(app: &App, dom: &mut Dom, parent: NodeId) {
+    let pen = &app.pen;
+    let ctl = row(
+        dom,
+        parent,
+        "Tableta",
+        "Un lápiz que reporta presión dibuja trazos de ancho variable en los tableros.",
+    );
+    let state = match (&pen.device, pen.connected()) {
+        (Some(dev), true) => format!("Conectada: {}", dev.name),
+        (Some(dev), false) => format!("{} (sin permiso de lectura)", dev.name),
+        (None, _) => "No se detectó ninguna tableta".to_string(),
+    };
+    dom.add(ctl, El::div().class("setting-status").text(state));
+    button(dom, ctl, "Buscar de nuevo", "pen:refresh".into(), false);
+
+    let ctl = row(
+        dom,
+        parent,
+        "Usar la presión",
+        "Apagado, el trazo mantiene el grosor elegido aunque aprietes más.",
+    );
+    let on = app.config.app.bool("pen.pressure", true);
+    toggle(dom, ctl, on, "pen:toggle".to_string());
+
+    let ctl = row(dom, parent, "Presión ahora mismo", "Pasá el lápiz por la tableta: la barra se mueve.");
+    let level = if pen.connected() { pen.pressure } else { 0.0 };
+    let bar = dom.add(ctl, El::div().class("pen-meter"));
+    dom.add(bar, El::div().class("pen-meter-fill").style(&format!("width: {:.0}%", level * 100.0)));
+    dom.add(
+        ctl,
+        El::div().class("setting-status").text(if pen.enabled {
+            format!("{:.0} %", level * 100.0)
+        } else {
+            "apagada".to_string()
+        }),
+    );
+
+    if let Some(error) = &pen.error {
+        dom.add(parent, El::div().class("settings-note mod-warning").text(error.clone()));
+    }
+    let found = pen.devices();
+    if !found.is_empty() {
+        let mut lines = String::new();
+        for device in &found {
+            lines.push_str(&format!("{}  ·  {}\n", device.path.display(), device.name));
+        }
+        dom.add(parent, El::div().class("settings-note").text(lines.trim_end().to_string()));
+    }
+    dom.add(
+        parent,
+        El::div()
+            .class("settings-note")
+            .text("Para probar la tableta sin abrir la app: scripts/pen-probe.sh"),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2771,70 +2837,4 @@ mod tests {
         assert_eq!(e.selection(), None);
         assert_eq!(e.caret, 1);
     }
-}
-
-/// Whether the settings search text names something of Ajustes → Lápiz.
-fn pen_matches(needle: &str) -> bool {
-    let words = ["lapiz", "lápiz", "tableta", "tablet", "presion", "presión", "evdev", "xp-pen"];
-    words.iter().any(|w| needle.contains(w))
-        || matches(needle, "Lápiz", "Tableta de dibujo: presión del lápiz, goma y diagnóstico.")
-}
-
-/// Ajustes → Lápiz: what the machine has, what it reports right now, and the way out when the
-/// device cannot be read.
-fn pen_view(app: &App, dom: &mut Dom, parent: NodeId) {
-    let pen = &app.pen;
-    let ctl = row(
-        dom,
-        parent,
-        "Tableta",
-        "Un lápiz que reporta presión dibuja trazos de ancho variable en los tableros.",
-    );
-    let state = match (&pen.device, pen.connected()) {
-        (Some(dev), true) => format!("Conectada: {}", dev.name),
-        (Some(dev), false) => format!("{} (sin permiso de lectura)", dev.name),
-        (None, _) => "No se detectó ninguna tableta".to_string(),
-    };
-    dom.add(ctl, El::div().class("setting-status").text(state));
-    button(dom, ctl, "Buscar de nuevo", "pen:refresh".into(), false);
-
-    let ctl = row(
-        dom,
-        parent,
-        "Usar la presión",
-        "Apagado, el trazo mantiene el grosor elegido aunque aprietes más.",
-    );
-    let on = app.config.app.bool("pen.pressure", true);
-    toggle(dom, ctl, on, "pen:toggle".to_string());
-
-    let ctl = row(dom, parent, "Presión ahora mismo", "Pasá el lápiz por la tableta: la barra se mueve.");
-    let level = if pen.connected() { pen.pressure } else { 0.0 };
-    let bar = dom.add(ctl, El::div().class("pen-meter"));
-    dom.add(bar, El::div().class("pen-meter-fill").style(&format!("width: {:.0}%", level * 100.0)));
-    dom.add(
-        ctl,
-        El::div().class("setting-status").text(if pen.enabled {
-            format!("{:.0} %", level * 100.0)
-        } else {
-            "apagada".to_string()
-        }),
-    );
-
-    if let Some(error) = &pen.error {
-        dom.add(parent, El::div().class("settings-note mod-warning").text(error.clone()));
-    }
-    let found = pen.devices();
-    if !found.is_empty() {
-        let mut lines = String::new();
-        for device in &found {
-            lines.push_str(&format!("{}  ·  {}\n", device.path.display(), device.name));
-        }
-        dom.add(parent, El::div().class("settings-note").text(lines.trim_end().to_string()));
-    }
-    dom.add(
-        parent,
-        El::div()
-            .class("settings-note")
-            .text("Para probar la tableta sin abrir la app: scripts/pen-probe.sh"),
-    );
 }

@@ -866,7 +866,7 @@ impl ExcView {
     fn paper(&self, cmds: &mut Vec<Cmd>, rect: Rect, board: Color, dark: bool) {
         let ox = rect.x + rect.w / 2.0 - self.cam[0] * self.zoom;
         let oy = rect.y + rect.h / 2.0 - self.cam[1] * self.zoom;
-        surface_paper(rect, self.zoom, ox, oy, board, dark, self.surface, cmds);
+        surface_paper(rect, (self.zoom, ox, oy), board, dark, self.surface, cmds);
     }
 
     pub fn paint(

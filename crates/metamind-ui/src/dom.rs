@@ -730,7 +730,7 @@ impl Dom {
         // changing it to also handle lines would risk a regression nobody sees until it is on
         // screen. Absolute children are placed the same way by both.
         if s.row && s.wrap {
-            let content_h = self.place_wrap(fonts, id, inner, &s, &kids, sizes, scroll);
+            let content_h = self.place_wrap(fonts, inner, &s, &kids, sizes, scroll);
             self.nodes[id].content_h = content_h;
             self.place_absolute(fonts, id, rect);
             return;
@@ -933,7 +933,6 @@ impl Dom {
     fn place_wrap(
         &mut self,
         fonts: &mut Fonts,
-        _id: NodeId,
         inner: Rect,
         s: &Style,
         kids: &[NodeId],
@@ -971,10 +970,7 @@ impl Dom {
             let line_h = heights[li];
             let n = b - a;
             let gaps = s.gap * n.saturating_sub(1) as f32;
-            let mut used = gaps;
-            for i in a..b {
-                used += mains[i];
-            }
+            let used = gaps + mains[a..b].iter().sum::<f32>();
             let free = main_avail - used;
             if free > 0.0 {
                 let grow_total: f32 = (a..b).map(|i| self.nodes[kids[i]].style.grow).sum();

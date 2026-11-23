@@ -318,15 +318,13 @@ impl Surface {
 /// `s` is the scale, `(ox, oy)` where scene `(0, 0)` lands: the embed's fit and the editor's
 /// camera both paint through here, so a board's surface looks the same in both.
 pub(crate) fn grid(rect: Rect, s: f32, ox: f32, oy: f32, board: Color, dark: bool, cmds: &mut Vec<Cmd>) {
-    surface_paper(rect, s, ox, oy, board, dark, Surface::default(), cmds);
+    surface_paper(rect, (s, ox, oy), board, dark, Surface::default(), cmds);
 }
 
 /// Paints the paper a board sits on: dots, a grid, ruled lines, or nothing.
 pub(crate) fn surface_paper(
     rect: Rect,
-    s: f32,
-    ox: f32,
-    oy: f32,
+    (s, ox, oy): (f32, f32, f32),
     board: Color,
     dark: bool,
     paper: Surface,
