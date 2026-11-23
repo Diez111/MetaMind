@@ -48,6 +48,10 @@ fn fixture(root: &Path) {
     w("Tablero.md", BOARD);
     w("Pizarra.excalidraw", DRAWING);
     w(
+        "Plan.md",
+        "---\ntipo: gantt\n---\n# Plan\n\n- Diseño · 2026-11-02 · 2026-11-08\n- Implementación · 2026-11-09 · 2026-11-22\n- Pruebas · 2026-11-16 · 2026-11-26\n- Entrega · 2026-11-28 · 2026-11-28\n",
+    );
+    w(
         "Dinero.md",
         "---\ntipo: finanzas\n---\n# Finanzas\n\n## Ingresos\n- 2026-11-01 · sueldo · 1.250.000\n- 2026-10-01 · sueldo · 1.180.000\n\n## Gastos\n- 2026-11-03 · supermercado · 45.200\n- 2026-11-05 · transporte · 12.000\n- 2026-11-10 · alquiler · 240.000\n- 2026-10-04 · supermercado · 38.000\n- 2026-10-10 · alquiler · 240.000\n",
     );
@@ -115,5 +119,6 @@ fn views() -> Vec<(&'static str, Vec<&'static str>)> {
         ("ia", vec!["ai:open"]),
         ("dashboard", vec!["open:Finanzas.dashboard.md"]),
         ("finanzas", vec!["open:Dinero.md"]),
+        ("plan", vec!["open:Plan.md"]),
     ]
 }

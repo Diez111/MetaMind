@@ -1743,6 +1743,9 @@ fn pane(
         _ if crate::finance::is_finance(app) => {
             crate::finance::pane(app, dom, leaf, width);
         }
+        _ if crate::gantt::is_gantt(app) => {
+            crate::gantt::pane(app, dom, leaf);
+        }
         _ => editor(app, dom, leaf, pal, info, app.tab().map(|t| (pane, app.active, t)), true),
     }
     info.panes.push((pane, leaf, None));

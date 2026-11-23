@@ -18,6 +18,7 @@ pub mod editing;
 pub mod excalidraw;
 pub mod excalidrawview;
 pub mod finance;
+pub mod gantt;
 pub mod graphview;
 pub mod icon;
 pub mod icons;

@@ -1253,3 +1253,24 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .finance-empty { display: flex; flex-direction: column; gap: 6px; padding: 24px 0 }
 .finance-empty-title { color: var(--text-normal); font-size: var(--font-ui-small) }
 .finance-empty-hint { color: var(--text-faint); font-size: var(--font-ui-smaller); line-height: 1.5; max-width: 560px }
+
+/* The plan as a timeline: a label column, a track per task, and the months as a scale. */
+.gantt { padding: 18px 24px; overflow-y: auto; gap: 6px }
+.gantt-head { display: flex; align-items: baseline; gap: 10px; padding-bottom: 8px }
+.gantt-title { color: var(--text-normal); font-size: 1.5em; font-weight: 700 }
+.gantt-range { color: var(--text-faint); font-size: var(--font-ui-smaller) }
+.gantt-scale { display: flex; align-items: stretch; gap: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--rs-rule) }
+.gantt-label-cell { width: 220px; flex-shrink: 0; min-width: 0; display: flex; flex-direction: column; gap: 1px }
+.gantt-track { position: relative; flex-grow: 1; min-width: 0; display: flex; align-items: center; height: 26px }
+.gantt-scale .gantt-track { height: 18px }
+.gantt-month { display: flex; align-items: center; border-left: 1px solid var(--rs-rule); overflow: hidden }
+.gantt-month-text { padding-left: 4px; color: var(--text-faint); font-size: 10px; white-space: nowrap }
+.gantt-row { display: flex; align-items: center; gap: 8px; padding: 3px 0 }
+.gantt-name { color: var(--text-normal); font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.gantt-when { color: var(--text-faint); font-size: 10px }
+.gantt-bar { position: absolute; top: 6px; bottom: 6px; border-radius: 4px; background-color: var(--interactive-accent) }
+.gantt-bar.is-milestone { width: 12px; height: 12px; top: 7px; bottom: auto; margin-left: -6px; border-radius: 2px }
+.gantt-today { position: absolute; top: 0; bottom: 0; width: 1px; background-color: var(--text-accent) }
+.gantt-empty { display: flex; flex-direction: column; gap: 6px; padding: 24px 0 }
+.gantt-empty-title { color: var(--text-normal); font-size: var(--font-ui-small) }
+.gantt-empty-hint { color: var(--text-faint); font-size: var(--font-ui-smaller); line-height: 1.5; max-width: 560px }
