@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.7.1
+
+Tres cosas que la 0.7.0 dejó mal y se vieron al usarla.
+
+- **El botón Estilo del tablero no hacía nada.** Abría el panel, pero lo agregaba antes del
+  lienzo: el pintor llenaba su nodo encima y la tarjeta quedaba invisible. Ahora va después, con
+  un test del orden de pintado y de que los tres grosores están ahí — de paso, el grosor de línea
+  y los colores ya se pueden elegir.
+- **Al dibujar aparecía un marco punteado.** Era la selección del trazo en curso. Se omite
+  mientras se dibuja o se traza a mano; la banda, el movimiento y el pan conservan su marco.
+- **Una nota del plugin de Excalidraw mostraba el JSON entero.** El dibujo vive en un bloque `%%`
+  de la nota: ahora los comentarios se ocultan fuera del modo fuente, y si el bloque tiene un
+  escenario de Excalidraw la nota se abre directamente como tablero. Al guardar se reemplaza solo
+  el JSON dentro del bloque; el frente, la prosa y los marcadores quedan igual.
+- **Target de build.** `scripts/dev.sh clean`: `cargo clean` a secas limpiaba el tmpfs del slice y
+  dejaba 180 GB de artefactos viejos en el target de disco (los links tardaban minutos).
+
+
 ## 0.7.0
 
 The version of the audit: the calendar can be written, the boards can be found, the pen has
