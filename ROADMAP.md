@@ -60,6 +60,25 @@ Database views over front-matter properties, saved as readable files next to the
 This level needs hosted infrastructure and ongoing operations, so it is the practical ceiling for
 a small open-source project. Levels 1–4 are achievable by a small team.
 
+## The copilot's next step: MCP servers and a local model
+
+The copilot already calls eight functions on the vault (`crates/app/src/ai_tools.rs`) and the
+profile can point at any OpenAI-compatible endpoint, including Ollama on this machine (a
+`localhost` profile needs no API key). What is missing to make it "connected to everything" is a
+**Model Context Protocol client**:
+
+1. `crates/mcp-client`: JSON-RPC 2.0 over stdio (the transport every MCP server ships), `initialize`
+   handshake, `tools/list` and `tools/call`. No `unsafe`, no async runtime: a thread per server and
+   a channel, the same shape `pen-input` uses.
+2. A server list in `Ajustes → IA`: command, arguments, working directory, on/off. Started on first
+   use, restarted on crash, killed on exit.
+3. The tools of every enabled server are merged with ours in the payload, namespaced
+   (`mcp__<server>__<tool>`), and a remote tool's result is truncated like a local one's.
+4. Permission: a remote tool runs outside the vault, so the first call to each server asks once
+   ("¿Permitir que el servidor X ejecute herramientas?") and the answer is remembered per server.
+5. Tests: a mock MCP server (a small Rust binary in `tests/fixtures`) that lists one tool and calls
+   it; the loop, the namespacing, a server that dies mid-call, and a tool that returns a huge body.
+
 ## Not planned
 
 - Matching the plugin count of large ecosystems; the most-used features ship built in instead
