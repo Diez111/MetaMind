@@ -1360,10 +1360,8 @@ fn ai_body(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
     if !app.ai.tool_log.is_empty() {
         let log = dom.add(parent, El::div().class("ai-tool-log"));
         for (name, summary, ok) in &app.ai.tool_log {
-            let row = dom.add(
-                log,
-                El::div().class("ai-tool-row").class_if(!ok, "is-error").action("ai:tools-open"),
-            );
+            let row = dom
+                .add(log, El::div().class("ai-tool-row").class_if(!ok, "is-error").action("ai:tools-open"));
             dom.add(row, icons::el(if *ok { "check" } else { "warning" }).class("ai-tool-icon"));
             dom.add(row, El::div().class("ai-tool-name").text(name.clone()));
             dom.add(row, El::div().class("ai-tool-summary").text(summary.clone()));

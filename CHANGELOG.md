@@ -64,7 +64,7 @@ pressure, the copilot has tools, and the layout stopped overflowing.
 - **`scripts/dev.sh`.** One lane for every build: the target on disk (this workspace does not fit
   in `/dev/shm`: the linker died with `SIGBUS` and the pipe still reported success) and
   `pipefail`, so a build cannot lie about failing.
-- **Baseline medido.** 780 tests, 0 failures, 1 ignored, after the audit.
+- **Baseline medido.** 791 tests, 0 failures, 1 ignored, after the audit.
 
 ### Limitaciones que quedan
 
