@@ -1018,8 +1018,9 @@ pub fn panel(app: &crate::shell::App, dom: &mut Dom, parent: NodeId, viewport_h:
     if let Some(error) = &cal.error {
         dom.add(parent, El::div().class("calendar-error").text(error.clone()));
     }
-    let has_url = !app.config.app.str("cal.ical_url").unwrap_or_default().trim().is_empty();
-    if !has_url && cal.files.is_empty() && cal.tasks.is_empty() && cal.error.is_none() {
+    // The sentence is for a calendar with nothing in it. It was shown while the dots of a day
+    // were already on screen, which contradicts what the reader sees.
+    if !cal.has_events() && cal.error.is_none() {
         dom.add(
             parent,
             El::div()
