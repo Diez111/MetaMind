@@ -315,7 +315,7 @@ body {
 .notice.mod-info .svg-icon { color: var(--text-accent) }
 .perf-overlay { position: absolute; bottom: 30px; right: 12px; background-color: rgba(0, 0, 0, 0.7); color: #7CFC00; padding: 6px 10px; border-radius: var(--radius-s); font-family: monospace; font-size: 12px }
 @media (prefers-reduced-motion: reduce) { * { transition: none } }
-.graph-controls { display: flex; gap: 6px; align-items: center; font-size: var(--font-ui-smaller) }
+.graph-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; row-gap: 4px; font-size: var(--font-ui-smaller) }
 .graph-count { margin-right: 10px; white-space: nowrap }
 .graph-control { padding: 1px 8px; border-radius: 10px; border: 1px solid var(--background-modifier-border); color: var(--text-faint); white-space: nowrap }
 .graph-control:hover { color: var(--text-normal) }
@@ -420,7 +420,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 /* The bar is a row of the pane's column, not a floating card: it can grow a tool without landing
    on top of anything. It scrolls sideways when a narrow window cannot hold every tool, so a phone
    keeps every control reachable instead of pushing the last ones out of the pane. */
-.exc-toolbar { display: flex; flex-direction: row; align-items: center; gap: 2px; flex-shrink: 0; height: 44px; padding: 0 8px; overflow-x: auto; overflow-y: hidden; background-color: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border) }
+.exc-toolbar { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; align-content: center; gap: 2px; flex-shrink: 0; min-height: 44px; padding: 4px 8px; background-color: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border) }
 .exc-sep { width: 1px; height: 20px; flex-shrink: 0; margin: 0 4px; background-color: var(--background-modifier-border) }
 .exc-tool.exc-fold { color: var(--text-faint) }
 .exc-surface-size-label { font-size: var(--font-ui-smaller); font-weight: 600 }
@@ -438,7 +438,7 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .exc-canvas { position: relative; flex-grow: 1; flex-shrink: 1; min-height: 0; overflow: hidden }
 /* The style panel is anchored to the top-right corner of the wrapper — a place that does not
    depend on how tall the bar is — and its colours wrap instead of spilling out. */
-.exc-style-panel { position: absolute; right: 8px; top: 52px; width: 248px; max-width: calc(100% - 16px); max-height: calc(100% - 60px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 10px; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28) }
+.exc-style-panel { position: absolute; right: 8px; top: 52px; width: 248px; display: flex; flex-direction: column; gap: 10px; padding: 10px; background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28) }
 .exc-style-row { display: flex; flex-direction: column; gap: 4px }
 .exc-style-label { font-size: var(--font-ui-smaller); font-weight: 600; color: var(--text-faint) }
 .exc-style-hint { font-size: var(--font-ui-smaller); color: var(--text-faint); line-height: 1.35 }
@@ -454,15 +454,15 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 .exc-zoom { min-width: 26px; height: 24px; padding: 0 6px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-s) }
 .exc-zoom:hover { background-color: var(--background-modifier-hover); color: var(--text-normal) }
 .exc-zoom.is-off { opacity: 0.4 }
-.exc-fullscreen-exit { position: absolute; right: 12px; top: 52px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
+.exc-fullscreen-exit { position: absolute; right: 12px; bottom: 12px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); background-color: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) }
 .exc-fullscreen-exit:hover { color: var(--text-normal); background-color: var(--background-modifier-hover) }
 .exc-zoom-label { white-space: nowrap }
 .exc-zoom-level { min-width: 44px; padding: 0 6px; text-align: right; color: var(--text-faint) }
 .modal.mod-exc { display: flex; padding: 0; overflow: hidden; background-color: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5) }
 .mod-exc .exc-wrapper { flex-grow: 1 }
-/* The way out of the full-screen board sits over the bar's right end: the bar is 44px tall, so a
-   button at its own height lands beside the fold control, not on it. */
-.mod-exc .exc-fullscreen-exit { top: 7px; right: 8px }
+/* The way out of the full-screen board sits over the bottom-right corner, away from the bar
+   (which grows when a narrow window wraps it) and from the zoom bar. */
+.mod-exc .exc-fullscreen-exit { right: 8px; bottom: 8px }
 .graph-view-container { padding: 0; overflow: hidden }
 .graph-view-colors { display: none }
 .graph-view.color-fill { color: var(--text-muted) }

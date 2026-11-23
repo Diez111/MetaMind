@@ -1,4 +1,5 @@
-//! A tolerant iCalendar (`.ics`) reader and a bounded `RRULE` expander, with no dependencies.
+//! A tolerant iCalendar (`.ics`) reader, a bounded `RRULE` expander and the events the user
+//! writes itself, in a small JSON file of its own.
 //!
 //! Google Calendar, Apple Calendar and Thunderbird all publish a calendar as a plain `.ics` file
 //! at a URL (Google's "secret address in iCal format"), and any of them can also be exported as a
@@ -14,11 +15,14 @@
 //! exist and a rule with no end all come back as fewer events, never as a crash.
 
 mod civil;
+pub mod local;
 mod parse;
 mod rrule;
 
 pub use civil::Day;
+pub use local::{Owned, OwnedEvent};
 pub use parse::parse;
+pub use rrule::parse as parse_rrule;
 pub use rrule::{Freq, Rrule};
 
 use rrule::MAX_STEPS;

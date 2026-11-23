@@ -136,6 +136,14 @@ fn break_lines(mains: &[f32], main_avail: f32, gap: f32) -> Vec<(usize, usize)> 
     lines
 }
 
+/// `x` bounded by `min` and `max` without the panic `f32::clamp` raises when a stylesheet puts
+/// `min` above `max`. A theme with `max-height: calc(100% - 60px)` resolves the percentage against
+/// nothing and comes out negative; that used to take the whole window down with a panic inside a
+/// layout pass instead of simply asking for no height.
+fn bounded(x: f32, min: f32, max: f32) -> f32 {
+    x.max(min).min(max)
+}
+
 fn dim(c: &Computed, name: &str, cx: &LengthCx) -> Dim {
     match c.get(name).map(str::trim) {
         None | Some("auto") => Dim::Auto,
@@ -541,12 +549,15 @@ impl Dom {
                 h += gaps;
             }
         }
-        let w = fixed_w.unwrap_or(w + hx).clamp(s.min_w, s.max_w);
-        let h = match s.height {
-            Dim::Px(v) => v,
-            _ => h + vx,
-        }
-        .clamp(s.min_h, s.max_h);
+        let w = bounded(fixed_w.unwrap_or(w + hx), s.min_w, s.max_w);
+        let h = bounded(
+            match s.height {
+                Dim::Px(v) => v,
+                _ => h + vx,
+            },
+            s.min_h,
+            s.max_h,
+        );
         (w, h)
     }
 
@@ -577,7 +588,7 @@ impl Dom {
     ) -> (f32, f32) {
         let (Some(avail), Dim::Pct(p)) = (avail, self.nodes[id].style.width) else { return (w, h) };
         let cs = &self.nodes[id].style;
-        let w = (avail * p / 100.0).clamp(cs.min_w, cs.max_w);
+        let w = bounded(avail * p / 100.0, cs.min_w, cs.max_w);
         (w, self.height_at(fonts, id, w))
     }
 
@@ -701,14 +712,14 @@ impl Dom {
             let cross_avail = if s.row { f32::INFINITY } else { inner.w - m[1] - m[3] };
             let (mut cw, mut ch) = self.intrinsic(fonts, c, cross_avail);
             if let Dim::Pct(p) = cs.height {
-                ch = (inner.h * p / 100.0).clamp(cs.min_h, cs.max_h);
+                ch = bounded(inner.h * p / 100.0, cs.min_h, cs.max_h);
             }
             if let Dim::Pct(p) = cs.width {
                 // A percentage is a suggestion: `min-width` and `max-width` still bound it.
-                cw = (inner.w * p / 100.0).clamp(cs.min_w, cs.max_w);
+                cw = bounded(inner.w * p / 100.0, cs.min_w, cs.max_w);
             }
             if !s.row && (s.align == Align::Stretch || cs.width != Dim::Auto) && cs.width == Dim::Auto {
-                cw = (inner.w - m[1] - m[3]).clamp(cs.min_w, cs.max_w);
+                cw = bounded(inner.w - m[1] - m[3], cs.min_w, cs.max_w);
             }
             used += if s.row { cw + m[1] + m[3] } else { ch + m[0] + m[2] };
             grow_total += cs.grow;
@@ -793,7 +804,7 @@ impl Dom {
                 let cross = inner.h - m[0] - m[2];
                 let y = match s.align {
                     Align::Stretch if cs.height == Dim::Auto && rect.h > 0.0 => {
-                        ch = cross.clamp(cs.min_h, cs.max_h);
+                        ch = bounded(cross, cs.min_h, cs.max_h);
                         0.0
                     }
                     Align::Center => (cross - ch) / 2.0,
@@ -811,7 +822,7 @@ impl Dom {
                     _ => 0.0,
                 };
                 if s.align == Align::Stretch && cs.width == Dim::Auto {
-                    cw = cross.clamp(cs.min_w, cs.max_w);
+                    cw = bounded(cross, cs.min_w, cs.max_w);
                     // Wrapped text may need more height at the final width.
                     if self.nodes[c].el.text.is_some() && cs.height == Dim::Auto && cs.grow == 0.0 {
                         ch = self.intrinsic(fonts, c, cw).1;
@@ -1023,7 +1034,7 @@ impl Dom {
                 let cross = (line_h - m[0] - m[2]).max(0.0);
                 let dy = match s.align {
                     Align::Stretch if cs.height == Dim::Auto => {
-                        ch = cross.clamp(cs.min_h, cs.max_h);
+                        ch = bounded(cross, cs.min_h, cs.max_h);
                         0.0
                     }
                     Align::Center => (cross - ch) / 2.0,
@@ -1036,7 +1047,14 @@ impl Dom {
             }
             y += line_h + s.gap_cross + line_extra;
         }
-        total_h + s.padding[0] + s.padding[2]
+        // `content_h` is the height a *scrolling* container reports so its scrollbar knows how far
+        // it can go. A row that does not scroll has no such thing: its own height is the answer,
+        // the same way the single-line path treats a row.
+        if s.scroll {
+            total_h + s.padding[0] + s.padding[2]
+        } else {
+            inner.h
+        }
     }
 
     fn content_box(&self, id: NodeId) -> Rect {
