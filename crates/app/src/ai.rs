@@ -249,6 +249,13 @@ impl Preset {
         }
     }
 
+    /// Whether this provider wants an API key. A model running on this machine (Ollama, or any
+    /// `localhost` endpoint) does not: the panel refused to send at all without a key, which made
+    /// "IA local" impossible.
+    pub fn needs_key(self) -> bool {
+        self != Preset::Ollama && self != Preset::Custom
+    }
+
     /// The models this provider is known to serve, for the list a reader picks from instead of
     /// typing a name from memory. Short on purpose: the ones somebody is likely to want, and the
     /// names that are easy to misspell. Asking the provider replaces the whole list with the ones
@@ -346,6 +353,15 @@ impl AiProfile {
     }
 
     /// The preset this profile's URL belongs to.
+    /// Whether this profile talks to a model on this machine, which needs no key.
+    pub fn needs_key(&self) -> bool {
+        let base = self.base_url.trim().to_ascii_lowercase();
+        if base.contains("localhost") || base.contains("127.0.0.1") || base.contains("0.0.0.0") {
+            return false;
+        }
+        self.preset().needs_key()
+    }
+
     pub fn preset(&self) -> Preset {
         Preset::of_base_url(&self.base_url)
     }
@@ -935,7 +951,7 @@ impl AiPanel {
             return;
         }
         self.error = None;
-        if cfg.api_key.trim().is_empty() {
+        if cfg.needs_key() && cfg.api_key.trim().is_empty() {
             self.error = Some("Falta la clave de API: Ajustes → IA.".to_string());
             return;
         }
@@ -964,7 +980,7 @@ impl AiPanel {
     /// Ask again with the tool results in the conversation, and no new question: what a turn
     /// does after the model asked for functions.
     pub fn resume(&mut self, cfg: &AiProfile, note_context: &str) {
-        if self.streaming || cfg.api_key.trim().is_empty() {
+        if self.streaming || (cfg.needs_key() && cfg.api_key.trim().is_empty()) {
             return;
         }
         let start = self.messages.len().saturating_sub(MAX_HISTORY);

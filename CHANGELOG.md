@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.7.4
+
+Tres superficies nuevas y el pulido que salió de mirar capturas renderizadas a tamaño real.
+
+- **Tablero de finanzas.** Una nota con `tipo: finanzas` se dibuja como tablero: ingresos, gastos y
+  balance del mes, una barra por mes en los últimos seis (ingreso y gasto) y las categorías del mes
+  con su peso. Los movimientos se escriben a mano, una línea por movimiento:
+  `- 2026-11-03 · supermercado · 45.200`, bajo un título `## Ingresos` o `## Gastos`. Los montos se
+  leen como los escribe una persona (`1.250.000`, `1250,50`, `$45.200`) y se suman en centavos.
+- **Diagrama de Gantt.** Una nota con `tipo: gantt` es un plan: `- Diseño · 2026-11-02 · 2026-11-08`,
+  una fila por tarea, barra de inicio a fin, rombo para un hito, escala de meses y marca de hoy. Las
+  tareas terminadas quedan en gris.
+- **IA local sin clave.** Un perfil contra `localhost`/`127.0.0.1` (Ollama y compañía) ya no exige
+  una clave de API: el panel se negaba a enviar y hacía imposible usar un modelo local. El preset
+  de Ollama ya estaba; ahora funciona.
+- **Pulido de interfaz, visto en capturas.**
+  - Calendario de la barra: el estado vacío tenía el botón impreso **encima** del texto; el título
+    del día se cortaba y las líneas de la grilla no se veían.
+  - Editor de evento: el separador «a» entre los relojes se estiraba como si fuera la fecha.
+  - Tableros: las columnas llenan el alto del panel (antes tres tarjetas flotando en el vacío).
+  - Excalidraw: se fue el «Ajustar/100 %» duplicado del encabezado, el icono de goma es una goma y
+    un relleno pastel ya no se vuelve azul marino sobre el papel oscuro.
+  - Semana en el teléfono: degrada a la lista de sus siete días en vez de siete columnas de 48 px.
+- **`examples/shots.rs`**: renderiza 17 superficies a 390×844, 1024×768 y 1280×800 en PNG. Es como
+  se revisa el diseño de ahora en adelante: se mira el render, no la hoja de estilo.
+
+
 ## 0.7.3
 
 Lo que se vio usando la 0.7.2, arreglado en la interfaz.

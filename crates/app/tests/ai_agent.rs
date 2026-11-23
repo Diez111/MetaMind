@@ -167,3 +167,34 @@ fn the_tool_log_is_part_of_the_answer_the_reader_sees() {
     assert!(app.ai.tool_log.is_empty(), "sin herramientas no hay filas: {:?}", app.ai.tool_log);
     let _ = server.join().unwrap();
 }
+
+/// A model on this machine (Ollama, or anything on localhost) needs no API key: the panel used to
+/// refuse to send at all, which made local models impossible to use.
+#[test]
+fn a_local_model_sends_without_a_key() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("Home.md"), "# Home\n").unwrap();
+    let (base, server) =
+        server(vec!["data: {\"choices\":[{\"delta\":{\"content\":\"Hola\"}}]}\n\ndata: [DONE]\n\n"]);
+    let mut app = App::open(dir.path()).unwrap();
+    app.run("ai:open");
+    let mut profile = metamind_app::ai::AiProfile::default();
+    profile.base_url = base;
+    profile.api_key = String::new();
+    profile.model = "llama3.2".into();
+    app.ai.send(&profile, "", "hola");
+    assert!(app.ai.error.is_none(), "sin clave, pero local: {:?}", app.ai.error);
+    assert!(app.ai.streaming, "el pedido salió");
+    let mut fonts = Fonts::new();
+    for _ in 0..30 {
+        frame(&mut app, &mut fonts);
+        if !app.ai.streaming {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let answer: String =
+        app.ai.messages.iter().filter(|m| m.role == "assistant").map(|m| m.content.clone()).collect();
+    assert!(answer.contains("Hola"), "{answer}");
+    let _ = server.join().unwrap();
+}
