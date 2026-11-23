@@ -1580,6 +1580,7 @@ mod tests {
             match e {
                 Event::Delta(d) => out.push_str(&d),
                 Event::Done => done = true,
+                Event::Tools(_) => panic!("el mock no pide herramientas"),
                 Event::Error(e) => panic!("{e}"),
             }
         }
