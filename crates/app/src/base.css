@@ -1112,3 +1112,11 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 /* The pressure meter of Ajustes → Lápiz: how hard the pen is pressing right now. */
 .pen-meter { width: 160px; height: 8px; border-radius: 4px; background-color: var(--background-modifier-border); overflow: hidden }
 .pen-meter-fill { height: 8px; background-color: var(--interactive-accent) }
+
+/* What the copilot did to the vault in this turn: one row per function it called. */
+.ai-tool-log { display: flex; flex-direction: column; gap: 2px; padding: 4px 8px; border-top: 1px solid var(--background-modifier-border) }
+.ai-tool-row { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 2px 4px; border-radius: var(--radius-s); color: var(--text-muted); font-size: var(--font-ui-smaller) }
+.ai-tool-row.is-error { color: var(--rs-warning) }
+.ai-tool-icon { width: 12px; height: 12px; flex-shrink: 0 }
+.ai-tool-name { flex-shrink: 0; color: var(--text-normal) }
+.ai-tool-summary { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-faint) }

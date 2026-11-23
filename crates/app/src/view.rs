@@ -1354,6 +1354,21 @@ fn ai_body(app: &App, dom: &mut Dom, parent: NodeId, info: &mut ViewInfo) {
     if let Some(e) = &app.ai.error {
         dom.add(list, El::div().class("ai-error").text(e.clone()));
     }
+    // What the copilot did to the vault this turn: the reader sees the function, what it was
+    // asked and whether it worked. The writes are applied without asking, so this line is where
+    // the turn explains itself.
+    if !app.ai.tool_log.is_empty() {
+        let log = dom.add(parent, El::div().class("ai-tool-log"));
+        for (name, summary, ok) in &app.ai.tool_log {
+            let row = dom.add(
+                log,
+                El::div().class("ai-tool-row").class_if(!ok, "is-error").action("ai:tools-open"),
+            );
+            dom.add(row, icons::el(if *ok { "check" } else { "warning" }).class("ai-tool-icon"));
+            dom.add(row, El::div().class("ai-tool-name").text(name.clone()));
+            dom.add(row, El::div().class("ai-tool-summary").text(summary.clone()));
+        }
+    }
     let input = dom.add(parent, El::div().class("ai-input-container"));
     let empty = app.ai.input.is_empty();
     let text = if empty && !app.ai.editing {

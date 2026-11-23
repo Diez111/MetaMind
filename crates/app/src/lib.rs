@@ -1,6 +1,7 @@
 //! MetaMind application library: state, commands, view construction and headless rendering.
 
 pub mod ai;
+pub mod ai_tools;
 pub mod anim;
 pub mod attach;
 pub mod bases;

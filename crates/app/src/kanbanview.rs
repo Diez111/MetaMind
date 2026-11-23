@@ -2603,3 +2603,41 @@ mod tests {
         assert!(!broken.render().contains("wip"));
     }
 }
+
+/// Add `card` under the column named `column`, in the file's own format: the card goes after the
+/// last card of that column, or right under its heading when it has none, and everything else in
+/// the file stays where it is. `None` when the board has no such column.
+///
+/// The copilot uses this to write a card without opening the board: a pure function over the
+/// text is what keeps the file byte-identical everywhere it does not need to change.
+pub fn add_card_text(board: &str, column: &str, card: &str) -> Option<String> {
+    let want = column.trim();
+    let mut lines: Vec<String> = board.lines().map(str::to_string).collect();
+    let start = lines
+        .iter()
+        .position(|l| l.strip_prefix("## ").is_some_and(|name| name.trim() == want))?;
+    // The next heading, or the end of the file.
+    let end = lines[start + 1..]
+        .iter()
+        .position(|l| l.starts_with("## ") || l.starts_with("# "))
+        .map_or(lines.len(), |i| start + 1 + i);
+    // After the last card of the column, or after the heading when there is none.
+    let mut at = end;
+    for i in (start + 1..end).rev() {
+        if lines[i].trim_start().starts_with("- [") {
+            at = i + 1;
+            break;
+        }
+    }
+    if at == end && lines[start + 1..end].iter().all(|l| l.trim().is_empty()) {
+        // The heading is immediately followed by a blank line: the card goes right under it, and
+        // the blank line stays between the card and the next column.
+        at = start + 1;
+    }
+    lines.insert(at, format!("- [ ] {}", card.trim()));
+    let mut out = lines.join("\n");
+    if board.ends_with('\n') {
+        out.push('\n');
+    }
+    Some(out)
+}

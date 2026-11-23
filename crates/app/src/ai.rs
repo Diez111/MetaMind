@@ -670,18 +670,41 @@ pub fn chat_url(base: &str) -> String {
 /// One turn of the conversation.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Message {
-    /// `user` or `assistant`.
+    /// `user`, `assistant` or `tool`.
     pub role: String,
     pub content: String,
+    /// What the assistant asked the tools to do, when it asked.
+    pub tool_calls: Vec<ToolCall>,
+    /// The call this message answers, for a `tool` message.
+    pub tool_call_id: Option<String>,
 }
 
 impl Message {
     pub fn user(content: impl Into<String>) -> Message {
-        Message { role: "user".to_string(), content: content.into() }
+        Message { role: "user".to_string(), content: content.into(), ..Message::default() }
     }
     pub fn assistant(content: impl Into<String>) -> Message {
-        Message { role: "assistant".to_string(), content: content.into() }
+        Message { role: "assistant".to_string(), content: content.into(), ..Message::default() }
     }
+    /// The answer of one tool call.
+    pub fn tool(call_id: impl Into<String>, content: impl Into<String>) -> Message {
+        Message {
+            role: "tool".to_string(),
+            content: content.into(),
+            tool_calls: Vec::new(),
+            tool_call_id: Some(call_id.into()),
+        }
+    }
+}
+
+/// One function the model asked for.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    /// The arguments as a JSON string, exactly as the model wrote them: a broken body is the
+    /// model's mistake and it gets told so, so it is not parsed here.
+    pub arguments: String,
 }
 
 /// What the worker thread reports while it reads the stream.
@@ -689,6 +712,8 @@ impl Message {
 pub enum Event {
     /// A piece of the answer.
     Delta(String),
+    /// The model asked for tools instead of, or before, answering.
+    Tools(Vec<ToolCall>),
     /// The stream ended well.
     Done,
     /// The request failed; the text is shown under the conversation.
@@ -708,15 +733,61 @@ pub fn system_content(cfg: &AiProfile, note_context: &str) -> String {
 
 /// The OpenAI request body: system message, prior turns and the question.
 pub fn build_payload(cfg: &AiProfile, system: &str, history: &[Message], user_input: &str) -> Value {
+    build_payload_with_tools(cfg, system, history, user_input, &[])
+}
+
+/// The body of a request that offers the model functions it may call. A tool result and an
+/// assistant message with `tool_calls` travel as they came: the server matches them by id.
+pub fn build_payload_with_tools(
+    cfg: &AiProfile,
+    system: &str,
+    history: &[Message],
+    user_input: &str,
+    tools: &[Value],
+) -> Value {
     let mut messages = Vec::with_capacity(history.len() + 2);
     messages.push(json!({ "role": "system", "content": system }));
     for m in history {
+        if m.role == "tool" {
+            messages.push(json!({
+                "role": "tool",
+                "content": m.content,
+                "tool_call_id": m.tool_call_id.clone().unwrap_or_default(),
+            }));
+            continue;
+        }
+        if !m.tool_calls.is_empty() {
+            let calls: Vec<Value> = m
+                .tool_calls
+                .iter()
+                .map(|c| {
+                    json!({
+                        "id": c.id,
+                        "type": "function",
+                        "function": { "name": c.name, "arguments": c.arguments },
+                    })
+                })
+                .collect();
+            messages.push(json!({
+                "role": "assistant",
+                "content": m.content,
+                "tool_calls": calls,
+            }));
+            continue;
+        }
         if !m.content.trim().is_empty() {
             messages.push(json!({ "role": m.role, "content": m.content }));
         }
     }
-    messages.push(json!({ "role": "user", "content": user_input }));
-    json!({ "model": cfg.model, "messages": messages, "stream": true })
+    if !user_input.is_empty() {
+        messages.push(json!({ "role": "user", "content": user_input }));
+    }
+    let mut body = json!({ "model": cfg.model, "messages": messages, "stream": true });
+    if !tools.is_empty() {
+        body["tools"] = Value::Array(tools.to_vec());
+        body["tool_choice"] = json!("auto");
+    }
+    body
 }
 
 /// `s` cut to at most `max` characters, with an ellipsis when something was dropped.
@@ -847,6 +918,12 @@ pub struct AiPanel {
     pub scroll_to_end: bool,
     rx: Option<Receiver<Event>>,
     thread: Option<std::thread::JoinHandle<()>>,
+    /// The calls the model made in the answer just read, waiting for the app to run them.
+    pub tool_calls: Vec<ToolCall>,
+    /// How many rounds of tools this turn has used: a model that keeps asking forever is cut.
+    pub tool_rounds: usize,
+    /// What the tools did this turn, for the panel: what ran, and how it ended.
+    pub tool_log: Vec<(String, String, bool)>,
 }
 
 impl AiPanel {
@@ -865,11 +942,38 @@ impl AiPanel {
         // The newest turns are the ones the model needs; the oldest fall off.
         let start = self.messages.len().saturating_sub(MAX_HISTORY);
         let mut history: Vec<Message> = self.messages[start..].to_vec();
-        let payload = build_payload(cfg, &system_content(cfg, note_context), &history, question).to_string();
+        let tools = crate::ai_tools::specs();
+        let payload =
+            build_payload_with_tools(cfg, &system_content(cfg, note_context), &history, question, &tools)
+                .to_string();
+        self.tool_calls.clear();
+        self.tool_rounds = 0;
+        self.tool_log.clear();
         history.push(Message::user(question));
         history.push(Message::assistant(String::new()));
         self.messages = history;
         self.input.clear();
+        self.scroll_to_end = true;
+        let cfg = cfg.clone();
+        let (tx, rx) = channel();
+        self.rx = Some(rx);
+        self.thread = Some(std::thread::spawn(move || stream_request(&cfg, &payload, &tx)));
+        self.streaming = true;
+    }
+
+    /// Ask again with the tool results in the conversation, and no new question: what a turn
+    /// does after the model asked for functions.
+    pub fn resume(&mut self, cfg: &AiProfile, note_context: &str) {
+        if self.streaming || cfg.api_key.trim().is_empty() {
+            return;
+        }
+        let start = self.messages.len().saturating_sub(MAX_HISTORY);
+        let history: Vec<Message> = self.messages[start..].to_vec();
+        let tools = crate::ai_tools::specs();
+        let payload =
+            build_payload_with_tools(cfg, &system_content(cfg, note_context), &history, "", &tools)
+                .to_string();
+        self.messages.push(Message::assistant(String::new()));
         self.scroll_to_end = true;
         let cfg = cfg.clone();
         let (tx, rx) = channel();
@@ -887,6 +991,9 @@ impl AiPanel {
         loop {
             match rx.try_recv() {
                 Ok(Event::Delta(d)) => new.push_str(&d),
+                Ok(Event::Tools(calls)) => {
+                    self.tool_calls.extend(calls);
+                }
                 Ok(Event::Done) => {
                     done = true;
                     break;
@@ -977,6 +1084,10 @@ pub(crate) fn stream_request(cfg: &AiProfile, payload: &str, tx: &Sender<Event>)
     }
     let mut reader = std::io::BufReader::new(res.body_mut().as_reader());
     let mut line = String::new();
+    // The tool calls of this answer, by the index the server uses to stream their arguments in
+    // pieces: `delta.tool_calls[0].function.arguments` arrives split, and the pieces are only
+    // meaningful in order.
+    let mut calls: Vec<ToolCall> = Vec::new();
     loop {
         line.clear();
         match std::io::BufRead::read_line(&mut reader, &mut line) {
@@ -995,6 +1106,10 @@ pub(crate) fn stream_request(cfg: &AiProfile, payload: &str, tx: &Sender<Event>)
         if data == "[DONE]" {
             break;
         }
+        if let Err(e) = parse_tool_delta(data, &mut calls) {
+            let _ = tx.send(Event::Error(e));
+            return;
+        }
         match parse_delta(data) {
             Ok(Some(text)) => {
                 if tx.send(Event::Delta(text)).is_err() {
@@ -1008,7 +1123,45 @@ pub(crate) fn stream_request(cfg: &AiProfile, payload: &str, tx: &Sender<Event>)
             }
         }
     }
+    if !calls.is_empty() {
+        let _ = tx.send(Event::Tools(calls));
+    }
     let _ = tx.send(Event::Done);
+}
+
+/// Fold the tool calls of one `data:` line into `calls`: the server sends the id and the name
+/// once and then the arguments in pieces, so the same index is appended to, not replaced.
+pub(crate) fn parse_tool_delta(data: &str, calls: &mut Vec<ToolCall>) -> Result<(), String> {
+    let Ok(v) = serde_json::from_str::<Value>(data) else { return Ok(()) };
+    let Some(list) = v
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|c| c.first())
+        .and_then(|c| c.get("delta"))
+        .and_then(|d| d.get("tool_calls"))
+        .and_then(Value::as_array)
+    else {
+        return Ok(());
+    };
+    for (i, call) in list.iter().enumerate() {
+        let index = call.get("index").and_then(Value::as_u64).map_or(i, |n| n as usize);
+        while calls.len() <= index {
+            calls.push(ToolCall::default());
+        }
+        let slot = &mut calls[index];
+        if let Some(id) = call.get("id").and_then(Value::as_str) {
+            slot.id = id.to_string();
+        }
+        if let Some(function) = call.get("function") {
+            if let Some(name) = function.get("name").and_then(Value::as_str) {
+                slot.name.push_str(name);
+            }
+            if let Some(args) = function.get("arguments").and_then(Value::as_str) {
+                slot.arguments.push_str(args);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The text of one `data:` line of an OpenAI stream. `Ok(None)` for events that carry no text
@@ -1114,6 +1267,50 @@ impl App {
         self.ai.input.push_str(text);
         true
     }
+}
+
+impl crate::App {
+    /// Run the calls the model asked for and ask again with their results. One turn may use up to
+    /// [`MAX_TOOL_ROUNDS`] rounds; after that the model is told to answer with what it has, so a
+    /// loop cannot go on forever.
+    ///
+    /// The writes are applied at once — the operator asked for that — and every one of them goes
+    /// through `vault_core`, which is what keeps the undo and the recovery snapshots honest.
+    pub(crate) fn ai_tools_step(&mut self) {
+        if self.ai.tool_calls.is_empty() || self.ai.streaming {
+            return;
+        }
+        let calls = std::mem::take(&mut self.ai.tool_calls);
+        let cfg = self.ai_config().active_profile().clone();
+        let context = self.tab().map(context_from_note).unwrap_or_default();
+        // The assistant turn that asked, kept so the server can match the ids it is answering.
+        let mut asked = Message::assistant(String::new());
+        asked.tool_calls = calls.clone();
+        self.ai.messages.push(asked);
+        for call in &calls {
+            let result = crate::ai_tools::run(self, &call.name, &call.arguments);
+            let ok = result.starts_with("{\"ok\":true");
+            self.ai.tool_log.push((call.name.clone(), summarize(&result), ok));
+            self.ai.messages.push(Message::tool(call.id.clone(), result));
+        }
+        self.ai.tool_rounds += 1;
+        if self.ai.tool_rounds > MAX_TOOL_ROUNDS {
+            self.ai.error = Some(format!(
+                "El modelo pidió herramientas {MAX_TOOL_ROUNDS} veces seguidas: se cortó el turno."
+            ));
+            self.ai.tool_rounds = 0;
+            return;
+        }
+        self.ai.resume(&cfg, &context);
+    }
+}
+
+/// The longest a tool round may repeat before the turn is cut.
+pub const MAX_TOOL_ROUNDS: usize = 4;
+
+/// A result, short enough for the panel: the first line of the JSON, trimmed.
+fn summarize(result: &str) -> String {
+    truncate_chars(result.lines().next().unwrap_or_default(), 90)
 }
 
 #[cfg(test)]

@@ -1044,6 +1044,12 @@ impl App {
             self.tag_counts();
         }
         self.calendar_refresh();
+        // The copilot's stream is read here, not only in the window loop: the panel has to work
+        // the same with no window on screen (a test, a headless run).
+        self.ai.poll();
+        // The copilot's tools run on this thread, where the store is: a model that asked for a
+        // function gets its answer and asks again inside the same turn.
+        self.ai_tools_step();
         if self.right_open && self.right_panel == RightPanel::Backlinks && self.tab().is_some() {
             self.refresh_linked();
             if self.show_unlinked {
@@ -1724,6 +1730,33 @@ impl App {
                 .collect();
             self.search_results.push(SearchResult { path: f.path.to_string(), snippets });
         }
+    }
+
+    /// The first `max` hits for `query`, as `(path, line, snippet)`: what the copilot's
+    /// `search_notes` tool reads. The corpus is the same one the search pane uses, built on first
+    /// use, so the model and the reader see the same vault.
+    pub fn search_excerpts(&mut self, query_text: &str, max: usize) -> Vec<(String, usize, String)> {
+        let Ok(query) = Query::parse(query_text) else { return Vec::new() };
+        let root = self.store.root.clone();
+        let corpus = self.corpus.get_or_insert_with(|| Corpus::build(&self.store.index, &root));
+        let hits = corpus.search(&self.store.index, &root, &query, Sort::Relevance, RankWeights::default(), max);
+        self.store.release_cache_pages();
+        let mut out = Vec::new();
+        for hit in hits {
+            let Some(file) = self.store.index.entry(hit.file) else { continue };
+            let path = file.path.to_string();
+            let text = self.store.read(&path).map(|(t, _)| t).unwrap_or_default();
+            let (line, snippet) = match hit.matches.first() {
+                Some(m) => {
+                    let at = (m.start as usize).min(text.len());
+                    let line = text[..at].matches('\n').count() + 1;
+                    (line, search_core::snippet(&text, *m, 60).0.trim().to_string())
+                }
+                None => (1, String::new()),
+            };
+            out.push((path, line, snippet));
+        }
+        out
     }
 
     // ---- commands ----
