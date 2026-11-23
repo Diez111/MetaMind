@@ -223,6 +223,7 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("graph:reset-settings", "Vista de gráfico: Restaurar ajustes predeterminados", ""),
     ("calendar:open", "Calendario: Abrir el calendario", "Ctrl+Shift+C"),
     ("calendar:refresh", "Calendario: Actualizar ahora", ""),
+    ("calview:open", "Calendario: Abrir la vista grande (mes, semana, día, agenda)", ""),
     ("calendar:open-day-note", "Calendario: Abrir la nota del día seleccionado", ""),
     ("daily-notes", "Notas diarias: Abrir la nota diaria de hoy", ""),
     ("daily-notes:goto-prev", "Notas diarias: Abrir nota diaria anterior", ""),
@@ -595,6 +596,9 @@ pub struct App {
     pub pen: crate::pen::Pen,
     /// The new-board dialog, while it is open.
     pub kanban_new: Option<crate::kanbanview::NewBoard>,
+    /// The calendar tab in the main pane, and whether it is the one showing.
+    pub calendar_view: Option<crate::calendarview::CalendarView>,
+    pub show_calendar_view: bool,
     /// Where the tab indicator comes from while it slides to the tab that just took the focus.
     pub tab_from: Option<(usize, usize)>,
     /// The in-app video player, while a note's video card is playing.
@@ -1003,6 +1007,8 @@ impl App {
             anims: Default::default(),
             pen: Default::default(),
             kanban_new: None,
+            calendar_view: None,
+            show_calendar_view: false,
             tab_from: None,
             seen: None,
             notice_since: None,
@@ -2332,6 +2338,9 @@ impl App {
                 // Over a board, Ctrl+Z and Ctrl+Shift+Z are the board's own history, not the
                 // note's: the pane shows the board, so the keys have to act on it.
                 if self.exc_active() && self.run_exc_editor(command) {
+                    return;
+                }
+                if self.run_calendar_view(command) {
                     return;
                 }
                 if self.run_graph(command)

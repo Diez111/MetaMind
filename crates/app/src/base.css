@@ -1139,3 +1139,61 @@ body { --canvas-color-1: 233, 49, 71; --canvas-color-2: 233, 151, 63; --canvas-c
 /* A segmented control of labels (the fill styles): the shape of the width buttons, with words. */
 .exc-seg { flex-grow: 1; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background-color: var(--background-modifier-hover); color: var(--text-muted); font-size: var(--font-ui-smaller) }
 .exc-seg.is-active { background-color: var(--interactive-accent); color: var(--text-on-accent) }
+
+/* The calendar tab: a month grid, a week with hours, a day and an agenda. Same paper as the rest
+   of the app; the colours of an event come from its own row. */
+.calview-bar { flex-wrap: wrap; row-gap: 4px }
+.calview-title { flex-grow: 1; min-width: 0; color: var(--text-normal); font-size: var(--font-ui-small); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.calview-step { display: flex; align-items: center; padding: 2px 6px }
+.calview-modes { display: flex; flex-direction: row; gap: 2px; padding: 2px; border-radius: var(--radius-m); background-color: var(--background-secondary) }
+.calview-mode { padding: 3px 10px; border-radius: var(--radius-s); color: var(--text-muted); font-size: var(--font-ui-smaller); white-space: nowrap }
+.calview-mode:hover { background-color: var(--background-modifier-hover); color: var(--text-normal) }
+.calview-mode.is-active { background-color: var(--interactive-accent); color: var(--text-on-accent) }
+.calview-body { display: flex; flex-direction: column; padding: 10px 12px; overflow-y: auto }
+.calview-weekdays { display: flex; padding-bottom: 4px }
+.calview-weekday { flex-grow: 1; flex-basis: 0; color: var(--text-faint); font-size: var(--font-ui-smaller); text-align: center }
+.calview-month { display: flex; flex-direction: column; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow: hidden; flex-grow: 1; min-height: 0 }
+.calview-week { display: flex; flex-grow: 1; min-height: 0 }
+.calview-day { flex-grow: 1; flex-basis: 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 3px 4px; border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); color: var(--text-muted) }
+.calview-week:last-child .calview-day { border-bottom: none }
+.calview-day:last-child { border-right: none }
+.calview-day:hover { background-color: var(--background-modifier-hover) }
+.calview-day.is-other-month { color: var(--text-faint); background-color: var(--rs-band) }
+.calview-day.is-today .calview-day-num { color: var(--text-accent); font-weight: 700 }
+.calview-day.is-selected { box-shadow: inset 0 0 0 1.5px var(--interactive-accent); background-color: var(--background-modifier-active-hover) }
+.calview-day-head { display: flex; align-items: baseline; gap: 4px }
+.calview-day-num { font-size: var(--font-ui-smaller); font-weight: 600 }
+.calview-day-name { color: var(--text-faint); font-size: 10px }
+.calview-chips { display: flex; flex-direction: column; gap: 2px; min-width: 0 }
+.calview-chip { display: flex; align-items: center; min-width: 0; padding: 1px 4px; border-left: 2px solid var(--calendar-owned); border-radius: 3px; background-color: var(--rs-band) }
+.calview-chip.calendar-source-google { border-left-color: var(--calendar-google) }
+.calview-chip.calendar-source-vault { border-left-color: var(--calendar-vault) }
+.calview-chip.calendar-source-tasks { border-left-color: var(--calendar-tasks) }
+.calview-chip-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10px; color: var(--text-muted) }
+.calview-more { color: var(--text-faint); font-size: 10px }
+.calview-week-head { display: flex; padding-bottom: 4px }
+.calview-hours-gutter { width: 52px; flex-shrink: 0 }
+.calview-week-day { flex-grow: 1; flex-basis: 0; text-align: center; color: var(--text-muted); font-size: var(--font-ui-smaller); padding: 3px 0; border-radius: var(--radius-s) }
+.calview-week-day.is-today { color: var(--text-accent); font-weight: 700 }
+.calview-week-day.is-selected { background-color: var(--background-modifier-active-hover) }
+.calview-week-grid { display: flex; flex-direction: row; min-height: 0 }
+.calview-hours { width: 52px; flex-shrink: 0; display: flex; flex-direction: column }
+.calview-hour { height: 44px; flex-shrink: 0; color: var(--text-faint); font-size: 10px; text-align: right; padding-right: 6px }
+.calview-week-col { position: relative; flex-grow: 1; flex-basis: 0; min-width: 0; display: flex; flex-direction: column; border-left: 1px solid var(--background-modifier-border) }
+.calview-week-col.is-today { background-color: var(--rs-band) }
+.calview-week-slot { height: 44px; flex-shrink: 0; border-bottom: 1px solid var(--rs-rule) }
+.calview-event { position: absolute; left: 2px; right: 2px; padding: 2px 4px; border-left: 2px solid var(--calendar-owned); border-radius: 3px; background-color: var(--rs-pill); overflow: hidden }
+.calview-event-text { font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.calview-allday { display: flex; flex-wrap: wrap; gap: 4px; padding-bottom: 6px }
+.calview-day-grid { display: flex; flex-direction: column }
+.calview-day-hour { display: flex; align-items: flex-start; gap: 6px; border-top: 1px solid var(--rs-rule) }
+.calview-day-hour .calview-hour { padding-top: 2px }
+.calview-day-slot { flex-grow: 1; min-width: 0; min-height: 44px; display: flex; flex-direction: column; gap: 2px; padding: 2px 0 }
+.calview-pill { padding: 2px 6px; border-left: 2px solid var(--calendar-owned); border-radius: 3px; background-color: var(--rs-band); color: var(--text-normal); font-size: var(--font-ui-smaller) }
+.calview-agenda-day { padding: 10px 0 2px 0 }
+.calview-agenda-title { color: var(--text-normal); font-size: var(--font-ui-smaller); font-weight: 600 }
+.calview-agenda-rows { display: flex; flex-direction: column }
+.calview-agenda-row { display: flex; align-items: baseline; gap: 8px; padding: 3px 6px; border-left: 2px solid var(--calendar-owned); border-radius: 3px }
+.calview-agenda-row:hover { background-color: var(--background-modifier-hover) }
+.calview-agenda-clock { flex-shrink: 0; width: 76px; color: var(--text-faint); font-size: var(--font-ui-smaller) }
+.calview-agenda-text { min-width: 0; color: var(--text-normal); font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }

@@ -12,7 +12,8 @@
 //! error type of the HTTP client.
 
 use crate::icons;
-use calendar_core::local::{color_hex, Owned, OwnedEvent, NAMED_COLORS};
+pub use calendar_core::local::color_hex;
+use calendar_core::local::{Owned, OwnedEvent, NAMED_COLORS};
 use calendar_core::{Calendar as Ics, Day, Occurrence};
 use metamind_ui::{Dom, El, NodeId};
 use serde_json::{json, Value};

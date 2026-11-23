@@ -1662,7 +1662,8 @@ fn pane(
             || app.canvas_active()
             || app.base_active()
             || app.exc_active()
-            || app.kanban_active());
+            || app.kanban_active()
+            || app.calendar_view_active());
     for (i, t) in open.iter().enumerate() {
         tab_header(
             dom,
@@ -1693,6 +1694,10 @@ fn pane(
     if let Some(k) = app.kanban_view.as_ref().filter(|_| focused) {
         let (focus, close) = ("kanban:focus".to_string(), ("kanban:close".to_string(), "x"));
         tab_header(dom, "table", &k.title(), k.dirty, app.kanban_active(), focus, close);
+    }
+    if let Some(c) = app.calendar_view.as_ref().filter(|_| focused) {
+        let (focus, close) = ("calview:focus".to_string(), ("calview:close".to_string(), "x"));
+        tab_header(dom, "calendar", &c.title(), false, app.calendar_view_active(), focus, close);
     }
     let new_tab =
         dom.add(tabs, El::div().class("workspace-tab-header-new-tab").action("file-explorer:new-file"));
@@ -1730,6 +1735,9 @@ fn pane(
         _ if app.exc_active() => crate::excalidrawview::pane(app.exc_view.as_ref().unwrap(), dom, leaf, info),
         _ if app.kanban_active() => {
             crate::kanbanview::pane(app.kanban_view.as_ref().unwrap(), dom, leaf, info, app.compact)
+        }
+        _ if app.calendar_view_active() => {
+            crate::calendarview::pane(app, dom, leaf);
         }
         _ if crate::dashboard::is_dashboard(app) => crate::dashboard::pane(app, dom, leaf, width),
         _ => editor(app, dom, leaf, pal, info, app.tab().map(|t| (pane, app.active, t)), true),

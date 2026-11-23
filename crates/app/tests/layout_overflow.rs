@@ -325,6 +325,11 @@ fn views() -> Vec<(&'static str, Vec<&'static str>)> {
         ("base", vec!["open:Tablero.base"]),
         // The calendar with its editor open: a modal with fields, steppers and colours.
         ("calendario-editor", vec!["calendar:open", "cal:new"]),
+        // The calendar tab in its four views: a month of cells, a week of hours, a day and a list.
+        ("calview-mes", vec!["calview:open"]),
+        ("calview-semana", vec!["calview:open", "calview:mode:week"]),
+        ("calview-dia", vec!["calview:open", "calview:mode:day"]),
+        ("calview-agenda", vec!["calview:open", "calview:mode:agenda"]),
     ]
 }
 

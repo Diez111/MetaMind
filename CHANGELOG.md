@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.2
+
+- **Nuevo tablero, con diálogo.** `kanban:new` (el botón de la ribbon) ya no crea `Tablero.md` a
+  ciegas: pregunta nombre, carpeta (la de la nota o la del tablero abierto) y plantilla — Básico,
+  Proyecto (Pendiente/Haciendo/Bloqueado/Hecho) o Estudio (Por leer/Leyendo/Resumido/Repasado). Un
+  nombre tomado suma sufijo en vez de pisar el archivo, `Escape` cancela, y las letras van al
+  nombre, nunca a la nota de atrás.
+- **Relleno rayado en los tableros.** `fillStyle` se leía y se ignoraba: todo salía sólido. Ahora
+  `hachure` y `cross-hatch` se dibujan como líneas a 45° recortadas a la figura (una figura grande
+  engrosa el paso en vez de llenar la lista de comandos), y el panel de estilo tiene su fila
+  Sólido/Rayado/Cruzado. La elección queda en el archivo.
+- **El gate del CI, limpio.** `clippy -D warnings` y `rustfmt --check` en todo el workspace; quedó
+  también `scripts/dev.sh clean` para el target que llegó a 180 GB.
+
+
 ## 0.7.1
 
 Tres cosas que la 0.7.0 dejó mal y se vieron al usarla.

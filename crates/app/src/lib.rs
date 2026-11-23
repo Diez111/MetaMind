@@ -7,6 +7,7 @@ pub mod attach;
 pub mod bases;
 pub mod baseview;
 pub mod calendar;
+pub mod calendarview;
 pub mod canvasview;
 pub mod cli;
 pub mod clipboard;
