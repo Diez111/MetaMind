@@ -6,6 +6,7 @@
 
 use excalidraw_core::{ElementType, Scene};
 use metamind_app::shell::ViewMode;
+use metamind_app::excalidrawview::Tool;
 use metamind_app::{render, App, Frame, Key};
 use metamind_ui::{Fonts, Pixmap};
 use std::fs;
@@ -291,4 +292,62 @@ fn the_board_paints_a_dot_grid_over_the_theme_surface() {
     // The board owns the pane: the note is still open, but the editor is not what is shown.
     assert!(app.tabs.iter().any(|t| t.path == "Home.md"));
     let _ = ViewMode::Reading;
+}
+
+/// The chrome of a board is a column: the bar takes its height, the canvas the rest, and nothing
+/// lands on top of anything else. This is the shape the palette broke when it was a box pinned to
+/// a fixed `top` under a bar whose height nobody had measured.
+#[test]
+fn the_bar_the_canvas_and_the_style_panel_do_not_overlap() {
+    let (_d, mut app, mut fonts) = open();
+    app.run("exc:style");
+    let f = frame(&mut app, &mut fonts);
+    let classed = |class: &str| {
+        f.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == class)).map(|n| n.rect)
+    };
+    let bar = classed("exc-toolbar").expect("the bar");
+    let canvas = classed("exc-canvas").expect("the canvas");
+    let panel = classed("exc-style-panel").expect("the style panel");
+    let wrapper = classed("exc-wrapper").expect("the pane");
+    assert!(
+        bar.y + bar.h <= canvas.y + 0.5,
+        "the canvas starts under the bar: bar {bar:?}, canvas {canvas:?}"
+    );
+    assert!(canvas.y + canvas.h <= wrapper.y + wrapper.h + 0.5, "the canvas stays in the pane");
+    assert!(
+        panel.y >= bar.y + bar.h,
+        "the panel opens under the bar, not over it: bar {bar:?}, panel {panel:?}"
+    );
+    assert!(
+        panel.x >= wrapper.x && panel.x + panel.w <= wrapper.x + wrapper.w + 0.5,
+        "the panel stays in the pane: {panel:?} in {wrapper:?}"
+    );
+    assert!(panel.y + panel.h <= wrapper.y + wrapper.h + 0.5, "and does not run past its foot");
+    // Every swatch is inside the panel: a paletted colour is a colour you can press.
+    for (id, n) in f.dom.nodes.iter().enumerate() {
+        if !n.el.classes.iter().any(|c| c == "exc-swatch") {
+            continue;
+        }
+        let r = n.rect;
+        assert!(
+            r.x >= panel.x && r.x + r.w <= panel.x + panel.w + 0.5,
+            "swatch {id} at {r:?} is outside the panel {panel:?}"
+        );
+        assert!(r.y >= panel.y && r.y + r.h <= panel.y + panel.h + 0.5, "swatch {id} at {r:?}");
+    }
+    // And the bar itself: every tool is inside it, on one row or wrapped onto two.
+    let mut tools = 0;
+    for n in &f.dom.nodes {
+        if !n.el.classes.iter().any(|c| c == "exc-tool") {
+            continue;
+        }
+        tools += 1;
+        let r = n.rect;
+        assert!(
+            r.x >= bar.x && r.x + r.w <= bar.x + bar.w + 0.5,
+            "tool at {r:?} leaves the bar {bar:?}"
+        );
+        assert!(r.y >= bar.y && r.y + r.h <= bar.y + bar.h + 0.5, "tool at {r:?} leaves the bar");
+    }
+    assert!(tools >= Tool::ALL.len(), "all the tools are there: {tools}");
 }

@@ -113,11 +113,22 @@ fn assert_same_pixels(name: &str, painted: &[Painted]) {
     for (i, p) in painted.iter().enumerate() {
         metamind_ui::render(&p.scene, &mut fonts, &mut full, 1.0, p.clear);
         metamind_ui::render_damaged(p.scene.clone(), &mut fonts, &mut damaged, 1.0, p.clear, &mut tracker);
-        assert_eq!(
-            full.data(),
-            damaged.data(),
-            "{name}: frame {i} differs between a full repaint and a damage repaint"
-        );
+        if full.data() != damaged.data() {
+            // A whole 1280x800 buffer in an assert message is unreadable: report where the two
+            // paths disagree first, then how many pixels are involved.
+            let (a, b) = (full.data(), damaged.data());
+            let diff = a.iter().zip(b).filter(|(x, y)| x != y).count();
+            let at = (0..a.len() / 4)
+                .position(|px| a[px * 4..px * 4 + 4] != b[px * 4..px * 4 + 4])
+                .unwrap_or(0);
+            let (x, y) = (at as u32 % W, at as u32 / W);
+            panic!(
+                "{name}: frame {i} differs between a full repaint and a damage repaint: \
+                 {diff} byte(s) from pixel ({x}, {y}); full {:?}, damaged {:?}",
+                &a[at * 4..at * 4 + 4],
+                &b[at * 4..at * 4 + 4]
+            );
+        }
     }
 }
 

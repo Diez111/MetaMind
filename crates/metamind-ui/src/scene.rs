@@ -390,6 +390,15 @@ fn thin_line(rows: &mut [u8], stride: usize, band: &DevClip, s: [f32; 4], c: [u3
     }
 }
 
+/// Whether everything a command paints is inside the damaged area. A command that fits there can
+/// be drawn without the mask, and the mask matters: masking an anti-aliased stroke rounds its
+/// coverage by one level, so a plus/minus one pixel would creep into every damaged frame.
+fn fits(limit: Option<DevRect>, b: &Rect, scale: f32) -> bool {
+    let Some(l) = limit else { return true };
+    let d = DevRect::from_rect(b, scale);
+    l.x0 <= d.x0 && l.y0 <= d.y0 && l.x1 >= d.x1 && l.y1 >= d.y1
+}
+
 /// A device-space mask for a logical rectangle: how a filled path is kept inside a clip.
 fn rect_mask(w: u32, h: u32, r: Rect, scale: f32) -> Option<tiny_skia::Mask> {
     let path = tiny_skia::Rect::from_xywh(r.x * scale, r.y * scale, r.w * scale, r.h * scale)
@@ -397,6 +406,25 @@ fn rect_mask(w: u32, h: u32, r: Rect, scale: f32) -> Option<tiny_skia::Mask> {
     let mut m = tiny_skia::Mask::new(w, h)?;
     m.fill_path(&path, FillRule::Winding, false, Transform::identity());
     Some(m)
+}
+
+/// The box the strokes of a segmented line can paint into.
+fn segs_bounds(segs: &[[f32; 4]], width: f32) -> Rect {
+    let mut r: Option<Rect> = None;
+    for s in segs {
+        let part = Rect::new(s[0].min(s[2]), s[1].min(s[3]), (s[0] - s[2]).abs(), (s[1] - s[3]).abs());
+        r = Some(match r {
+            None => part,
+            Some(p) => {
+                let (x, y) = (p.x.min(part.x), p.y.min(part.y));
+                let (x1, y1) = ((p.x + p.w).max(part.x + part.w), (p.y + p.h).max(part.y + part.h));
+                Rect::new(x, y, x1 - x, y1 - y)
+            }
+        });
+    }
+    let pad = width * 0.5 + 1.5;
+    let r = r.unwrap_or_default();
+    Rect::new(r.x - pad, r.y - pad, r.w + pad * 2.0, r.h + pad * 2.0)
 }
 
 /// The outline of a polyline whose width changes from point to point: one quad per segment and a
@@ -533,12 +561,13 @@ pub(crate) fn paint(
                     paint.anti_alias = true;
                     if vis == *rect {
                         if let Some(path) = rounded(*rect, *radius) {
+                            let mask = if fits(limit, rect, scale) { None } else { stencil.as_ref() };
                             pixmap.fill_path(
                                 &path,
                                 &paint,
                                 FillRule::Winding,
                                 Transform::from_scale(scale, scale),
-                                stencil.as_ref(),
+                                mask,
                             );
                         }
                         continue;
@@ -597,13 +626,9 @@ pub(crate) fn paint(
                 paint.set_color_rgba8(color.r, color.g, color.b, color.a);
                 paint.anti_alias = true;
                 let stroke = tiny_skia::Stroke { width: *width, ..Default::default() };
-                pixmap.stroke_path(
-                    &path,
-                    &paint,
-                    &stroke,
-                    Transform::from_scale(scale, scale),
-                    stencil.as_ref(),
-                );
+                let b = segs_bounds(segs, *width);
+                let mask = if fits(limit, &b, scale) { None } else { stencil.as_ref() };
+                pixmap.stroke_path(&path, &paint, &stroke, Transform::from_scale(scale, scale), mask);
             }
             Cmd::Circles { items, color } => {
                 if color.a == 0 {
@@ -638,17 +663,25 @@ pub(crate) fn paint(
                 paint.anti_alias = true;
                 // A stroke is a filled shape, so it is kept inside the pane through a mask: cutting
                 // it segment by segment would make it jump at the edge.
-                let mask = if clip == full {
-                    None
-                } else {
-                    rect_mask(pixmap.width(), pixmap.height(), clip, scale)
-                };
+                // The mask keeps the ribbon inside the pane and inside the damaged area. A stroke
+                // that fits in the damaged area is drawn without one: masking an anti-aliased
+                // shape rounds its coverage by a level.
+                let b = Cmd::Stroke { points: points.clone(), color: *color, cap: *cap }.bounds(fonts);
+                let mut clip_mask =
+                    if clip == full { None } else { rect_mask(pixmap.width(), pixmap.height(), clip, scale) };
+                if let (Some(m), Some(l)) = (clip_mask.as_mut(), limit) {
+                    let r = tiny_skia::Rect::from_ltrb(l.x0 as f32, l.y0 as f32, l.x1 as f32, l.y1 as f32);
+                    if let Some(p) = r.map(PathBuilder::from_rect) {
+                        m.intersect_path(&p, FillRule::Winding, false, Transform::identity());
+                    }
+                }
+                let mask = if fits(limit, &b, scale) { None } else { clip_mask.as_ref().or(stencil.as_ref()) };
                 pixmap.fill_path(
                     &path,
                     &paint,
                     FillRule::Winding,
                     Transform::from_scale(scale, scale),
-                    mask.as_ref().or(stencil.as_ref()),
+                    mask.or(stencil.as_ref()),
                 );
             }
             Cmd::Image { rect, image } => {
