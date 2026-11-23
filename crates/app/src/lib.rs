@@ -662,10 +662,12 @@ impl App {
                 return;
             }
         }
+        // The middle button on a *tab* closes it, the way a browser does: a split is what the
+        // middle button opens on a link, not on the tab that link is already in.
         if let Some(i) = action.strip_prefix("tab:") {
-            if let Ok(i) = i.parse::<usize>() {
-                self.active = i;
-                self.run("workspace:split-vertical");
+            if i.parse::<usize>().is_ok() {
+                let cmd = format!("close-tab:{i}");
+                self.run(&cmd);
                 return;
             }
         }
