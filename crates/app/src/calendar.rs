@@ -416,7 +416,11 @@ impl Calendar {
             rows.push(Row {
                 day: occ.start.day,
                 minute: occ.start.minute,
-                title: if ev.title.trim().is_empty() { "(sin título)".to_string() } else { ev.title.clone() },
+                title: if ev.title.trim().is_empty() {
+                    "(sin título)".to_string()
+                } else {
+                    ev.title.clone()
+                },
                 location: ev.location.clone(),
                 description: ev.description.clone(),
                 source: Source::Owned,
@@ -1076,7 +1080,10 @@ fn grid(cal: &Calendar, dom: &mut Dom, parent: NodeId, today: Day, width: f32) {
                         Some(m) => format!("{:02}:{:02} ", m / 60, m % 60),
                         None => String::new(),
                     };
-                    dom.add(chip, El::div().class("calendar-chip-text").text(format!("{clock}{}", row.title)));
+                    dom.add(
+                        chip,
+                        El::div().class("calendar-chip-text").text(format!("{clock}{}", row.title)),
+                    );
                 }
                 if rows.len() > CHIPS_PER_CELL {
                     dom.add(
@@ -1528,7 +1535,11 @@ pub fn editor(app: &crate::shell::App, dom: &mut Dom) {
     let head = dom.add(card, El::div().class("cal-form-head"));
     dom.add(
         head,
-        El::div().class("cal-form-title").text(if form.id.is_some() { "Editar evento" } else { "Nuevo evento" }),
+        El::div().class("cal-form-title").text(if form.id.is_some() {
+            "Editar evento"
+        } else {
+            "Nuevo evento"
+        }),
     );
     let close = dom.add(head, El::div().class("clickable-icon").action("cal:cancel"));
     dom.add(close, icons::el("x"));
@@ -1630,10 +1641,7 @@ pub fn editor(app: &crate::shell::App, dom: &mut Dom) {
                 .class_if(form.confirm_delete, "is-confirming")
                 .action("cal:del"),
         );
-        dom.add(
-            delete,
-            El::div().text(if form.confirm_delete { "¿Borrar? Sí" } else { "Borrar" }),
-        );
+        dom.add(delete, El::div().text(if form.confirm_delete { "¿Borrar? Sí" } else { "Borrar" }));
     }
 }
 

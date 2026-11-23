@@ -27,7 +27,11 @@ fn svg(d: &mermaid_core::Diagram) -> String {
     let _ = write!(
         s,
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="{:.0}" height="{:.0}" viewBox="0 0 {:.0} {:.0}"><rect width="100%" height="100%" fill="{}"/><g font-family="DejaVu Sans">"#,
-        d.width, d.height, d.width, d.height, mix(bg, fg, 0.0)
+        d.width,
+        d.height,
+        d.width,
+        d.height,
+        mix(bg, fg, 0.0)
     );
     for it in &d.items {
         match it {

@@ -118,9 +118,8 @@ fn assert_same_pixels(name: &str, painted: &[Painted]) {
             // paths disagree first, then how many pixels are involved.
             let (a, b) = (full.data(), damaged.data());
             let diff = a.iter().zip(b).filter(|(x, y)| x != y).count();
-            let at = (0..a.len() / 4)
-                .position(|px| a[px * 4..px * 4 + 4] != b[px * 4..px * 4 + 4])
-                .unwrap_or(0);
+            let at =
+                (0..a.len() / 4).position(|px| a[px * 4..px * 4 + 4] != b[px * 4..px * 4 + 4]).unwrap_or(0);
             let (x, y) = (at as u32 % W, at as u32 / W);
             panic!(
                 "{name}: frame {i} differs between a full repaint and a damage repaint: \

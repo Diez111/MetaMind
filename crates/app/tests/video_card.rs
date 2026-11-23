@@ -70,13 +70,27 @@ fn the_card_shows_the_frame_with_the_play_button_on_top() {
     // The picture is the note's width, inside the note's own column, and the card follows it:
     // one block, one left edge, nothing hanging out of the pane.
     assert!(p.rect.w > 0.0 && p.rect.h > 0.0, "the frame has a box: {:?}", p.rect);
-    assert!(p.rect.x >= e.rect.x && p.rect.x + p.rect.w <= e.rect.x + e.rect.w + 1.0, "the frame stays in the column");
+    assert!(
+        p.rect.x >= e.rect.x && p.rect.x + p.rect.w <= e.rect.x + e.rect.w + 1.0,
+        "the frame stays in the column"
+    );
     assert!((p.rect.w / p.rect.h - 768.0 / 432.0).abs() < 0.05, "the frame keeps its own shape");
     assert!((p.rect.w - e.rect.w.min(700.0)).abs() <= 1.0, "the frame is as wide as the column");
-    assert!(p.rect.y + p.rect.h <= c.rect.y + 1.0, "the card sits under the frame: {:?} {:?}", p.rect, c.rect);
+    assert!(
+        p.rect.y + p.rect.h <= c.rect.y + 1.0,
+        "the card sits under the frame: {:?} {:?}",
+        p.rect,
+        c.rect
+    );
     assert!((c.rect.x - p.rect.x).abs() <= 1.0, "and shares its left edge");
-    assert!((button.rect.x + button.rect.w / 2.0 - (p.rect.x + p.rect.w / 2.0)).abs() < 2.0, "the button is centred");
-    assert!((button.rect.y + button.rect.h / 2.0 - (p.rect.y + p.rect.h / 2.0)).abs() < 2.0, "and over the middle");
+    assert!(
+        (button.rect.x + button.rect.w / 2.0 - (p.rect.x + p.rect.w / 2.0)).abs() < 2.0,
+        "the button is centred"
+    );
+    assert!(
+        (button.rect.y + button.rect.h / 2.0 - (p.rect.y + p.rect.h / 2.0)).abs() < 2.0,
+        "and over the middle"
+    );
     assert!(button.rect.w <= p.rect.w && button.rect.h <= p.rect.h, "the button fits inside the frame");
 
     // The button is a real target: a press on it opens the player, not the note.

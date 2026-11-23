@@ -46,13 +46,7 @@ const SECTIONS: [(Section, &str, &str, &str, &str); 7] = [
         "Suscripción iCal de Google y archivos .ics de la bóveda.",
         "calendar",
     ),
-    (
-        Section::Pen,
-        "pen",
-        "Lápiz",
-        "Tableta de dibujo: presión del lápiz, goma y diagnóstico.",
-        "edit",
-    ),
+    (Section::Pen, "pen", "Lápiz", "Tableta de dibujo: presión del lápiz, goma y diagnóstico.", "edit"),
     (Section::Ai, "ai", "IA", "Perfiles de proveedores, modelos y claves del copiloto.", "sparkles"),
     (
         Section::Plugins,
@@ -2516,9 +2510,9 @@ fn calendar_view(app: &App, dom: &mut Dom, parent: NodeId, ui: &SettingsUi) {
     items_view(app, dom, parent, ui, Section::Calendar, "", false);
     dom.add(
         parent,
-        El::div()
-            .class("settings-note")
-            .text("MetaMind nunca escribe en Google: con la dirección iCal el calendario es de solo lectura."),
+        El::div().class("settings-note").text(
+            "MetaMind nunca escribe en Google: con la dirección iCal el calendario es de solo lectura.",
+        ),
     );
 }
 
@@ -2819,9 +2813,11 @@ fn pen_view(app: &App, dom: &mut Dom, parent: NodeId) {
     dom.add(bar, El::div().class("pen-meter-fill").style(&format!("width: {:.0}%", level * 100.0)));
     dom.add(
         ctl,
-        El::div()
-            .class("setting-status")
-            .text(if pen.enabled { format!("{:.0} %", level * 100.0) } else { "apagada".to_string() }),
+        El::div().class("setting-status").text(if pen.enabled {
+            format!("{:.0} %", level * 100.0)
+        } else {
+            "apagada".to_string()
+        }),
     );
 
     if let Some(error) = &pen.error {
@@ -2837,6 +2833,8 @@ fn pen_view(app: &App, dom: &mut Dom, parent: NodeId) {
     }
     dom.add(
         parent,
-        El::div().class("settings-note").text("Para probar la tableta sin abrir la app: scripts/pen-probe.sh"),
+        El::div()
+            .class("settings-note")
+            .text("Para probar la tableta sin abrir la app: scripts/pen-probe.sh"),
     );
 }

@@ -102,11 +102,7 @@ fn a_board_with_absurd_numbers_does_not_panic() {
 
 #[test]
 fn deeply_nested_json_is_rejected_instead_of_overflowing_the_stack() {
-    let deep = format!(
-        "{{\"type\":\"excalidraw\",\"elements\":{}{}}}",
-        "[".repeat(512),
-        "]".repeat(512)
-    );
+    let deep = format!("{{\"type\":\"excalidraw\",\"elements\":{}{}}}", "[".repeat(512), "]".repeat(512));
     assert!(excalidraw_core::Scene::parse(&deep).is_err());
     let deep_object = format!("{}{}{}", "{\"a\":".repeat(2000), "0", "}".repeat(2000));
     assert!(canvas_core::Canvas::parse(&deep_object).is_err());

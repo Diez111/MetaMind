@@ -130,11 +130,7 @@ fn validate(fx: &Fixture) {
         }
         for (_, spans) in lines {
             for term in EXPECTED_TERMS {
-                assert!(
-                    spans.contains(&term),
-                    "matching line is missing `{term}` in note {}",
-                    hit.file
-                );
+                assert!(spans.contains(&term), "matching line is missing `{term}` in note {}", hit.file);
             }
         }
         assert!(

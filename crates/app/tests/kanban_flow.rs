@@ -568,7 +568,7 @@ fn the_help_card_shows_the_format_the_parser_reads() {
         .collect();
     assert!(text.contains("kanban: settings"), "{text}");
     assert!(text.contains("Prioridad"), "{text}");
-    assert!(text.contains("@{" ), "{text}");
+    assert!(text.contains("@{"), "{text}");
     // What the card shows makes the template the parser accepts.
     let board = metamind_app::kanbanview::Board::parse(metamind_app::kanbanview::TEMPLATE);
     assert_eq!(board.columns.len(), 3, "la plantilla que se muestra parsea a tres columnas");

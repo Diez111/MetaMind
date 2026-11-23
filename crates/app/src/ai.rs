@@ -970,9 +970,8 @@ impl AiPanel {
         let start = self.messages.len().saturating_sub(MAX_HISTORY);
         let history: Vec<Message> = self.messages[start..].to_vec();
         let tools = crate::ai_tools::specs();
-        let payload =
-            build_payload_with_tools(cfg, &system_content(cfg, note_context), &history, "", &tools)
-                .to_string();
+        let payload = build_payload_with_tools(cfg, &system_content(cfg, note_context), &history, "", &tools)
+            .to_string();
         self.messages.push(Message::assistant(String::new()));
         self.scroll_to_end = true;
         let cfg = cfg.clone();

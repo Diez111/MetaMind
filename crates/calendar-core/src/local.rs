@@ -217,9 +217,10 @@ impl Owned {
 
     /// The occurrences in `from..=to`, each with the index of its event.
     pub fn expand(&self, from: Day, to: Day) -> Vec<(usize, Occurrence)> {
-        let mut cal = Ics::default();
-        cal.name = "Propios".into();
-        cal.events = self.events.iter().map(OwnedEvent::to_event).collect();
+        let cal = Ics {
+            name: "Propios".to_string(),
+            events: self.events.iter().map(OwnedEvent::to_event).collect(),
+        };
         crate::expand(&cal, from, to).into_iter().map(|o| (o.event, o)).collect()
     }
 

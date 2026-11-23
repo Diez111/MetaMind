@@ -71,7 +71,14 @@ fn scene(rows: usize, typed: Option<char>) -> Scene {
         items: (0..20).map(|i| [760.0 + i as f32, 40.0 + i as f32 * 9.0, 3.0]).collect(),
         color: Color { r: 220, g: 180, b: 90, a: 200 },
     });
-    s.cmds.push(fill(224.0, H as f32 - 26.0, W as f32 - 224.0, 26.0, Color { r: 30, g: 30, b: 36, a: 255 }, 0.0));
+    s.cmds.push(fill(
+        224.0,
+        H as f32 - 26.0,
+        W as f32 - 224.0,
+        26.0,
+        Color { r: 30, g: 30, b: 36, a: 255 },
+        0.0,
+    ));
     s.cmds.push(text(240.0, H as f32 - 20.0, "1.234 palabras · 12 min de lectura", None, 12.0));
     s
 }

@@ -1753,7 +1753,8 @@ impl App {
         let Ok(query) = Query::parse(query_text) else { return Vec::new() };
         let root = self.store.root.clone();
         let corpus = self.corpus.get_or_insert_with(|| Corpus::build(&self.store.index, &root));
-        let hits = corpus.search(&self.store.index, &root, &query, Sort::Relevance, RankWeights::default(), max);
+        let hits =
+            corpus.search(&self.store.index, &root, &query, Sort::Relevance, RankWeights::default(), max);
         self.store.release_cache_pages();
         let mut out = Vec::new();
         for hit in hits {

@@ -5,8 +5,8 @@
 //! case the read-only embed got wrong: the first paint has to frame the elements, not the origin.
 
 use excalidraw_core::{ElementType, Scene};
-use metamind_app::shell::ViewMode;
 use metamind_app::excalidrawview::{Tool, WIDTHS};
+use metamind_app::shell::ViewMode;
 use metamind_app::{render, App, Frame, Key};
 use metamind_ui::{Fonts, Pixmap};
 use std::fs;
@@ -302,9 +302,8 @@ fn the_bar_the_canvas_and_the_style_panel_do_not_overlap() {
     let (_d, mut app, mut fonts) = open();
     app.run("exc:style");
     let f = frame(&mut app, &mut fonts);
-    let classed = |class: &str| {
-        f.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == class)).map(|n| n.rect)
-    };
+    let classed =
+        |class: &str| f.dom.nodes.iter().find(|n| n.el.classes.iter().any(|c| c == class)).map(|n| n.rect);
     let bar = classed("exc-toolbar").expect("the bar");
     let canvas = classed("exc-canvas").expect("the canvas");
     let panel = classed("exc-style-panel").expect("the style panel");
@@ -343,10 +342,7 @@ fn the_bar_the_canvas_and_the_style_panel_do_not_overlap() {
         }
         tools += 1;
         let r = n.rect;
-        assert!(
-            r.x >= bar.x && r.x + r.w <= bar.x + bar.w + 0.5,
-            "tool at {r:?} leaves the bar {bar:?}"
-        );
+        assert!(r.x >= bar.x && r.x + r.w <= bar.x + bar.w + 0.5, "tool at {r:?} leaves the bar {bar:?}");
         assert!(r.y >= bar.y && r.y + r.h <= bar.y + bar.h + 0.5, "tool at {r:?} leaves the bar");
     }
     assert!(tools >= Tool::ALL.len(), "all the tools are there: {tools}");
@@ -397,7 +393,9 @@ fn a_pen_stroke_keeps_the_pressure_of_every_point() {
     let widths: Vec<f32> = painted
         .iter()
         .filter_map(|c| match c {
-            metamind_ui::Cmd::Stroke { points, .. } => Some(points.iter().map(|p| p[2]).fold(0.0f32, f32::max)),
+            metamind_ui::Cmd::Stroke { points, .. } => {
+                Some(points.iter().map(|p| p[2]).fold(0.0f32, f32::max))
+            }
             _ => None,
         })
         .collect();
@@ -436,9 +434,8 @@ fn the_style_button_opens_a_panel_that_is_painted_over_the_board() {
     let (_d, mut app, mut fonts) = open();
     app.run("exc:style");
     let f = frame(&mut app, &mut fonts);
-    let index = |class: &str| {
-        f.dom.nodes.iter().position(|n| n.el.classes.iter().any(|c| c == class)).expect(class)
-    };
+    let index =
+        |class: &str| f.dom.nodes.iter().position(|n| n.el.classes.iter().any(|c| c == class)).expect(class);
     let panel = index("exc-style-panel");
     let canvas = index("exc-canvas");
     assert!(panel > canvas, "el panel se pinta después del lienzo: panel {panel}, lienzo {canvas}");
