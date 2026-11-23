@@ -138,3 +138,23 @@ Caveats, stated plainly:
 - The budgets are measured by `perf_budget` and `scripts/window-budget.sh` on every CI run
   (GitHub-hosted runners). The search table is report-only there, since shared runners vary.
 
+
+
+## Calendar
+
+Local events are read **and written**: the panel has an editor with colours, all-day and
+timed events, and they live in `.metamind/calendar/events.json`. Google and `.ics` calendars stay
+read-only.
+
+
+## Drawing tablet
+
+A pen that reports pressure through `evdev` draws strokes whose width follows the pressure, and
+its eraser end erases. Ajustes → Lápiz shows the device, the live pressure and what to do when the
+device cannot be read. Without a tablet, every stroke keeps the width chosen in the toolbar.
+
+## Copilot tools
+
+The copilot can call functions on the vault: `search_notes`, `read_note`, `list_notes`,
+`create_note`, `append_note`, `create_calendar_event`, `create_kanban_card` and `open_note`.
+Writes are applied at once and the panel shows one row per call.

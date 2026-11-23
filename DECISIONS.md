@@ -244,3 +244,45 @@ notes per frame, so the first scan of a 50,000-note vault does not stall a frame
 - **The default renderer is the CPU, not wgpu** (§2). No wgpu code exists yet.
 - **taffy is not used** (§7).
 - Everything listed as `none` in the README checklist.
+
+
+## 31. `flex-wrap` in the layout engine instead of a second layout library
+
+**Situation.** The Excalidraw palette is twenty-four swatches in a box 76 px wide. They came out in
+one row that ran out of the pane, and the toolbar above them was a second absolutely positioned
+box with a fixed `top`. The engine documents "no wrapping flex lines".
+
+**Decision.** Implement wrapping in `metamind-ui`: `break_lines` over the children's preferred
+widths, per-line grow and shrink, `row-gap` between lines and `align-content`. A wrapping row is
+laid out by `place_wrap`, a path of its own: the single-line path is what every existing panel goes
+through, and rewriting it to also handle lines would risk a regression that only shows on screen.
+
+**Consequence.** One more rule the CSS a theme can use actually does something, and the palette, the
+tags and any future chip row wrap instead of overflowing. Grid and floats are still out.
+
+## 32. The pen comes from `evdev`, not from the window toolkit
+
+**Situation.** winit gives a window a pointer position and three buttons. A stylus has pressure and
+tilt, and no toolkit on Linux forwards them to a plain window.
+
+**Decision.** A crate of its own, `pen-input`, reads `/dev/input/event*` with a blocking `read` and
+decodes `input_event` by its offsets: no `libc`, no `bindgen`, no `unsafe` (the workspace forbids
+it). The app combines the sample with the pointer the toolkit reports, because the pen and the
+cursor are the same thing on screen.
+
+**Consequence.** Pressure and the eraser work on a tablet the user can read; everything else keeps
+working with the mouse. The cost is a Linux-only feature and a permission the settings panel
+explains.
+
+## 33. The copilot writes without asking
+
+**Situation.** The operator asked for an agent connected to the vault, with tools, and chose
+"tools + auto-apply" over a confirmation per write.
+
+**Decision.** Writes go through the same `vault_core` calls the editor uses (atomic writes, recovery
+snapshots), paths are validated inside the vault, and the panel shows one row per call with what it
+did. A turn is capped at four rounds of tools, so a model that keeps asking cannot loop.
+
+**Consequence.** The copilot can create and extend notes without a dialog. The undo and the
+recovery snapshots are the way back, which is why every write goes through the store and not
+through `std::fs`.
