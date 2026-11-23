@@ -1,4 +1,5 @@
 use metamind_app::uri::{parse, resolve, Target};
+use metamind_app::App;
 use std::fs;
 
 #[test]
@@ -69,4 +70,30 @@ fn local_file_accepts_paths_and_file_urls() {
     assert_eq!(local_file(&url), Some(canon));
     assert_eq!(local_file(&d.path().to_string_lossy()), None, "a folder is not a file");
     assert_eq!(local_file("file://elsewhere/x.md"), None);
+}
+
+/// A link written as a relative path — `[grabación](Videos/U1.mp4)`, which is how the vault's
+/// tables name their recordings — opens the file instead of answering "no es un enlace web".
+#[test]
+fn a_relative_link_opens_the_file_it_names() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join("Clase.md"), "# Clase\n").unwrap();
+    std::fs::write(d.path().join("clip.mp4"), b"no es un video").unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("Clase.md");
+    let before = app.tab().map(|t| t.path.clone());
+    app.run("open-url:clip.mp4");
+    let notice = app.notice.clone().unwrap_or_default();
+    assert!(!notice.contains("No es un enlace web"), "{notice}");
+    // The video goes to the player; a markdown file opens as a note.
+    assert!(app.video.is_open() || app.notice.is_some(), "el archivo se abrió o dijo por qué no");
+    std::fs::write(d.path().join("Otra.md"), "# Otra\n").unwrap();
+    app.files_changed(&["Otra.md".to_string()]);
+    app.run("open-url:Otra.md");
+    assert_eq!(
+        app.tab().map(|t| t.path.clone()),
+        Some("Otra.md".to_string()),
+        "el enlace relativo abre la nota"
+    );
+    let _ = before;
 }

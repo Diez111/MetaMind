@@ -1871,6 +1871,24 @@ impl App {
                 }
                 return;
             }
+            // A link to a file of the vault (`[grabación](Videos/U1.mp4)`) is not a web address:
+            // it opens here, and the video plays. Before, it answered "no es un enlace web" and the
+            // click looked dead.
+            if !(url.starts_with("https://") || url.starts_with("http://") || url.starts_with("mailto:")) {
+                let target = url.trim_start_matches("./").trim_start_matches('/').to_string();
+                let resolved = self
+                    .store
+                    .index
+                    .resolve(&target, "")
+                    .and_then(|id| self.store.index.entry(id).map(|f| f.path.to_string()));
+                let rel = resolved.unwrap_or(target);
+                if self.store.abs(&rel).exists() || self.store.index.id(&rel).is_some() {
+                    self.open_note(&rel);
+                } else {
+                    self.notice = Some(format!("No existe en la bóveda: {rel}"));
+                }
+                return;
+            }
             self.open_in_browser(url);
             return;
         }
