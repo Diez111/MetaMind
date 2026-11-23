@@ -74,3 +74,28 @@ fn the_hand_written_fixture_covers_the_hard_parts() {
     assert_eq!(scene.element("gone").unwrap().is_deleted, Some(true));
     assert_eq!(scene.element("frame-a").unwrap().kind, ElementType::Other("frame".into()));
 }
+
+/// The Obsidian plugin stores a drawing inside a Markdown note: the scene lives in a `%%` comment
+/// with a `json` fence, and everything around it is prose the reader never has to see as JSON.
+#[test]
+fn the_scene_of_a_markdown_note_is_found_and_its_bounds_are_the_json() {
+    let note = "---\nexcalidraw-plugin: parsed\n---\n\n# Excalidraw Data\n\n%%\n## Drawing\n```json\n{\"type\":\"excalidraw\",\"elements\":[],\"appState\":{\"gridSize\":null}}\n```\n%%\n";
+    let range = excalidraw_core::scene_in_markdown(note).expect("the scene");
+    let json = &note[range.clone()];
+    assert!(json.starts_with("{\"type\":\"excalidraw\""), "{json}");
+    assert!(json.ends_with("}"), "{json}");
+    let scene = Scene::parse(json).expect("the scene parses");
+    assert_eq!(scene.elements.len(), 0);
+    // The prose around it is untouched by the range.
+    assert!(note[..range.start].contains("# Excalidraw Data"));
+    assert!(note[range.end..].ends_with("%%\n"));
+}
+
+#[test]
+fn a_note_that_is_not_a_drawing_has_no_scene() {
+    assert!(excalidraw_core::scene_in_markdown("# Nota\n\n```json\n{\"a\":1}\n```\n").is_none());
+    assert!(excalidraw_core::scene_in_markdown("# Nota\n\n%%\ncomentario\n%%\n").is_none());
+    // A fence outside a comment is a code sample, not a drawing.
+    let sample = "```json\n{\"type\":\"excalidraw\",\"elements\":[]}\n```\n";
+    assert!(excalidraw_core::scene_in_markdown(sample).is_none());
+}

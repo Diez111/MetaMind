@@ -461,14 +461,50 @@ fn the_style_button_opens_a_panel_that_is_painted_over_the_board() {
 #[test]
 fn a_comment_block_is_hidden_in_the_live_preview() {
     let d = vault();
-    let note = "# Nota\n\nArriba.\n\n%%\n```json\n{\"type\":\"excalidraw\",\"elements\":[]}\n```\n%%\n\nAbajo.\n";
+    // A plain comment, not a drawing: a drawing inside a `%%` block makes the note a board (see
+    // the test below), and that is a different path.
+    let note = "# Nota\n\nArriba.\n\n%%\nesto no se ve: {\"tipo\":\"nota\"}\n%%\n\nAbajo.\n";
     fs::write(d.path().join("Con datos.md"), note).unwrap();
     let mut app = App::open(d.path()).unwrap();
     app.open_note("Con datos.md");
     let mut fonts = Fonts::new();
     let f = frame(&mut app, &mut fonts);
     let text: String = f.dom.nodes.iter().filter_map(|n| n.el.text.clone()).collect::<Vec<_>>().join("\n");
-    assert!(!text.contains("\"excalidraw\""), "el JSON del comentario no se pinta: {text}");
+    assert!(!text.contains("esto no se ve"), "el comentario no se pinta: {text}");
     assert!(!text.contains("%%"), "ni los marcadores: {text}");
     assert!(text.contains("Arriba.") && text.contains("Abajo."), "el resto de la nota sí: {text}");
+}
+
+/// The Obsidian plugin keeps a drawing inside a Markdown note. The tree opens it as a board (and
+/// not as a wall of JSON), and saving it back touches the scene and nothing else.
+#[test]
+fn a_note_with_an_excalidraw_block_opens_as_a_board_and_saves_back_into_the_block() {
+    let d = tempfile::tempdir().unwrap();
+    let note = "---\nexcalidraw-plugin: parsed\n---\n\n# Excalidraw Data\n\n%%\n## Drawing\n```json\n{\"type\":\"excalidraw\",\"version\":2,\"elements\":[{\"id\":\"b\",\"type\":\"rectangle\",\"x\":40,\"y\":80,\"width\":200,\"height\":100,\"strokeColor\":\"#1e1e1e\",\"backgroundColor\":\"transparent\",\"strokeWidth\":2}],\"appState\":{\"viewBackgroundColor\":\"#ffffff\"},\"files\":{}}\n```\n%%\n";
+    fs::write(d.path().join("Tablero-Taylor.md"), note).unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    app.open_note("Tablero-Taylor.md");
+    assert!(app.exc_active(), "la nota se abre como tablero, no como texto");
+    let mut fonts = Fonts::new();
+    let f = frame(&mut app, &mut fonts);
+    let r = pane(&f);
+    assert_eq!(app.exc_view.as_ref().unwrap().scene.elements.len(), 1);
+    // Move the box, which marks the board dirty and writes it on close.
+    app.run("exc:tool:select");
+    let v = app.exc_view.as_ref().unwrap();
+    let (bx, by) = v.to_screen(&r, 140.0, 130.0);
+    app.click(&f, &mut fonts, bx, by, false);
+    app.drag(&f, &mut fonts, bx + 30.0, by + 20.0);
+    app.release();
+    app.run("exc:close");
+    let saved = fs::read_to_string(d.path().join("Tablero-Taylor.md")).unwrap();
+    assert!(saved.starts_with("---\nexcalidraw-plugin: parsed\n---"), "el frente no se toca: {saved}");
+    assert!(saved.contains("# Excalidraw Data"), "la prosa sigue: {saved}");
+    assert!(saved.contains("```json"), "y el bloque sigue: {saved}");
+    assert!(saved.contains("\"rectangle\""), "{saved}");
+    // The scene went back inside the fence and parses from the note.
+    let range = excalidraw_core::scene_in_markdown(&saved).expect("el escenario sigue ahí");
+    let scene = Scene::parse(&saved[range]).unwrap();
+    assert_eq!(scene.elements.len(), 1);
+    assert!(scene.elements[0].x > 40.0, "el movimiento quedó guardado: {}", scene.elements[0].x);
 }

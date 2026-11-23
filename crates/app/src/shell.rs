@@ -1290,6 +1290,20 @@ impl App {
                 Ok((text, stamp)) => {
                     // A note carrying the Kanban plugin's settings *is* a board: the tree opens
                     // the board, and the view has its own way into the text.
+                    // A note the Excalidraw plugin wrote is a board: the scene lives in its
+                    // `%%` block, and showing the note would be a wall of JSON.
+                    if excalidraw_core::scene_in_markdown(&text).is_some() {
+                        let rel = rel.clone();
+                        self.open_exc_note(&rel);
+                        self.plugins.push(ext_api::Event::FileOpen { path: rel.clone() });
+                        if record {
+                            self.history.truncate(self.history_pos + usize::from(!self.history.is_empty()));
+                            if self.history.last() != Some(&rel) {
+                                self.history.push(rel);
+                            }
+                        }
+                        return;
+                    }
                     if crate::kanbanview::is_board_text(&text) {
                         let rel = rel.clone();
                         self.open_board(&rel, &text, stamp);

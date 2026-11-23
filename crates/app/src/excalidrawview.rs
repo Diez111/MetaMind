@@ -193,6 +193,10 @@ pub struct Look {
 pub struct ExcView {
     pub path: String,
     pub scene: Scene,
+    /// A board that lives inside a Markdown note (the Obsidian plugin's format): the text before
+    /// and after the scene, kept so a save writes the note back with the scene replaced and the
+    /// prose byte for byte.
+    wrapper: Option<(String, String)>,
     stamp: Stamp,
     /// The scene point shown at the centre of the pane.
     pub cam: [f32; 2],
@@ -250,6 +254,7 @@ impl ExcView {
         Ok(ExcView {
             path: path.to_string(),
             scene,
+            wrapper: None,
             stamp,
             cam: [0.0; 2],
             zoom: 1.0,
@@ -278,6 +283,16 @@ impl ExcView {
             press: None,
             seed: fsio::now_ms() | 1,
         })
+    }
+
+    /// Read a Markdown note that carries an Excalidraw scene, the way the Obsidian plugin writes
+    /// it: the scene goes back into its `%%` block on save, and the note around it does not move.
+    pub fn open_md(path: &str, text: &str, stamp: Stamp) -> Result<ExcView, String> {
+        let range = excalidraw_core::scene_in_markdown(text)
+            .ok_or_else(|| "La nota no tiene un tablero de Excalidraw.".to_string())?;
+        let mut view = ExcView::open(path, &text[range.clone()], stamp)?;
+        view.wrapper = Some((text[..range.start].to_string(), text[range.end..].to_string()));
+        Ok(view)
     }
 
     pub fn title(&self) -> String {
@@ -1002,11 +1017,20 @@ impl ExcView {
         self.dirty = true;
     }
 
-    /// The board as the file wants it.
+    /// The board as the file wants it: the whole scene for a `.excalidraw`, or the note with the
+    /// scene replaced for a board that lives in a Markdown file.
     pub fn to_json(&self) -> String {
         let mut scene = self.scene.clone();
         self.surface.write(&mut scene.app_state);
-        scene.to_json()
+        match &self.wrapper {
+            Some((before, after)) => {
+                // The plugin keeps the scene on one line inside its fence: writing it pretty
+                // would still parse, but it would rewrite every byte of the note.
+                let json = serde_json::to_string(&scene).unwrap_or_else(|_| scene.to_json());
+                format!("{before}{json}{after}")
+            }
+            None => scene.to_json(),
+        }
     }
 }
 
@@ -1285,17 +1309,30 @@ impl App {
     }
 
     pub(crate) fn open_exc(&mut self, rel: &str) {
+        self.open_exc_with(rel, false)
+    }
+
+    /// Open the board inside a Markdown note: the scene comes from its `%%` block and a save goes
+    /// back there, with the prose around it untouched.
+    pub(crate) fn open_exc_note(&mut self, rel: &str) {
+        self.open_exc_with(rel, true)
+    }
+
+    fn open_exc_with(&mut self, rel: &str, from_markdown: bool) {
         if let Some(v) = &mut self.exc_view {
             v.commit_edit();
         }
         self.exc_save();
         let same = self.exc_view.as_ref().is_some_and(|v| v.path.eq_ignore_ascii_case(rel));
         if !same {
-            let opened = self
-                .store
-                .read(rel)
+            let opened = self.store.read(rel).map_err(|e| e.to_string()).and_then(|(text, stamp)| {
+                if from_markdown {
+                    ExcView::open_md(rel, &text, stamp)
+                } else {
+                    ExcView::open(rel, &text, stamp)
+                }
                 .map_err(|e| e.to_string())
-                .and_then(|(text, stamp)| ExcView::open(rel, &text, stamp).map_err(|e| e.to_string()));
+            });
             match opened {
                 Ok(v) => self.exc_view = Some(v),
                 Err(e) => {

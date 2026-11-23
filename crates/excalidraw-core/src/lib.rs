@@ -533,3 +533,45 @@ fn segment_distance(x: f64, y: f64, a: (f64, f64), b: (f64, f64)) -> f64 {
 
 #[cfg(test)]
 mod tests;
+
+/// The Excalidraw scene inside a Markdown note, as the Obsidian plugin writes it: a `%%…%%`
+/// comment that holds a ```` ```json ```` fence with the whole scene in it.
+///
+/// Returns the byte range of the JSON text, so a caller can parse the scene and write it back
+/// without touching a byte of the prose around it. `None` for a note that is not one of those,
+/// which is every note that is not a drawing.
+pub fn scene_in_markdown(text: &str) -> Option<std::ops::Range<usize>> {
+    let mut at = 0usize;
+    let mut in_comment = false;
+    let mut open: Option<usize> = None;
+    for line in text.split_inclusive('\n') {
+        let start = at;
+        at += line.len();
+        let trimmed = line.trim_end_matches(['\n', '\r']).trim();
+        if !in_comment {
+            if trimmed.starts_with("%%") {
+                in_comment = true;
+            }
+            continue;
+        }
+        if trimmed.starts_with("```") {
+            match open {
+                None => open = Some(at),
+                Some(from) => {
+                    let body = text.get(from..start)?;
+                    if body.contains("\"excalidraw\"") {
+                        // Trim the trailing newline: the scene ends where the fence begins.
+                        let end = text[from..start].trim_end().len() + from;
+                        return Some(from..end);
+                    }
+                    open = None;
+                }
+            }
+            continue;
+        }
+        if trimmed.ends_with("%%") && !trimmed.starts_with("%%") {
+            in_comment = false;
+        }
+    }
+    None
+}
