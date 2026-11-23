@@ -627,7 +627,7 @@ pub(crate) fn paint(
                 paint.anti_alias = true;
                 let stroke = tiny_skia::Stroke { width: *width, ..Default::default() };
                 let b = segs_bounds(segs, *width);
-                let mask = if fits(limit, &b, scale) { None } else { stencil.as_ref() };
+                let mask = if clip == full && fits(limit, &b, scale) { None } else { stencil.as_ref() };
                 pixmap.stroke_path(&path, &paint, &stroke, Transform::from_scale(scale, scale), mask);
             }
             Cmd::Circles { items, color } => {
@@ -675,7 +675,13 @@ pub(crate) fn paint(
                         m.intersect_path(&p, FillRule::Winding, false, Transform::identity());
                     }
                 }
-                let mask = if fits(limit, &b, scale) { None } else { clip_mask.as_ref().or(stencil.as_ref()) };
+                // No mask only when there is nothing to mask: the pane clips nothing and the
+                // whole ribbon fits in the damaged area.
+                let mask = if clip == full && fits(limit, &b, scale) {
+                    None
+                } else {
+                    clip_mask.as_ref().or(stencil.as_ref())
+                };
                 pixmap.fill_path(
                     &path,
                     &paint,
