@@ -156,7 +156,8 @@ fn a_weekly_rule_shows_every_week_and_ends_on_until() {
 
 #[test]
 fn an_unreadable_rule_keeps_the_event() {
-    let text = r#"{"events":[{"id":"a","title":"Con regla rota","start":"2026-11-27","rrule":"FREQ=NARANJA"}]}"#;
+    let text =
+        r#"{"events":[{"id":"a","title":"Con regla rota","start":"2026-11-27","rrule":"FREQ=NARANJA"}]}"#;
     let (owned, _) = Owned::parse(text).unwrap();
     assert_eq!(owned.events.len(), 1);
     let all = owned.expand(day(2026, 11, 27), day(2026, 11, 27));

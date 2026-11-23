@@ -54,9 +54,7 @@ fn server(replies: Vec<&'static str>) -> (String, std::thread::JoinHandle<Vec<Va
 /// loop run (it lives on the frame, where the store is).
 fn app_with_ai(dir: &tempfile::TempDir, base: &str) -> App {
     std::fs::create_dir_all(dir.path().join(".obsidian")).unwrap();
-    let config = format!(
-        r#"{{"ai.base_url":"{base}","ai.model":"test","ai.api_key":"sk-test"}}"#
-    );
+    let config = format!(r#"{{"ai.base_url":"{base}","ai.model":"test","ai.api_key":"sk-test"}}"#);
     std::fs::write(dir.path().join(".obsidian/app.json"), config).unwrap();
     let mut app = App::open(dir.path()).unwrap();
     app.run("ai:open");
@@ -97,7 +95,8 @@ fn the_model_asks_for_a_note_and_the_app_writes_it() {
     assert_eq!(app.ai.tool_log.len(), 1, "una herramienta, una fila: {:?}", app.ai.tool_log);
     assert_eq!(app.ai.tool_log[0].0, "create_note");
     assert!(app.ai.tool_log[0].2, "y salió bien: {:?}", app.ai.tool_log[0]);
-    let answer: String = app.ai.messages.iter().filter(|m| m.role == "assistant").map(|m| m.content.clone()).collect();
+    let answer: String =
+        app.ai.messages.iter().filter(|m| m.role == "assistant").map(|m| m.content.clone()).collect();
     assert!(answer.contains("creé Resumen"), "la respuesta final está en el panel: {answer:?}");
     // What the second request carried: the assistant turn with its call, and the tool's answer.
     let bodies = server.join().unwrap();
@@ -111,7 +110,10 @@ fn the_model_asks_for_a_note_and_the_app_writes_it() {
         messages.as_array().is_some_and(|m| m.iter().any(|x| x["tool_calls"].is_array())),
         "y el turno que la pidió: {messages}"
     );
-    assert!(!bodies[0]["tools"].as_array().is_none_or(Vec::is_empty), "el primer pedido ofrece las herramientas");
+    assert!(
+        !bodies[0]["tools"].as_array().is_none_or(Vec::is_empty),
+        "el primer pedido ofrece las herramientas"
+    );
 }
 
 #[test]
@@ -149,7 +151,8 @@ fn the_tool_log_is_part_of_the_answer_the_reader_sees() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("Home.md"), "# Home\n").unwrap();
     // A turn with no tool: the panel does not grow a tool line.
-    let (base, server) = server(vec!["data: {\"choices\":[{\"delta\":{\"content\":\"Hola\"}}]}\n\ndata: [DONE]\n\n"]);
+    let (base, server) =
+        server(vec!["data: {\"choices\":[{\"delta\":{\"content\":\"Hola\"}}]}\n\ndata: [DONE]\n\n"]);
     let mut app = app_with_ai(&dir, &base);
     let mut fonts = Fonts::new();
     app.ai.input = "hola".into();

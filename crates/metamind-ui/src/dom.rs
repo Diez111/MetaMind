@@ -900,13 +900,7 @@ impl Dom {
     /// The width of the widest line and the total height of all lines of a wrapping row that is
     /// laid out `avail` wide. Used to measure the row before it is placed, so a popover can size
     /// itself to its wrapped content.
-    fn wrap_metrics(
-        &self,
-        kids: &[NodeId],
-        preferred: &[(f32, f32)],
-        avail: f32,
-        s: &Style,
-    ) -> (f32, f32) {
+    fn wrap_metrics(&self, kids: &[NodeId], preferred: &[(f32, f32)], avail: f32, s: &Style) -> (f32, f32) {
         let mains: Vec<f32> = kids
             .iter()
             .zip(preferred)
@@ -965,8 +959,7 @@ impl Dom {
             }
             heights.push(h);
         }
-        let total_h = heights.iter().sum::<f32>()
-            + s.gap_cross * lines.len().saturating_sub(1) as f32;
+        let total_h = heights.iter().sum::<f32>() + s.gap_cross * lines.len().saturating_sub(1) as f32;
         let cross_free = (inner.h - total_h).max(0.0);
         let (mut y, line_extra) = match s.align_content {
             Align::Center => (cross_free / 2.0, 0.0),
@@ -997,9 +990,7 @@ impl Dom {
                 let shrinkable: Vec<usize> = (a..b)
                     .filter(|&i| {
                         let cs = &self.nodes[kids[i]].style;
-                        cs.shrink > 0.0
-                            && !matches!(cs.width, Dim::Px(_))
-                            && (cs.grow > 0.0 || cs.clip)
+                        cs.shrink > 0.0 && !matches!(cs.width, Dim::Px(_)) && (cs.grow > 0.0 || cs.clip)
                     })
                     .collect();
                 let total: f32 = shrinkable.iter().map(|&i| sizes[i].0).sum();

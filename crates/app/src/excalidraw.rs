@@ -377,7 +377,11 @@ pub(crate) fn surface_paper(
                 segs.push([rect.x, sy, rect.x + rect.w, sy]);
                 y += ws;
             }
-            cmds.push(Cmd::Lines { segs, width: 1.0, color: mix(board, faint, if dark { 0.16 } else { 0.1 }) });
+            cmds.push(Cmd::Lines {
+                segs,
+                width: 1.0,
+                color: mix(board, faint, if dark { 0.16 } else { 0.1 }),
+            });
         }
         SurfaceMode::Ruled => {
             let rule = mix(board, faint, if dark { 0.18 } else { 0.12 });

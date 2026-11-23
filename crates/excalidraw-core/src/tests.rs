@@ -157,8 +157,7 @@ fn a_stale_app_state_field_costs_nothing() {
 #[test]
 fn a_broken_app_state_keeps_every_field() {
     // A field of the wrong shape falls back to `extra` instead of losing the object.
-    let scene =
-        Scene::parse(r##"{"appState":{"viewBackgroundColor":42,"zoom":{"value":2}}}"##).unwrap();
+    let scene = Scene::parse(r##"{"appState":{"viewBackgroundColor":42,"zoom":{"value":2}}}"##).unwrap();
     assert_eq!(scene.app_state.view_background_color, None);
     assert_eq!(scene.app_state.extra["viewBackgroundColor"], 42);
     assert_eq!(scene.app_state.extra["zoom"]["value"], 2);

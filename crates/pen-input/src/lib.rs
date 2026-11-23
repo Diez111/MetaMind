@@ -444,7 +444,9 @@ B: ABS=0
     #[test]
     fn a_machine_without_a_tablet_is_an_empty_list() {
         assert!(parse_devices("").is_empty());
-        assert!(parse_devices("I: Bus=0003\nN: Name=\"Teclado\"\nH: Handlers=event0\nB: EV=120013\n").is_empty());
+        assert!(
+            parse_devices("I: Bus=0003\nN: Name=\"Teclado\"\nH: Handlers=event0\nB: EV=120013\n").is_empty()
+        );
     }
 
     #[test]

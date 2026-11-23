@@ -30,9 +30,7 @@ const MAX_LIST: usize = 200;
 
 /// The tools, as the model sees them: one function spec each.
 pub fn specs() -> Vec<Value> {
-    let spec = |name: &str, description: &str, parameters: Value| {
-        json!({ "type": "function", "function": { "name": name, "description": description, "parameters": parameters } })
-    };
+    let spec = |name: &str, description: &str, parameters: Value| json!({ "type": "function", "function": { "name": name, "description": description, "parameters": parameters } });
     vec![
         spec(
             "search_notes",

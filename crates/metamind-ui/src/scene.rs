@@ -83,20 +83,10 @@ impl DevRect {
         }
     }
     pub fn intersect(&self, o: &DevRect) -> DevRect {
-        DevRect {
-            x0: self.x0.max(o.x0),
-            y0: self.y0.max(o.y0),
-            x1: self.x1.min(o.x1),
-            y1: self.y1.min(o.y1),
-        }
+        DevRect { x0: self.x0.max(o.x0), y0: self.y0.max(o.y0), x1: self.x1.min(o.x1), y1: self.y1.min(o.y1) }
     }
     pub fn union(&self, o: &DevRect) -> DevRect {
-        DevRect {
-            x0: self.x0.min(o.x0),
-            y0: self.y0.min(o.y0),
-            x1: self.x1.max(o.x1),
-            y1: self.y1.max(o.y1),
-        }
+        DevRect { x0: self.x0.min(o.x0), y0: self.y0.min(o.y0), x1: self.x1.max(o.x1), y1: self.y1.max(o.y1) }
     }
     /// Grown by `px` on every side.
     pub fn grow(&self, px: i32) -> DevRect {
@@ -281,12 +271,7 @@ impl DevClip {
         }
     }
     fn within(&self, l: &DevRect) -> DevClip {
-        DevClip {
-            x0: self.x0.max(l.x0),
-            y0: self.y0.max(l.y0),
-            x1: self.x1.min(l.x1),
-            y1: self.y1.min(l.y1),
-        }
+        DevClip { x0: self.x0.max(l.x0), y0: self.y0.max(l.y0), x1: self.x1.min(l.x1), y1: self.y1.min(l.y1) }
     }
 }
 
@@ -627,7 +612,9 @@ pub(crate) fn paint(
                 paint.anti_alias = true;
                 let stroke = tiny_skia::Stroke { width: *width, ..Default::default() };
                 let b = segs_bounds(segs, *width);
-                let mask = if clip == full && fits(limit, &b, scale) { None } else { stencil.as_ref() };
+                // The clip is applied to the segments themselves, so the mask is only here for the
+                // damaged area: a line that fits inside it is drawn without one.
+                let mask = if fits(limit, &b, scale) { None } else { stencil.as_ref() };
                 pixmap.stroke_path(&path, &paint, &stroke, Transform::from_scale(scale, scale), mask);
             }
             Cmd::Circles { items, color } => {
@@ -677,10 +664,14 @@ pub(crate) fn paint(
                 }
                 // No mask only when there is nothing to mask: the pane clips nothing and the
                 // whole ribbon fits in the damaged area.
-                let mask = if clip == full && fits(limit, &b, scale) {
+                // A ribbon is a filled shape: with a clip in force it always needs the mask, and
+                // without one it only needs the damaged area.
+                let mask = if clip != full {
+                    clip_mask.as_ref()
+                } else if fits(limit, &b, scale) {
                     None
                 } else {
-                    clip_mask.as_ref().or(stencil.as_ref())
+                    stencil.as_ref()
                 };
                 pixmap.fill_path(
                     &path,

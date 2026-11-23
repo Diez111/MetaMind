@@ -153,7 +153,7 @@ fn extent(cmd: &Cmd, fonts: &mut Fonts) -> Option<(f32, f32)> {
         Cmd::Lines { segs, width, .. } => {
             span(&mut segs.iter().flat_map(|s| [s[1], s[3]])).map(|(a, b)| (a - width, b + width))
         }
-            Cmd::Circles { items, .. } => span(&mut items.iter().flat_map(|c| [c[1] - c[2], c[1] + c[2]])),
+        Cmd::Circles { items, .. } => span(&mut items.iter().flat_map(|c| [c[1] - c[2], c[1] + c[2]])),
         Cmd::Stroke { points, .. } => span(&mut points.iter().flat_map(|p| [p[1] - p[2], p[1] + p[2]])),
         Cmd::PushClip(_) | Cmd::PopClip => None,
     }

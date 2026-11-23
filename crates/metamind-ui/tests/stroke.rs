@@ -12,7 +12,8 @@ const INK: Color = Color::rgb(255, 0, 0);
 const CLEAR: Color = Color::rgb(0, 0, 0);
 
 fn paint(cmd: Cmd) -> Pixmap {
-    let scene = Scene { cmds: vec![Cmd::PushClip(Rect::new(0.0, 0.0, W as f32, H as f32)), cmd, Cmd::PopClip] };
+    let scene =
+        Scene { cmds: vec![Cmd::PushClip(Rect::new(0.0, 0.0, W as f32, H as f32)), cmd, Cmd::PopClip] };
     let mut pm = Pixmap::new(W, H).unwrap();
     let mut fonts = Fonts::new();
     render(&scene, &mut fonts, &mut pm, 1.0, CLEAR);

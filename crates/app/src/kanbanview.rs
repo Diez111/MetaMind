@@ -2613,9 +2613,7 @@ mod tests {
 pub fn add_card_text(board: &str, column: &str, card: &str) -> Option<String> {
     let want = column.trim();
     let mut lines: Vec<String> = board.lines().map(str::to_string).collect();
-    let start = lines
-        .iter()
-        .position(|l| l.strip_prefix("## ").is_some_and(|name| name.trim() == want))?;
+    let start = lines.iter().position(|l| l.strip_prefix("## ").is_some_and(|name| name.trim() == want))?;
     // The next heading, or the end of the file.
     let end = lines[start + 1..]
         .iter()

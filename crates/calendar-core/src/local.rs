@@ -82,13 +82,7 @@ impl OwnedEvent {
     }
 
     /// A timed event on `day`, from `start` to `end` (minutes after midnight).
-    pub fn timed(
-        title: impl Into<String>,
-        day: Day,
-        start: u16,
-        end: u16,
-        color: &str,
-    ) -> OwnedEvent {
+    pub fn timed(title: impl Into<String>, day: Day, start: u16, end: u16, color: &str) -> OwnedEvent {
         let mut ev = OwnedEvent::all_day(title, day, color);
         ev.start_minute = Some(start.min(24 * 60 - 1));
         ev.end_minute = Some(end.max(start).min(24 * 60 - 1));
@@ -248,7 +242,7 @@ impl Owned {
             }
             None => self.events.push(ev.clone()),
         }
-        self.events.sort_by(|a, b| (a.day, a.start_minute, a.title.clone()).cmp(&(b.day, b.start_minute, b.title.clone())));
+        self.events.sort_by_key(|a| (a.day, a.start_minute, a.title.clone()));
         ev.id
     }
 
@@ -307,7 +301,8 @@ fn event_from(value: Value) -> Option<OwnedEvent> {
     let end_minute = minute_of(map.remove("endMinute").as_ref());
     let color = map.remove("color").and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default();
     let color = if valid_color(&color) { color } else { NAMED_COLORS[0].to_string() };
-    let mut text_of = |key: &str| map.remove(key).and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default();
+    let mut text_of =
+        |key: &str| map.remove(key).and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default();
     let location = text_of("location");
     let description = text_of("description");
     let rrule = map.remove("rrule").and_then(|v| v.as_str().map(str::to_string)).filter(|r| !r.is_empty());

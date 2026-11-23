@@ -152,7 +152,14 @@ pub fn render_damaged(
 
 /// The region of the pixmap that can differ between the two display lists, or `None` when the
 /// whole window has to be repainted.
-fn dirty_rects(prev: &[Cmd], next: &[Cmd], fonts: &mut Fonts, scale: f32, w: u32, h: u32) -> Option<Vec<DevRect>> {
+fn dirty_rects(
+    prev: &[Cmd],
+    next: &[Cmd],
+    fonts: &mut Fonts,
+    scale: f32,
+    w: u32,
+    h: u32,
+) -> Option<Vec<DevRect>> {
     let (n, m) = (next.len(), prev.len());
     let (mut i, mut jn, mut jm) = (0, n, m);
     while i < n && i < m && next[i] == prev[i] {
@@ -280,8 +287,12 @@ impl Clips {
     }
     /// The current clip; the whole plane when nothing is pushed.
     fn effective(&self) -> crate::scene::Rect {
-        const EVERYTHING: crate::scene::Rect =
-            crate::scene::Rect { x: f32::NEG_INFINITY, y: f32::NEG_INFINITY, w: f32::INFINITY, h: f32::INFINITY };
+        const EVERYTHING: crate::scene::Rect = crate::scene::Rect {
+            x: f32::NEG_INFINITY,
+            y: f32::NEG_INFINITY,
+            w: f32::INFINITY,
+            h: f32::INFINITY,
+        };
         self.stack.last().copied().unwrap_or(EVERYTHING)
     }
     fn apply(&mut self, cmd: &Cmd) {
