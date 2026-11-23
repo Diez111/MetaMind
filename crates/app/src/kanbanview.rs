@@ -115,6 +115,18 @@ pub const SETTINGS: &str = "%% kanban: settings\n{\"kanban-plugin\": \"basic\"} 
 /// The largest WIP limit the column menu offers. A board may still write a bigger one by hand.
 pub const MAX_WIP: usize = 10;
 
+/// What the help card of a board says. It lives next to the parser so the two cannot drift: the
+/// template it shows is [`TEMPLATE`], and a test checks that the board it makes parses.
+pub const HELP: &str = "Un tablero es una nota Markdown con este bloque arriba:\n\
+%% kanban: settings\n{\"kanban-plugin\": \"basic\"} %%\n\
+Cada columna es un ## y cada tarjeta una línea - [ ].\n\
+- [ ] Una tarjeta\n- [x] Una hecha\n\
+Prioridad: !, !! o !!! (o #prio/alta)\n\
+Fecha: @{2026-11-25}\n\
+Etiquetas: #tema\n\
+Límite de una columna: {\"wip\": {\"Haciendo\": 3}} dentro del bloque de settings.\n\
+Un archivo .kanban o .board también es un tablero.";
+
 /// A new board: the three columns of the plugin's own template, empty and ready to fill.
 pub const TEMPLATE: &str =
     "%% kanban: settings\n{\"kanban-plugin\": \"basic\"} %%\n# Tablero\n\n## Pendiente\n\n## Haciendo\n\n## Hecho\n";
@@ -596,6 +608,8 @@ pub struct KanbanView {
     /// The board as text instead of as columns: the `<>` toggle.
     pub show_source: bool,
     pub dirty: bool,
+    /// The help card is open: the format of a board, next to the board itself.
+    pub help: bool,
     press: Option<Press>,
     /// The geometry captured when the card was grabbed: a drag reads the drop slot from it, so
     /// moving the card in the model never moves the slot under the pointer.
@@ -642,6 +656,7 @@ impl KanbanView {
             editing: None,
             show_source: false,
             dirty: false,
+            help: false,
             press: None,
             press_geom: Vec::new(),
             dragging: None,
@@ -1825,6 +1840,7 @@ pub fn pane(v: &KanbanView, dom: &mut Dom, parent: NodeId, info: &mut crate::vie
     }
     let source = if v.show_source { "Ver tablero" } else { "Ver código" };
     let actions = [
+        ("help", "Cómo se escribe", "kanban:help"),
         ("plus", "Nueva columna", "kanban:add-column"),
         ("note-plus", "Nueva tarjeta", "kanban:add-card"),
         ("code", source, "kanban:source"),
@@ -1841,6 +1857,14 @@ pub fn pane(v: &KanbanView, dom: &mut Dom, parent: NodeId, info: &mut crate::vie
         }
     }
     let leaf = dom.add(parent, El::div().class("view-content kanban-wrapper"));
+    if v.help {
+        let card = dom.add(leaf, El::div().class("kanban-help").action("kanban:none"));
+        let head = dom.add(card, El::div().class("kanban-help-head"));
+        dom.add(head, El::div().class("kanban-help-title").text("Cómo se escribe un tablero"));
+        let close = dom.add(head, El::div().class("clickable-icon").action("kanban:help"));
+        dom.add(close, crate::icons::el("x"));
+        dom.add(card, El::div().class("kanban-help-text").text(HELP));
+    }
     let colors = dom.add(leaf, El::div().class("kanban-view-colors"));
     info.kanban_colors =
         COLOR_CLASSES.iter().map(|k| dom.add(colors, El::div().class("kanban-view").class(k))).collect();
@@ -2165,8 +2189,18 @@ impl App {
             self.new_board();
             return true;
         }
+        if rest == "none" {
+            return true;
+        }
         if self.kanban_view.is_none() {
             // A board command with no board open has nothing to do.
+            return true;
+        }
+        if rest == "help" {
+            if let Some(v) = &mut self.kanban_view {
+                v.stop_edit();
+                v.help = !v.help;
+            }
             return true;
         }
         // The filter and the WIP limit have arguments of their own, so they are read before the

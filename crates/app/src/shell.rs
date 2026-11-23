@@ -120,6 +120,7 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("kanban:source", "Kanban: Ver código del tablero", ""),
     ("kanban:filter", "Kanban: Filtrar tarjetas", ""),
     ("kanban:filter-clear", "Kanban: Quitar el filtro del tablero", ""),
+    ("kanban:help", "Kanban: Cómo se escribe un tablero", ""),
     ("workspace:close", "Cerrar pestaña actual", "Ctrl+W"),
     ("workspace:close-others", "Cerrar las demás pestañas", ""),
     ("workspace:close-all", "Cerrar todas las pestañas", ""),

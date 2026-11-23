@@ -3220,6 +3220,7 @@ fn chrome(app: &App, dom: &mut Dom, ws: NodeId, pal: &Palette, info: &mut ViewIn
         ("switcher", "switcher:open", false),
         ("graph", "graph:open", app.show_graph),
         ("canvas", "canvas:new", false),
+        ("table", "kanban:new", app.kanban_active()),
         ("calendar", "calendar:open", app.left_open && app.panel == Panel::Calendar),
         ("template", "templates:insert-template", false),
         ("command", "command-palette:open", false),

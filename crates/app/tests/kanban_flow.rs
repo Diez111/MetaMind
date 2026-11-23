@@ -525,3 +525,55 @@ fn a_drop_under_a_filter_lands_where_the_visible_card_is() {
         "the hidden card keeps its place: {text}"
     );
 }
+
+/// The ribbon is where a reader looks for "make me one of these": a board has to be there.
+#[test]
+fn the_ribbon_offers_a_board_and_the_command_makes_one() {
+    let d = tempfile::tempdir().unwrap();
+    let mut app = App::open(d.path()).unwrap();
+    let mut fonts = Fonts::new();
+    let f = frame(&mut app, &mut fonts);
+    let found = f.dom.nodes.iter().any(|n| n.el.action.as_deref() == Some("kanban:new"));
+    assert!(found, "la ribbon tiene el botón de tablero");
+    app.run("kanban:new");
+    let made = d.path().join("Tablero.md");
+    assert!(made.exists(), "el comando crea el archivo");
+    assert!(app.kanban_active(), "y abre el tablero");
+    let text = fs::read_to_string(made).unwrap();
+    assert!(text.starts_with("%% kanban: settings"), "{text}");
+    assert_eq!(text, metamind_app::kanbanview::TEMPLATE, "con la plantilla de siempre");
+}
+
+/// "No veo opciones de sintaxis": the board shows its own format, and what it shows is the format
+/// the parser reads.
+#[test]
+fn the_help_card_shows_the_format_the_parser_reads() {
+    let (_d, mut app, mut fonts, f) = open_board();
+    assert!(f.info.kanban.is_some());
+    app.run("kanban:help");
+    let f = frame(&mut app, &mut fonts);
+    let card = f
+        .dom
+        .nodes
+        .iter()
+        .find(|n| n.el.classes.iter().any(|c| c == "kanban-help"))
+        .expect("la tarjeta de ayuda");
+    assert!(card.rect.w > 100.0, "{:?}", card.rect);
+    let text: String = f
+        .dom
+        .nodes
+        .iter()
+        .filter(|n| n.el.classes.iter().any(|c| c == "kanban-help-text"))
+        .filter_map(|n| n.el.text.clone())
+        .collect();
+    assert!(text.contains("kanban: settings"), "{text}");
+    assert!(text.contains("Prioridad"), "{text}");
+    assert!(text.contains("@{" ), "{text}");
+    // What the card shows makes the template the parser accepts.
+    let board = metamind_app::kanbanview::Board::parse(metamind_app::kanbanview::TEMPLATE);
+    assert_eq!(board.columns.len(), 3, "la plantilla que se muestra parsea a tres columnas");
+    // The button that opened it closes it.
+    app.run("kanban:help");
+    let f = frame(&mut app, &mut fonts);
+    assert!(!f.dom.nodes.iter().any(|n| n.el.classes.iter().any(|c| c == "kanban-help")));
+}
